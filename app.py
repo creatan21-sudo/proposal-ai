@@ -39,6 +39,11 @@ UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", _default_upload))
 for _d in [UPLOAD_DIR, Path(__file__).parent / "database", Path(__file__).parent / "output" / "proposals"]:
     _d.mkdir(parents=True, exist_ok=True)
 
+# gunicorn 등 외부 서버 기동 시에도 DB/테이블이 반드시 존재하도록 초기화
+with app.app_context():
+    init_db()
+    init_users()
+
 VIDEO_TYPES = ["홍보영상", "다큐멘터리", "교육영상", "캠페인영상", "뉴스형영상"]
 ALLOWED_EXT     = {".hwp", ".hwpx", ".pdf", ".txt"}
 ALLOWED_REF_EXT = {".hwp", ".hwpx", ".pdf", ".txt", ".docx", ".pptx"}
