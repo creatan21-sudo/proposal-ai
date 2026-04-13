@@ -1,0 +1,834 @@
+{% extends "base.html" %}
+{% block title %}생성 중 — {{ client }}{% endblock %}
+
+{% block content %}
+<div class="run-header">
+  <div class="page-title">제안서 생성 중</div>
+  <div class="run-project">{{ client }} / {{ project }}</div>
+</div>
+
+<!-- 대기 배너 (항상 숨김 시작 → SSE queue_position 이벤트로만 표시) -->
+<div id="queue-banner" class="queue-banner" style="display:none">
+  <div class="queue-icon">⏳</div>
+  <div>
+    <strong id="queue-pos-text">준비 중...</strong>
+    <p id="queue-sub-text" style="font-size:13px;color:#6b7280;margin-top:2px;"></p>
+  </div>
+</div>
+
+<!-- 전체 진행 헤더 -->
+<div class="progress-header" id="progress-header">
+  <div class="progress-steps-row" id="progress-steps-row"></div>
+  <div class="progress-bar-wrap">
+    <div class="progress-bar-fill" id="progress-bar-fill"></div>
+  </div>
+  <div class="progress-meta">
+    <span class="step-status-text" id="step-status-text">준비 중...</span>
+    <span class="time-estimate">보통 15~20분 소요됩니다</span>
+  </div>
+</div>
+
+<!-- 스텝 진행 표시 -->
+<div class="steps-bar" id="steps-bar">
+  {% set steps = [
+    ('rfp_analysis',   'RFP 분석'),
+    ('research',       '리서치'),
+    ('narrative',      '내러티브'),
+    ('strategy',       '전략'),
+    ('creative',       '컨셉'),
+    ('plan',           '기획'),
+    ('script',         '대본'),
+    ('marketing',      '마케팅'),
+    ('final_proposal', '최종'),
+  ] %}
+  {% for key, label in steps %}
+  <div class="step-pill" id="step-{{ key }}">
+    <span class="dot"></span>{{ label }}
+  </div>
+  {% endfor %}
+</div>
+
+<!-- 결과 피드 -->
+<div class="results-feed" id="results-feed"></div>
+
+<!-- 완료 배너 -->
+<div class="done-banner" id="done-banner">
+  <h3>제안서 생성 완료 ✓</h3>
+  <p>TXT 파일로 다운로드하거나 이력에서 다시 확인할 수 있습니다.</p>
+  <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+    <a href="/download/{{ sid }}" class="btn btn-success btn-lg">TXT 다운로드</a>
+    <button id="btn-ppt-run" onclick="openPptModal()"
+            style="padding:10px 22px;background:#4f46e5;color:#fff;border:none;border-radius:8px;
+                   font-size:1rem;font-weight:600;cursor:pointer;opacity:0.4;pointer-events:none;"
+            disabled>📊 PPT 작성하기</button>
+    <a href="/" class="btn btn-secondary btn-lg">새 제안서</a>
+    <a href="/history" class="btn btn-secondary btn-lg">내 이력</a>
+  </div>
+</div>
+
+<!-- 오류 배너 -->
+<div class="error-banner" id="error-banner">
+  <h3>파이프라인 오류</h3>
+  <p id="error-msg"></p>
+  <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px;">
+    <button class="btn btn-primary" onclick="doRetry()">↺ 다시 시도</button>
+    <a href="/" class="btn btn-secondary">처음으로</a>
+  </div>
+</div>
+
+<div id="toast-container" style="position:fixed;bottom:20px;right:20px;z-index:9999;"></div>
+
+<!-- 컨펌 패널 (sticky bottom) -->
+<div class="confirm-panel" id="confirm-panel">
+  <div class="confirm-title" id="confirm-title">확인이 필요합니다</div>
+  <div id="confirm-body"></div>
+</div>
+
+<script>
+const SID    = "{{ sid }}";
+const CLIENT = {{ client | tojson }};
+const evtSource = new EventSource(`/stream/${SID}`);
+
+// ── 스텝 정의
+const STEPS = [
+  { key: 'rfp_analysis',   label: 'RFP 분석', num: 1 },
+  { key: 'research',       label: '리서치',    num: 2 },
+  { key: 'narrative',      label: '내러티브',  num: 3 },
+  { key: 'strategy',       label: '전략',      num: 4 },
+  { key: 'creative',       label: '컨셉',      num: 5 },
+  { key: 'plan',           label: '기획',      num: 6 },
+  { key: 'script',         label: '대본',      num: 7 },
+  { key: 'marketing',      label: '마케팅',    num: 8 },
+  { key: 'final_proposal', label: '최종',      num: 9 },
+];
+const stepStatusMap = {};
+STEPS.forEach(s => { stepStatusMap[s.key] = 'pending'; });
+
+// 진행 스텝 원형 초기화
+(function initProgressSteps() {
+  const row = document.getElementById('progress-steps-row');
+  STEPS.forEach((s, i) => {
+    const item = document.createElement('div');
+    item.className = 'ps-item';
+    item.id = `ps-${s.key}`;
+    item.innerHTML = `<div class="ps-dot"><span class="ps-num">${s.num}</span></div><div class="ps-label">${s.label}</div>`;
+    row.appendChild(item);
+    if (i < STEPS.length - 1) {
+      const line = document.createElement('div');
+      line.className = 'ps-line';
+      line.id = `ps-line-${s.key}`;
+      row.appendChild(line);
+    }
+  });
+})();
+
+function updateProgressUI(stepKey, status) {
+  stepStatusMap[stepKey] = status;
+
+  // 원형 스텝 업데이트
+  const item = document.getElementById(`ps-${stepKey}`);
+  if (item) {
+    item.className = `ps-item ${status}`;
+    const dot = item.querySelector('.ps-dot');
+    if (status === 'done') dot.innerHTML = '✓';
+    else if (status === 'error') dot.innerHTML = '✕';
+    else if (status === 'skipped') dot.innerHTML = '↷';
+    else {
+      const s = STEPS.find(s => s.key === stepKey);
+      dot.innerHTML = `<span class="ps-num">${s.num}</span>`;
+    }
+  }
+
+  // 진행 바
+  const total = STEPS.length;
+  const done = Object.values(stepStatusMap).filter(s => s === 'done' || s === 'skip' || s === 'skipped').length;
+  const pct = Math.round((done / total) * 100);
+  document.getElementById('progress-bar-fill').style.width = `${pct}%`;
+
+  // 상태 텍스트
+  const statusEl = document.getElementById('step-status-text');
+  if (status === 'active') {
+    const s = STEPS.find(s => s.key === stepKey);
+    statusEl.textContent = `STEP ${s.num} ${s.label} 실행 중...`;
+    statusEl.className = 'step-status-text active';
+  }
+}
+
+function formatElapsed(seconds) {
+  const s = Math.round(Number(seconds));
+  if (s < 60) return `${s}초 소요`;
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return r > 0 ? `${m}분 ${r}초 소요` : `${m}분 소요`;
+}
+
+evtSource.onmessage = function(e) {
+  try { handleEvent(JSON.parse(e.data)); }
+  catch(err) { console.error('SSE parse error', err); }
+};
+
+// 연결 오류 카운터 — 일시적 끊김은 무시하고 연속 실패 시만 알림
+let _sseErrCount = 0;
+evtSource.onerror = function() {
+  _sseErrCount++;
+  if (_sseErrCount >= 5) {
+    evtSource.close();
+    const eb = document.getElementById('error-banner');
+    document.getElementById('error-msg').textContent =
+      '서버 연결이 끊겼습니다. 페이지를 새로고침하거나 잠시 후 다시 시도해주세요.';
+    eb.style.display = 'block';
+  }
+};
+evtSource.onopen = function() { _sseErrCount = 0; };
+
+function handleEvent(ev) {
+  switch (ev.type) {
+    case 'queue_position':
+      if (ev.position > 1) {
+        showQueueBanner(ev.position, ev.total);
+      } else {
+        // position 1이면 대기 배너 숨김 (바로 시작 예정)
+        hideQueueBanner();
+      }
+      break;
+    case 'pipeline_starting':
+      hideQueueBanner();
+      break;
+    case 'server_restart':
+      // Flask 재시작 → 세션 소멸 → 에러 배너 표시
+      hideQueueBanner();
+      document.getElementById('queue-banner').style.display = 'none';
+      {
+        const eb = document.getElementById('error-banner');
+        document.getElementById('error-msg').textContent =
+          '서버가 재시작되어 작업이 초기화되었습니다. 새 제안서를 시작하거나 이력에서 이전 결과를 확인하세요.';
+        eb.style.display = 'block';
+        // 재시도 버튼 숨김 (세션 없으므로 재시도 불가)
+        const retryBtn = eb.querySelector('button[onclick="doRetry()"]');
+        if (retryBtn) retryBtn.style.display = 'none';
+        setTabTitle('error', '서버 재시작');
+      }
+      evtSource.close();
+      break;
+    case 'step_start': {
+      stopRetryCountdown();
+      removeProcessingCard();
+      setStep(ev.step, 'active');
+      const _s = STEPS.find(s => s.key === ev.step);
+      if (_s) setTabTitle('running', `STEP ${_s.num}/${STEPS.length}`);
+      appendProcessingCard(ev.name);
+      break;
+    }
+    case 'step_done':
+      removeProcessingCard();
+      setStep(ev.step, 'done');
+      appendResultCard(ev);
+      { const _st = STEPS.find(s=>s.key===ev.step)||{};
+        showToast('✓ STEP ' + (_st.num||'') + ' ' + (_st.label||'') + ' 완료', 'success'); }
+      break;
+    case 'step_chunk': {
+      // 청크 수신: 해당 스텝 카드의 필드에 텍스트 누적 후 최종 청크에서 재렌더링
+      const card = document.querySelector(`.result-card[data-step="${ev.step}"]`);
+      if (card) {
+        const valEl = card.querySelector(`.summary-val[data-field="${CSS.escape(ev.field)}"]`);
+        if (valEl) {
+          const prev = valEl.getAttribute('data-raw') || '';
+          const next = prev + ev.text;
+          valEl.setAttribute('data-raw', next);
+          if (ev.final) valEl.innerHTML = renderText(next);
+        }
+      }
+      break;
+    }
+    case 'step_skip':
+      removeProcessingCard();
+      setStep(ev.step, 'skip');
+      break;
+    case 'step_skipped':
+      removeProcessingCard();
+      setStep(ev.step, 'skipped');
+      appendLog(`↷ ${ev.name} 스킵됨`);
+      break;
+    case 'step_error': {
+      removeProcessingCard();
+      setStep(ev.step, 'error');
+      appendErrorCard(ev);
+      const _se = STEPS.find(s => s.key === ev.step);
+      if (_se) setTabTitle('error', `STEP ${_se.num} ${_se.label}`);
+      playErrorSound();
+      break;
+    }
+    case 'api_retry':
+      // API 레벨 재시도 (claude_client 내부) — 현재 스텝 표시만 업데이트
+      setStep(ev.step, 'retrying');
+      { const st = document.getElementById('step-status-text');
+        st.textContent = `API 과부하 - 재시도 중 (${ev.attempt}/${ev.max_retries})`;
+        st.className = 'step-status-text retrying'; }
+      break;
+    case 'step_retry_wait':
+      // 파이프라인 레벨 재시도 — 카운트다운 표시
+      setStep(ev.step, 'retrying');
+      startRetryCountdown(ev);
+      appendLog(`⚠ API 과부하 — ${ev.wait_sec}초 후 스텝 재시도 (${ev.attempt}/${ev.max_attempts})`);
+      break;
+    case 'retry_start':
+      appendRetryDivider(ev.step);
+      { const fill = document.getElementById('progress-bar-fill');
+        fill.classList.remove('done');
+        const st = document.getElementById('step-status-text');
+        st.textContent = '재시도 중...';
+        st.className = 'step-status-text'; }
+      document.getElementById('error-banner').classList.remove('visible');
+      setTabTitle('running', '재시도');
+      break;
+    case 'step_rerun':
+      setStep(ev.step, 'active');
+      hideConfirm();
+      break;
+    case 'confirm_needed': {
+      showConfirm(ev);
+      const _sc = STEPS.find(s => s.key === ev.step);
+      if (_sc) {
+        playStepSound();
+      }
+      break;
+    }
+    case 'slogan_selected':
+      appendLog(`슬로건 확정: ${ev.slogan}`);
+      break;
+    case 'case_saved': {
+      // pipeline_done 보다 먼저 도착 — PPT 버튼 활성화
+      window._pptCaseId = ev.case_id;
+      const pptBtn = document.getElementById('btn-ppt-run');
+      if (pptBtn) {
+        pptBtn.disabled = false;
+        pptBtn.style.opacity = '1';
+        pptBtn.style.pointerEvents = 'auto';
+      }
+      break;
+    }
+    case 'pipeline_done':
+      // case_saved 이후에 도착 — UI 완료 처리 후 SSE 종료
+      evtSource.close();
+      hideConfirm();
+      document.getElementById('progress-bar-fill').style.width = '100%';
+      document.getElementById('progress-bar-fill').classList.add('done');
+      { const st = document.getElementById('step-status-text');
+        st.textContent = '모든 스텝 완료';
+        st.className = 'step-status-text done'; }
+      document.getElementById('done-banner').classList.add('visible');
+      setTabTitle('done');
+      playDoneSound();
+      showToast('🎉 제안서 생성 완료!', 'complete');
+      scrollToBottom();
+      break;
+    case 'pipeline_aborted':
+      evtSource.close();
+      hideConfirm();
+      showError(`파이프라인이 ${ev.step || ''} 단계에서 중단되었습니다.`, true);
+      setTabTitle('error', ev.step || '중단');
+      playErrorSound();
+      break;
+    case 'pipeline_error':
+      evtSource.close();
+      hideConfirm();
+      showError(ev.message || '알 수 없는 오류', true);
+      setTabTitle('error', '파이프라인');
+      playErrorSound();
+      break;
+    case 'log':
+      appendLog(ev.message);
+      break;
+  }
+}
+
+// ── 큐 배너
+function showQueueBanner(pos, total) {
+  const banner = document.getElementById('queue-banner');
+  document.getElementById('queue-pos-text').textContent = `${pos}번째 대기 중`;
+  document.getElementById('queue-sub-text').textContent =
+    `앞에 ${pos - 1}개의 작업이 처리 중입니다. (전체 대기 ${total}건)`;
+  banner.style.display = 'flex';
+}
+function hideQueueBanner() {
+  document.getElementById('queue-banner').style.display = 'none';
+}
+
+// ── 스텝
+function setStep(stepKey, status) {
+  const el = document.getElementById(`step-${stepKey}`);
+  if (el) el.className = `step-pill ${status}`;
+  updateProgressUI(stepKey, status);
+}
+
+// ── 텍스트 → HTML 변환
+function renderText(raw) {
+  if (!raw || typeof raw !== 'string') return esc(String(raw ?? ''));
+  // 이스케이프 줄바꿈 정규화
+  const text = raw.replace(/\\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  // 빈 줄 기준으로 문단 분리
+  const paras = text.split(/\n\n+/);
+  return paras.map(para => {
+    const lines = para.split('\n');
+    const renderedLines = lines.map(line => {
+      const t = line.trim();
+      if (!t) return '';
+      // ### 로 시작 → 진한 회색 h4
+      if (/^###\s+/.test(t)) {
+        const label = esc(t.replace(/^###\s+/, ''));
+        return `<h4 style="font-weight:700;margin:14px 0 4px;color:#4b5563;font-size:14px;line-height:1.4;">${label}</h4>`;
+      }
+      // ## / 【...】 / ■ 로 시작 → 파란색 h3
+      if (/^##\s+/.test(t) || /^【.*】/.test(t) || /^■/.test(t)) {
+        const label = esc(t.replace(/^##\s+/, '').replace(/^■\s*/, ''));
+        return `<h3 style="font-weight:700;margin:20px 0 8px;color:#2563eb;font-size:15px;line-height:1.4;border-left:3px solid #2563eb;padding-left:8px;">${label}</h3>`;
+      }
+      // 40자 이하 + 콜론(:)으로 끝남 → h4
+      if (t.length <= 40 && /[:：]$/.test(t)) {
+        return `<h4 style="font-weight:700;margin:12px 0 4px;color:#4b5563;font-size:14px;">${esc(t)}</h4>`;
+      }
+      // 인라인 처리: **bold**, 수치, (출처명, 연도), [출처: ...]
+      let inline = esc(t)
+        .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#ea580c;font-weight:700;">$1</strong>')
+        // 수치/퍼센트 → 진한 파란색
+        .replace(/(\d[\d,]*\.?\d*[%억만원회편배건])/g,
+          '<span style="color:#1d4ed8;font-weight:600;">$1</span>')
+        // (출처명, 연도) 패턴 → 회색 이탤릭
+        .replace(/\(([^)]{2,60},\s*\d{4}[^)]{0,20})\)/g,
+          '(<cite style="color:#9ca3af;font-style:italic;font-size:0.92em;">$1</cite>)')
+        // [출처: ...] 패턴 → 회색 이탤릭
+        .replace(/\[출처:\s*([^\]]+)\]/g,
+          '[<cite style="color:#9ca3af;font-style:italic;font-size:0.92em;">출처: $1</cite>]');
+      return inline;
+    });
+    const inner = renderedLines.filter(Boolean).join('<br>');
+    if (!inner) return '';
+    // h 태그가 있는 줄은 p로 감싸지 않음
+    if (/<h[34]/.test(inner)) return inner;
+    return `<p style="margin:0 0 16px;line-height:1.7;color:#333;">${inner}</p>`;
+  }).join('');
+}
+
+// ── 처리 중 카드
+function appendProcessingCard(stepName) {
+  removeProcessingCard();
+  const feed = document.getElementById('results-feed');
+  const card = document.createElement('div');
+  card.id = 'processing-card';
+  card.className = 'processing-card';
+  card.innerHTML = `<span class="processing-spinner"></span><span>${esc(stepName)} 처리 중...</span>`;
+  feed.appendChild(card);
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function removeProcessingCard() {
+  document.getElementById('processing-card')?.remove();
+}
+
+// ── 결과 카드
+function appendResultCard(ev) {
+  const feed = document.getElementById('results-feed');
+  const card = document.createElement('div');
+  card.className = 'result-card';
+  card.dataset.step = ev.step;
+  card.innerHTML = `
+    <div class="result-card-header" onclick="toggleCard(this)">
+      <h4>${esc(ev.name)}</h4>
+      <span class="elapsed">${formatElapsed(ev.elapsed)} ▾</span>
+    </div>
+    <div class="result-card-body">${renderSummary(ev.summary || {})}</div>
+  `;
+  feed.appendChild(card);
+  card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+function toggleCard(header) {
+  const body  = header.nextElementSibling;
+  const arrow = header.querySelector('.elapsed');
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? 'block' : 'none';
+  arrow.textContent  = hidden
+    ? arrow.textContent.replace('▸','▾')
+    : arrow.textContent.replace('▾','▸');
+}
+function appendErrorCard(ev) {
+  const feed = document.getElementById('results-feed');
+  const el = document.createElement('div');
+  el.className = 'step-error-card';
+  el.textContent = `[오류] ${ev.name}: ${ev.message}`;
+  feed.appendChild(el);
+}
+function appendLog(msg) {
+  const feed = document.getElementById('results-feed');
+  const el = document.createElement('div');
+  el.style.cssText = 'font-size:13px;color:#6b7280;padding:4px 0;';
+  el.textContent = msg;
+  feed.appendChild(el);
+}
+
+// ── 개선 포인트 카드 렌더링 (severity 아이콘 → 카드 색상)
+function renderIssueCards(items) {
+  return items.map(txt => {
+    const s = String(txt);
+    let border = '#e5e7eb', bg = '#f9fafb';
+    if (s.startsWith('🔴')) { border = '#fca5a5'; bg = '#fff5f5'; }
+    else if (s.startsWith('🟡')) { border = '#fcd34d'; bg = '#fffbeb'; }
+    else if (s.startsWith('🔵')) { border = '#93c5fd'; bg = '#eff6ff'; }
+    const lines = s.split('\n').map((l, i) => {
+      if (i === 0) return `<strong style="font-size:13px;">${esc(l)}</strong>`;
+      return `<span style="font-size:13px;color:#374151;display:block;margin-top:4px;">${esc(l)}</span>`;
+    }).join('');
+    return `<div style="border:1px solid ${border};background:${bg};border-radius:6px;padding:10px 14px;margin-bottom:8px;">${lines}</div>`;
+  }).join('');
+}
+
+// ── 요약 렌더링
+function renderSummary(summary) {
+  const keys = Object.keys(summary);
+  if (!keys.length) return '<p style="color:#6b7280;font-size:13px;">처리 중...</p>';
+  let html = '';
+  for (const key of keys) {
+    const val = summary[key];
+    if (val === null || val === undefined || val === '') continue;
+    html += `<div class="summary-row"><span class="summary-key">${esc(key)}</span>`;
+    if (Array.isArray(val)) {
+      // 개선 포인트는 카드 형태로
+      if (key === '개선 포인트') {
+        html += `<div>${renderIssueCards(val)}</div>`;
+      } else {
+        const items = val.map(v => {
+          const txt = typeof v === 'object' ? JSON.stringify(v) : String(v);
+          return `<li>${renderText(txt)}</li>`;
+        }).join('');
+        html += `<ul class="summary-list">${items}</ul>`;
+      }
+    } else {
+      const raw = String(val);
+      html += `<div class="summary-val" data-field="${esc(key)}" data-raw="${esc(raw)}">${renderText(raw)}</div>`;
+    }
+    html += '</div>';
+  }
+  return html || '<p style="color:#6b7280;font-size:13px;">데이터 없음</p>';
+}
+
+// ── 컨펌 패널
+function showConfirm(ev) {
+  const panel = document.getElementById('confirm-panel');
+  const title = document.getElementById('confirm-title');
+  const body  = document.getElementById('confirm-body');
+  title.textContent = `${ev.name} — 확인`;
+
+  let html = '';
+  if (ev.is_creative && ev.slogans && ev.slogans.length) {
+    html += '<div class="slogans-grid">';
+    ev.slogans.forEach((s, i) => {
+      html += `<button class="slogan-btn" onclick="sendConfirm('${i+1}')">
+        <strong>${i+1}. ${esc(s.text)}</strong>
+        ${s.rationale ? `<small>${esc(s.rationale)}</small>` : ''}
+      </button>`;
+    });
+    html += '</div>';
+    html += '<p class="confirm-hint">슬로건을 선택하거나, 수정 방향을 입력 후 계속 진행하세요.</p>';
+  } else {
+    html += '<p class="confirm-hint">수정이 필요하면 내용을 입력하세요. 비워두면 그대로 진행합니다.</p>';
+  }
+  html += `<div class="confirm-row">
+    <input type="text" id="confirm-input"
+           placeholder="수정 지시 (없으면 비워두고 계속 진행)"
+           onkeydown="if(event.key==='Enter')confirmContinue()">
+    <button class="btn btn-primary" onclick="confirmContinue()">계속 진행 →</button>
+    <button class="btn btn-skip" onclick="confirmSkip()" title="이 스텝을 건너뜁니다">스킵 →</button>
+  </div>
+  <div style="margin-top:10px;">
+    <label style="font-size:12px;color:#6b7280;font-weight:600;display:block;margin-bottom:4px;">
+      다음 스텝 실행 전 특별 지시 <span style="font-weight:400;">(선택 — 다음 스텝 프롬프트에 주입됩니다)</span>
+    </label>
+    <textarea id="step-instruction-input" rows="2"
+              style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:6px;
+                     padding:8px 10px;font-size:13px;color:#374151;resize:vertical;"
+              placeholder="예) 20대 청년층에 초점을 맞춰주세요 / 사례 중심으로 작성해주세요"></textarea>
+  </div>`;
+
+  body.innerHTML = html;
+  panel.classList.add('visible');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  setTimeout(() => document.getElementById('confirm-input')?.focus(), 100);
+}
+function hideConfirm() {
+  document.getElementById('confirm-panel').classList.remove('visible');
+  document.getElementById('confirm-body').innerHTML = '';
+}
+function confirmContinue() {
+  const val         = (document.getElementById('confirm-input')?.value || '').trim();
+  const instruction = (document.getElementById('step-instruction-input')?.value || '').trim();
+  hideConfirm();
+  sendConfirm(val || 'y', instruction);
+}
+function confirmSkip() {
+  hideConfirm();
+  sendConfirm('s');
+}
+async function sendConfirm(value, instruction) {
+  await fetch(`/confirm/${SID}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ input: value, instruction: instruction || '' }),
+  });
+}
+
+// ── 파이프라인 레벨 재시도 카운트다운 ────────────────────
+let _countdownTimer = null;
+
+function startRetryCountdown(ev) {
+  stopRetryCountdown();
+  const stepInfo  = STEPS.find(s => s.key === ev.step);
+  const stepLabel = stepInfo ? `STEP ${stepInfo.num} ${stepInfo.label}` : esc(ev.name);
+  let remaining   = ev.wait_sec;
+
+  function tick() {
+    const m = Math.floor(remaining / 60);
+    const s = remaining % 60;
+    const timeStr = m > 0
+      ? `${m}분 ${String(s).padStart(2,'0')}초`
+      : `${s}초`;
+    const st = document.getElementById('step-status-text');
+    st.textContent = `${stepLabel} — API 과부하, ${timeStr} 후 자동 재시도 (${ev.attempt}/${ev.max_attempts})`;
+    st.className = 'step-status-text retrying';
+
+    // 탭 제목도 카운트다운
+    document.title = `[재시도 ${timeStr}] ${stepLabel} — 제안서 AI`;
+
+    if (remaining <= 0) { stopRetryCountdown(); return; }
+    remaining--;
+  }
+
+  tick();  // 즉시 첫 업데이트
+  _countdownTimer = setInterval(tick, 1000);
+}
+
+function stopRetryCountdown() {
+  if (_countdownTimer !== null) {
+    clearInterval(_countdownTimer);
+    _countdownTimer = null;
+  }
+}
+
+// ── 브라우저 알림 / 탭 제목 / 소리 ──────────────────────
+
+
+// 탭 제목
+function setTabTitle(state, extra) {
+  switch (state) {
+    case 'running': document.title = `[진행중] ${extra} — 제안서 AI`; break;
+    case 'done':    document.title = `[완료!] ${CLIENT} 제안서 — 제안서 AI`; break;
+    case 'error':   document.title = `[오류] ${extra} — 제안서 AI`; break;
+    default:        document.title = `생성 중 — ${CLIENT}`;
+  }
+}
+
+// 소리 (Web Audio API — 외부 파일 불필요)
+function playStepSound() {
+  _playTone([[880, 0, 0.12]]);
+}
+function playDoneSound() {
+  _playTone([[880, 0, 0.15], [1100, 0.18, 0.15], [1320, 0.36, 0.3]]);
+}
+function playErrorSound() {
+  _playTone([[440, 0, 0.15], [330, 0.2, 0.25]]);
+}
+function _playTone(notes) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    notes.forEach(([freq, delay, dur]) => {
+      const osc  = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = freq;
+      gain.gain.setValueAtTime(0, ctx.currentTime + delay);
+      gain.gain.linearRampToValueAtTime(0.25, ctx.currentTime + delay + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + delay + dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(ctx.currentTime + delay);
+      osc.stop(ctx.currentTime + delay + dur + 0.05);
+    });
+  } catch(e) {}
+}
+
+// ── 유틸
+function showError(msg, retryable = true) {
+  document.getElementById('error-msg').textContent = msg;
+  document.getElementById('error-banner').classList.add('visible');
+  document.querySelector('#error-banner .btn-primary').style.display =
+    retryable ? '' : 'none';
+}
+async function doRetry() {
+  const res = await fetch(`/retry/${SID}`, { method: 'POST' });
+  if (res.ok) {
+    window.location.reload();
+  } else {
+    const data = await res.json().catch(() => ({}));
+    alert(data.error || '재시도 실패');
+  }
+}
+// ── 토스트 알림
+function showToast(message, type) {
+  const container = document.getElementById('toast-container');
+  const toast = document.createElement('div');
+  const bg = type === 'success' ? '#28a745' : type === 'complete' ? '#007bff' : '#333';
+  toast.style.cssText = `background:${bg};color:white;padding:12px 20px;margin-top:8px;border-radius:6px;font-size:14px;opacity:0;transition:opacity 0.3s;min-width:200px;`;
+  toast.textContent = message;
+  container.appendChild(toast);
+  setTimeout(() => toast.style.opacity = '1', 10);
+  setTimeout(() => {
+    toast.style.opacity = '0';
+    setTimeout(() => toast.remove(), 300);
+  }, type === 'complete' ? 5000 : 3000);
+}
+
+function appendRetryDivider(step) {
+  const feed = document.getElementById('results-feed');
+  const el = document.createElement('div');
+  el.className = 'retry-divider';
+  el.textContent = step ? `${step} 스텝부터 재시도` : '처음부터 재시도';
+  feed.appendChild(el);
+}
+function scrollToBottom() {
+  window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+}
+function esc(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+</script>
+
+<!-- ── PPT 생성 모달 ── -->
+<div id="ppt-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);
+     z-index:10000;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:16px;padding:32px 28px;width:420px;
+              max-width:92vw;position:relative;box-shadow:0 20px 60px rgba(0,0,0,0.25);">
+    <button onclick="closePptModal()"
+            style="position:absolute;top:14px;right:16px;background:none;border:none;
+                   font-size:1.3rem;color:#9ca3af;cursor:pointer;line-height:1;">✕</button>
+
+    <!-- 설정 화면 -->
+    <div id="ppt-setup">
+      <h3 style="margin:0 0 6px;font-size:1.15rem;font-weight:700;color:#1e1b4b;">📊 PPT 작성</h3>
+      <p style="margin:0 0 22px;font-size:.85rem;color:#6b7280;">
+        제안서 내용을 바탕으로 PT 자료를 생성합니다.
+      </p>
+      <label style="display:block;font-size:.85rem;font-weight:600;color:#374151;margin-bottom:8px;">
+        페이지 수
+      </label>
+      <input type="range" id="ppt-pages" min="10" max="60" value="30"
+             oninput="document.getElementById('ppt-pages-val').textContent=this.value"
+             style="width:100%;accent-color:#4f46e5;">
+      <div style="display:flex;justify-content:space-between;font-size:.8rem;color:#9ca3af;margin-top:4px;">
+        <span>10페이지</span>
+        <strong id="ppt-pages-val" style="color:#4f46e5;font-size:.95rem;">30</strong>페이지
+        <span>60페이지</span>
+      </div>
+      <button onclick="startPptGeneration()"
+              style="margin-top:24px;width:100%;padding:13px;background:#4f46e5;color:#fff;
+                     border:none;border-radius:8px;font-size:1rem;font-weight:700;cursor:pointer;">
+        PPT 생성하기
+      </button>
+    </div>
+
+    <!-- 진행 화면 -->
+    <div id="ppt-progress" style="display:none;text-align:center;padding:8px 0;">
+      <div style="font-size:2.2rem;margin-bottom:14px;">⏳</div>
+      <div id="ppt-progress-msg" style="font-size:.95rem;color:#374151;margin-bottom:14px;font-weight:500;">
+        준비 중...
+      </div>
+      <div style="background:#e5e7eb;border-radius:99px;height:8px;overflow:hidden;">
+        <div id="ppt-progress-bar"
+             style="background:#4f46e5;height:100%;width:0%;transition:width .4s ease;"></div>
+      </div>
+      <div id="ppt-progress-pct"
+           style="font-size:.8rem;color:#9ca3af;margin-top:6px;">0%</div>
+    </div>
+
+    <!-- 완료 화면 -->
+    <div id="ppt-done" style="display:none;text-align:center;padding:8px 0;">
+      <div style="font-size:2.8rem;margin-bottom:14px;">📊</div>
+      <p style="color:#059669;font-weight:700;font-size:1.1rem;margin-bottom:6px;">PPT 생성 완료!</p>
+      <p style="font-size:.85rem;color:#6b7280;margin-bottom:20px;">파일이 자동으로 다운로드됩니다.</p>
+      <button onclick="closePptModal()"
+              style="padding:10px 28px;background:#6b7280;color:#fff;border:none;
+                     border-radius:8px;font-size:.9rem;cursor:pointer;">닫기</button>
+    </div>
+
+    <!-- 오류 화면 -->
+    <div id="ppt-error" style="display:none;text-align:center;padding:8px 0;">
+      <div style="font-size:2.2rem;margin-bottom:14px;">❌</div>
+      <p id="ppt-error-msg" style="color:#dc2626;margin-bottom:20px;font-size:.9rem;"></p>
+      <button onclick="closePptModal()"
+              style="padding:10px 28px;background:#6b7280;color:#fff;border:none;
+                     border-radius:8px;font-size:.9rem;cursor:pointer;">닫기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function openPptModal() {
+  const m = document.getElementById('ppt-modal');
+  m.style.display = 'flex';
+  ['ppt-progress','ppt-done','ppt-error'].forEach(id =>
+    document.getElementById(id).style.display = 'none');
+  document.getElementById('ppt-setup').style.display = '';
+}
+function closePptModal() {
+  document.getElementById('ppt-modal').style.display = 'none';
+}
+function startPptGeneration() {
+  const pages  = parseInt(document.getElementById('ppt-pages').value);
+  const caseId = window._pptCaseId;
+  if (!caseId) { alert('케이스 ID를 찾을 수 없습니다. 잠시 후 다시 시도하세요.'); return; }
+  document.getElementById('ppt-setup').style.display    = 'none';
+  document.getElementById('ppt-progress').style.display = '';
+  fetch('/ppt/start', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({case_id: caseId, pages})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.ok) throw new Error(d.error || '시작 실패');
+    _listenPpt(d.job_id, pages);
+  })
+  .catch(err => _pptShowError(err.message));
+}
+function _listenPpt(jobId, totalPages) {
+  const es = new EventSource(`/ppt/stream/${jobId}`);
+  es.onmessage = function(e) {
+    try {
+      const ev = JSON.parse(e.data);
+      if (ev.type === 'ppt_progress') {
+        const t = ev.total || totalPages;
+        const pct = t > 0 ? Math.round((ev.current / t) * 100) : 0;
+        document.getElementById('ppt-progress-msg').textContent =
+          `${ev.message} (${ev.current} / ${t})`;
+        document.getElementById('ppt-progress-bar').style.width = pct + '%';
+        document.getElementById('ppt-progress-pct').textContent = pct + '%';
+      } else if (ev.type === 'ppt_done') {
+        es.close();
+        document.getElementById('ppt-progress').style.display = 'none';
+        document.getElementById('ppt-done').style.display = '';
+        const a = document.createElement('a');
+        a.href = ev.download_url; a.click();
+        showToast('📊 PPT 다운로드 완료', 'complete');
+      } else if (ev.type === 'ppt_error') {
+        es.close();
+        _pptShowError(ev.message);
+      }
+    } catch(err) { console.error(err); }
+  };
+  es.onerror = function() { es.close(); _pptShowError('연결 오류가 발생했습니다.'); };
+}
+function _pptShowError(msg) {
+  document.getElementById('ppt-progress').style.display = 'none';
+  document.getElementById('ppt-error').style.display    = '';
+  document.getElementById('ppt-error-msg').textContent  = msg;
+}
+</script>
+{% endblock %}

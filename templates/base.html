@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}ProposalAI{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <a href="/" class="logo">ProposalAI</a>
+      <nav>
+        <a href="/">새 제안서</a>
+        <a href="/history">MY DB</a>
+        <a href="/learning">학습 데이터</a>
+        {% if session.get('is_admin') %}
+        <a href="/admin" class="nav-admin">관리자</a>
+        {% endif %}
+        <a href="/profile">프로필</a>
+        <a href="#" id="nav-active-run" style="display:none" title="">
+          🔄 진행 중 <span id="nav-active-dot" style="display:inline-block;width:8px;height:8px;background:red;border-radius:50%;vertical-align:middle;margin-left:3px;"></span>
+        </a>
+        <span class="nav-user">{{ session.get('username', '') }}</span>
+        <a href="/logout">로그아웃</a>
+      </nav>
+    </div>
+  </header>
+  <script>
+  (function() {
+    fetch('/active_run').then(r => r.json()).then(data => {
+      if (data.active) {
+        const el = document.getElementById('nav-active-run');
+        el.href = '/run/' + data.sid;
+        el.title = data.client + ' / ' + data.project;
+        el.style.display = 'inline';
+      }
+    }).catch(function(){});
+  })();
+  </script>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

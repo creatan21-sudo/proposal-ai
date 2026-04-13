@@ -1,0 +1,6 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+database/rfp_cases.db
+output/proposals/

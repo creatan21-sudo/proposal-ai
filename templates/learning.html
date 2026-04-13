@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+{% block title %}학습 데이터 — ProposalAI{% endblock %}
+
+{% block head %}
+<style>
+  .learning-wrap { max-width: 960px; margin: 0 auto; padding: 32px 16px; }
+  .learning-wrap h1 { font-size: 22px; font-weight: 700; margin-bottom: 24px; }
+
+  /* 폼 카드 */
+  .form-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 32px;
+  }
+  .form-card h2 { font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #1e293b; }
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .form-row.single { grid-template-columns: 1fr; }
+  .form-row.triple { grid-template-columns: 1fr 1fr 1fr; }
+  label { display: block; font-size: 12px; font-weight: 600; color: #64748b; margin-bottom: 4px; }
+  input[type=text], input[type=number], select, textarea {
+    width: 100%; padding: 8px 10px; border: 1px solid #d1d5db;
+    border-radius: 6px; font-size: 14px; box-sizing: border-box;
+  }
+  textarea { min-height: 100px; resize: vertical; }
+  .btn-submit {
+    background: #2563eb; color: #fff; border: none; border-radius: 8px;
+    padding: 10px 24px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .btn-submit:hover { background: #1d4ed8; }
+
+  /* 알림 */
+  .msg { padding: 10px 14px; border-radius: 8px; margin-bottom: 16px; font-size: 14px; }
+  .msg.ok  { background: #dcfce7; color: #166534; border: 1px solid #86efac; }
+  .msg.err { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+
+  /* 필터 탭 */
+  .filter-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+  .filter-tabs a {
+    padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 500;
+    border: 1px solid #d1d5db; color: #374151; text-decoration: none;
+    transition: all .15s;
+  }
+  .filter-tabs a.active, .filter-tabs a:hover {
+    background: #2563eb; color: #fff; border-color: #2563eb;
+  }
+
+  /* 목록 테이블 */
+  .list-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .list-table th {
+    background: #f8fafc; text-align: left; padding: 10px 12px;
+    font-weight: 600; color: #64748b; border-bottom: 1px solid #e5e7eb;
+  }
+  .list-table td {
+    padding: 10px 12px; border-bottom: 1px solid #f1f5f9; vertical-align: top;
+  }
+  .list-table tr:last-child td { border-bottom: none; }
+  .list-table tr:hover td { background: #f8fafc; }
+
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 12px;
+    font-size: 11px; font-weight: 600;
+  }
+  .badge-win  { background: #dcfce7; color: #166534; }
+  .badge-lose { background: #fee2e2; color: #991b1b; }
+  .badge-none { background: #f1f5f9; color: #64748b; }
+  .badge-type { background: #eff6ff; color: #1d4ed8; }
+
+  .content-preview {
+    max-width: 260px; overflow: hidden; text-overflow: ellipsis;
+    white-space: nowrap; color: #6b7280;
+  }
+  .btn-del {
+    background: none; border: 1px solid #fca5a5; color: #dc2626;
+    border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer;
+  }
+  .btn-del:hover { background: #fee2e2; }
+
+  .empty-state { text-align: center; padding: 48px 0; color: #94a3b8; font-size: 14px; }
+
+  /* 파일 업로드 */
+  .file-or { text-align: center; font-size: 12px; color: #94a3b8; margin: 6px 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="learning-wrap">
+  <h1>📚 학습 데이터</h1>
+
+  {% if msg %}
+  <div class="msg {{ 'ok' if msg_ok else 'err' }}">{{ msg }}</div>
+  {% endif %}
+
+  <!-- ── 등록 폼 ── -->
+  <div class="form-card">
+    <h2>새 학습 데이터 등록</h2>
+    <form method="post" enctype="multipart/form-data">
+      <input type="hidden" name="action" value="add">
+
+      <div class="form-row">
+        <div>
+          <label>데이터 종류 *</label>
+          <select name="data_type" required>
+            <option value="">— 선택 —</option>
+            <option value="과거RFP">과거 RFP</option>
+            <option value="과거제안서">과거 제안서</option>
+            <option value="PT원고">PT 원고</option>
+            <option value="심사QA">심사위원 질의응답</option>
+            <option value="평가점수">평가 점수/피드백</option>
+            <option value="기타">기타</option>
+          </select>
+        </div>
+        <div>
+          <label>낙찰 여부</label>
+          <select name="bid_result">
+            <option value="미정">미정</option>
+            <option value="낙찰">낙찰</option>
+            <option value="탈락">탈락</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-row">
+        <div>
+          <label>발주처명</label>
+          <input type="text" name="client_name" placeholder="예: 행정안전부">
+        </div>
+        <div>
+          <label>사업명</label>
+          <input type="text" name="project_name" placeholder="예: 2024 안전문화 홍보영상">
+        </div>
+      </div>
+
+      <div class="form-row triple">
+        <div>
+          <label>평가 점수 (0~100)</label>
+          <input type="number" name="eval_score" min="0" max="100" step="0.1" placeholder="0">
+        </div>
+        <div style="grid-column: span 2;">
+          <label>메모</label>
+          <input type="text" name="notes" placeholder="특이사항, 심사위원 코멘트 등">
+        </div>
+      </div>
+
+      <div class="form-row single">
+        <div>
+          <label>파일 업로드 (.txt / .hwp / .pdf 등)</label>
+          <input type="file" name="file" accept=".txt,.md,.pdf,.hwp,.hwpx,.docx">
+        </div>
+      </div>
+
+      <div class="file-or">또는 텍스트 직접 입력</div>
+
+      <div class="form-row single">
+        <div>
+          <label>내용 직접 입력</label>
+          <textarea name="content" placeholder="RFP 내용, 제안서 핵심 내용, PT 원고, 질의응답 내용 등을 붙여넣기..."></textarea>
+        </div>
+      </div>
+
+      <button type="submit" class="btn-submit">등록</button>
+    </form>
+  </div>
+
+  <!-- ── 필터 탭 ── -->
+  <div class="filter-tabs">
+    <a href="/learning" class="{{ 'active' if not filter_type }}">전체</a>
+    <a href="/learning?type=과거RFP"    class="{{ 'active' if filter_type=='과거RFP' }}">과거 RFP</a>
+    <a href="/learning?type=과거제안서"  class="{{ 'active' if filter_type=='과거제안서' }}">과거 제안서</a>
+    <a href="/learning?type=PT원고"     class="{{ 'active' if filter_type=='PT원고' }}">PT 원고</a>
+    <a href="/learning?type=심사QA"     class="{{ 'active' if filter_type=='심사QA' }}">심사 QA</a>
+    <a href="/learning?type=평가점수"   class="{{ 'active' if filter_type=='평가점수' }}">평가 점수</a>
+    <a href="/learning?type=기타"       class="{{ 'active' if filter_type=='기타' }}">기타</a>
+  </div>
+
+  <!-- ── 목록 ── -->
+  {% if cases %}
+  <table class="list-table">
+    <thead>
+      <tr>
+        <th style="width:100px">종류</th>
+        <th>발주처 / 사업명</th>
+        <th style="width:80px">낙찰</th>
+        <th style="width:60px">점수</th>
+        <th>내용 미리보기</th>
+        <th>등록일</th>
+        <th style="width:60px"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in cases %}
+      <tr>
+        <td><span class="badge badge-type">{{ c.data_type }}</span></td>
+        <td>
+          <div style="font-weight:600;font-size:13px;">{{ c.client_name or '—' }}</div>
+          <div style="color:#6b7280;font-size:12px;">{{ c.project_name or '' }}</div>
+        </td>
+        <td>
+          {% if c.bid_result == '낙찰' %}
+            <span class="badge badge-win">낙찰</span>
+          {% elif c.bid_result == '탈락' %}
+            <span class="badge badge-lose">탈락</span>
+          {% else %}
+            <span class="badge badge-none">미정</span>
+          {% endif %}
+        </td>
+        <td style="text-align:center;">
+          {% if c.eval_score %}{{ "%.1f"|format(c.eval_score) }}{% else %}—{% endif %}
+        </td>
+        <td>
+          {% if c.file_name %}
+            <div style="font-size:12px;color:#2563eb;">📎 {{ c.file_name }}</div>
+          {% endif %}
+          <div class="content-preview">{{ (c.content or '')[:120] }}</div>
+          {% if c.notes %}
+          <div style="font-size:11px;color:#94a3b8;margin-top:2px;">💬 {{ c.notes }}</div>
+          {% endif %}
+        </td>
+        <td style="font-size:12px;color:#94a3b8;white-space:nowrap;">
+          {{ c.created_at[:10] if c.created_at else '' }}
+        </td>
+        <td>
+          <form method="post" onsubmit="return confirm('삭제하시겠습니까?')">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="id" value="{{ c.id }}">
+            <button type="submit" class="btn-del">삭제</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-state">
+    <div style="font-size:32px;margin-bottom:8px;">📂</div>
+    <div>등록된 학습 데이터가 없습니다.</div>
+    <div style="font-size:12px;margin-top:4px;">위 폼에서 RFP, 제안서, PT 원고 등을 등록해보세요.</div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

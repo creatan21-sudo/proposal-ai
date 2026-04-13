@@ -1,0 +1,398 @@
+{% extends "base.html" %}
+{% block title %}새 제안서 — ProposalAI{% endblock %}
+
+{% block content %}
+<div class="page-title">새 제안서 생성</div>
+<p class="page-sub">RFP 파일을 업로드하고 기본 정보를 입력하면 AI가 제안서를 자동 생성합니다.</p>
+
+{% if reuse_notice %}
+<div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:8px;padding:14px 18px;margin-bottom:16px;display:flex;gap:12px;align-items:flex-start;">
+  <span style="font-size:20px;">🔄</span>
+  <div>
+    <div style="font-weight:700;color:#92400e;margin-bottom:4px;">재활용 모드</div>
+    <div style="font-size:13px;color:#78350f;">{{ reuse_notice }}</div>
+    {% if reuse_from %}
+    <div style="font-size:12px;color:#b45309;margin-top:4px;">참고 제안서: {{ reuse_from }}</div>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+<div class="index-layout">
+  <!-- 입력 폼 -->
+  <div class="card">
+    <form method="POST" action="/start" enctype="multipart/form-data">
+      <input type="hidden" name="reference_case_id" value="{{ reference_case_id or 0 }}">
+
+      <div class="form-grid">
+        <!-- 발주처 -->
+        <div class="form-group">
+          <label>발주처 <span style="color:red">*</span></label>
+          <input type="text" name="client" placeholder="예: 기상청"
+                 value="{{ prefill.client_name if prefill else '' }}" required>
+        </div>
+
+        <!-- 사업명 -->
+        <div class="form-group">
+          <label>사업명 <span style="color:red">*</span></label>
+          <input type="text" name="project" placeholder="예: 2026년 온·오프라인 통합홍보"
+                 value="{{ prefill.project_name if prefill else '' }}" required>
+        </div>
+
+        <!-- 영상 종류 -->
+        <div class="form-group">
+          <label>영상 종류</label>
+          <select name="video_type">
+            {% for vt in video_types %}
+            <option value="{{ vt }}"
+              {% if prefill and prefill.video_type == vt %}selected{% endif %}>{{ vt }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <!-- 수량 -->
+        <div class="form-group">
+          <label>납품 수량 (편)</label>
+          <input type="number" name="quantity" min="1" value="{{ prefill.quantity if prefill else 3 }}">
+        </div>
+
+        <!-- 러닝타임 -->
+        <div class="form-group">
+          <label>편당 러닝타임</label>
+          <input type="text" name="duration" placeholder="예: 3분" value="3분">
+        </div>
+
+        <!-- 목표 페이지 -->
+        <div class="form-group">
+          <label>목표 제안서 페이지</label>
+          <input type="number" name="pages" min="10" max="100" value="30">
+        </div>
+
+        <!-- 예산 -->
+        <div class="form-group">
+          <label>예산 <span class="optional-label">(선택)</span></label>
+          <input type="text" name="budget" placeholder="예: 3억 2천만 원"
+                 value="{{ prefill.budget if prefill else '' }}">
+        </div>
+
+        <!-- 납품기한 -->
+        <div class="form-group">
+          <label>납품기한 <span class="optional-label">(선택)</span></label>
+          <input type="text" name="deadline" placeholder="예: 2026년 12월 15일">
+        </div>
+
+        <!-- 타겟 -->
+        <div class="form-group">
+          <label>타겟 시청자 <span class="optional-label">(선택)</span></label>
+          <input type="text" name="target" placeholder="예: 30~50대 직장인">
+        </div>
+
+        <!-- 핵심 메시지 -->
+        <div class="form-group">
+          <label>핵심 전달 메시지 <span class="optional-label">(선택)</span></label>
+          <input type="text" name="key_message" placeholder="예: 기상청은 당신의 안전을 지킵니다">
+        </div>
+
+        <!-- RFP 파일 -->
+        <div class="form-group full">
+          <label>RFP 파일 <span class="optional-label">(HWP·HWPX·PDF·TXT)</span></label>
+          <div class="file-input-wrap" id="drop-zone">
+            <input type="file" id="rfp-file" name="rfp_file"
+                   accept=".hwp,.hwpx,.pdf,.txt">
+            <div class="file-drop-inner" id="file-drop-inner">
+              <div class="file-drop-icon">📄</div>
+              <span class="file-label">파일을 여기에 드래그하거나 <u>클릭하여 선택</u></span>
+              <span class="file-sub">HWP · HWPX · PDF · TXT</span>
+            </div>
+            <div class="file-selected" id="file-selected" style="display:none">
+              <span class="file-icon">✓</span>
+              <span id="file-name-display"></span>
+              <button type="button" class="file-clear" onclick="clearFile(event)">✕</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 컨셉 직접 입력 -->
+        <div class="form-group full">
+          <label>컨셉 직접 입력 <span class="optional-label">(선택 — 입력 시 STEP 3 컨셉 개발 스킵)</span></label>
+          <textarea name="concept" rows="2"
+                    placeholder="예: '날씨가 삶을 바꾼다' — 기상정보→일상행동 전환 캠페인"></textarea>
+        </div>
+
+        <!-- 사전 지시사항 -->
+        <div class="form-group full">
+          <label>제안 방향 및 특별 요청 <span class="optional-label">(선택)</span></label>
+          <textarea name="user_direction" rows="3"
+                    placeholder="예) 친환경 테마로 전개, 20대 타겟 중심, 기존 시즌1과 차별화 강조 등"></textarea>
+        </div>
+
+        <!-- 참고 제안서 -->
+        <div class="form-group full">
+          <label>참고 제안서 <span class="optional-label">(선택) — 구조/흐름 참고용</span></label>
+          <div class="file-input-wrap" id="ref-drop-zone">
+            <input type="file" id="ref-proposal-file" name="ref_proposal_file"
+                   accept=".hwp,.hwpx,.pdf,.txt,.docx,.pptx">
+            <div class="file-drop-inner" id="ref-file-drop-inner">
+              <div class="file-drop-icon">📑</div>
+              <span class="file-label">파일을 여기에 드래그하거나 <u>클릭하여 선택</u></span>
+              <span class="file-sub">PDF · PPTX · DOCX · HWP · HWPX · TXT</span>
+              <span class="file-sub" style="color:#666">과거 낙찰 제안서를 올리면 유사한 구조로 생성됩니다</span>
+            </div>
+            <div class="file-selected" id="ref-file-selected" style="display:none">
+              <span class="file-icon">✓</span>
+              <span id="ref-file-name-display"></span>
+              <button type="button" class="file-clear" onclick="clearRefFile(event)">✕</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:24px; text-align:right;">
+        <button type="submit" class="btn btn-primary btn-lg">
+          제안서 생성 시작 →
+        </button>
+      </div>
+    </form>
+  </div>
+
+  <!-- 팁 -->
+  <div>
+    <div class="card tips-card">
+      <h3>이용 가이드</h3>
+      <ul>
+        <li>RFP 파일을 업로드하면 STEP 0에서 평가항목·예산·기한을 자동 추출합니다.</li>
+        <li>각 STEP 완료 후 결과를 확인하고 수정 지시를 입력하면 해당 STEP을 재실행합니다.</li>
+        <li>STEP 3 컨셉 개발에서 슬로건 후보 중 번호를 선택하거나 직접 방향을 입력할 수 있습니다.</li>
+        <li>컨셉을 미리 정한 경우 직접 입력란에 기재하면 STEP 3을 건너뜁니다.</li>
+        <li>완료 후 TXT 파일로 다운로드할 수 있습니다.</li>
+      </ul>
+    </div>
+
+    <div class="card tips-card" style="margin-top:16px;">
+      <h3>파이프라인 구조</h3>
+      <ul>
+        <li><strong>STEP 0</strong> RFP 분석</li>
+        <li><strong>STEP 0.5</strong> 전략 내러티브</li>
+        <li><strong>STEP 1</strong> 발주처 리서치</li>
+        <li><strong>STEP 2</strong> 전략 수립</li>
+        <li><strong>STEP 3</strong> 컨셉 개발</li>
+        <li><strong>STEP 4</strong> 실행 기획</li>
+        <li><strong>STEP 5</strong> 대본 제작</li>
+        <li><strong>STEP 6</strong> 마케팅 전략</li>
+        <li><strong>STEP 7</strong> 최종 검수</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  const zone  = document.getElementById('drop-zone');
+  const input = document.getElementById('rfp-file');
+
+  // 클릭 → 파일 선택
+  zone.addEventListener('click', function (e) {
+    if (e.target.closest('.file-clear')) return;  // 삭제 버튼 클릭은 제외
+    input.click();
+  });
+
+  // 파일 선택 (input change) → 자동채우기 트리거
+  input.addEventListener('change', function () {
+    if (input.files && input.files[0]) {
+      showFile(input.files[0]);
+      autoFillFromRfp(input.files[0]);
+    }
+  });
+
+  // 드래그 진입
+  zone.addEventListener('dragenter', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    zone.classList.add('drag-over');
+  });
+
+  // 드래그 위에 머무르는 동안 — 반드시 preventDefault 해야 drop이 발생
+  zone.addEventListener('dragover', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    zone.classList.add('drag-over');
+  });
+
+  // 드래그 벗어남
+  zone.addEventListener('dragleave', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    // relatedTarget이 zone 내부면 무시 (자식 요소 이동 시 깜빡임 방지)
+    if (!zone.contains(e.relatedTarget)) {
+      zone.classList.remove('drag-over');
+    }
+  });
+
+  // 드롭
+  zone.addEventListener('drop', function (e) {
+    e.preventDefault();
+    e.stopPropagation();
+    zone.classList.remove('drag-over');
+
+    const files = e.dataTransfer.files;
+    if (!files || !files[0]) return;
+
+    const file = files[0];
+    const ext  = file.name.split('.').pop().toLowerCase();
+    if (!['hwp', 'hwpx', 'pdf', 'txt'].includes(ext)) {
+      alert('HWP, HWPX, PDF, TXT 파일만 업로드 가능합니다.');
+      return;
+    }
+
+    // DataTransfer로 input에 파일 주입
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    showFile(file);
+    autoFillFromRfp(file);
+  });
+
+  function showFile(file) {
+    document.getElementById('file-drop-inner').style.display = 'none';
+    const sel = document.getElementById('file-selected');
+    sel.style.display = 'flex';
+    document.getElementById('file-name-display').textContent = file.name;
+  }
+})();
+
+function clearFile(e) {
+  e.stopPropagation();
+  document.getElementById('rfp-file').value = '';
+  document.getElementById('file-selected').style.display = 'none';
+  document.getElementById('file-drop-inner').style.display = 'flex';
+  hideAutofillBadge();
+}
+
+// ── RFP 자동채우기 ──────────────────────────────────────────
+let _autofillXhr = null;
+
+function autoFillFromRfp(file) {
+  if (_autofillXhr) _autofillXhr.abort();
+  showAutofillBadge('분석 중...');
+
+  const fd = new FormData();
+  fd.append('rfp_file', file);
+
+  _autofillXhr = new XMLHttpRequest();
+  _autofillXhr.open('POST', '/rfp_analyze');
+  _autofillXhr.onload = function () {
+    try {
+      const data = JSON.parse(_autofillXhr.responseText);
+      if (data.ok && data.fields) {
+        const filled = applyAutofill(data.fields);
+        if (filled > 0) {
+          showAutofillBadge('자동채우기 완료 ✓ (' + filled + '개 필드)', true);
+        } else {
+          showAutofillBadge('분석 완료 — 추출된 항목 없음 (직접 입력하세요)');
+        }
+      } else {
+        const errMsg = data.error || '알 수 없는 오류';
+        showAutofillBadge('분석 실패: ' + errMsg);
+        console.error('[rfp_analyze] 서버 오류:', errMsg);
+      }
+    } catch(e) {
+      showAutofillBadge('분석 실패 — 응답 파싱 오류: ' + e.message);
+      console.error('[rfp_analyze] 파싱 오류:', e, _autofillXhr.responseText);
+    }
+  };
+  _autofillXhr.onerror = function () {
+    showAutofillBadge('네트워크 오류 — 서버 연결 실패');
+  };
+  _autofillXhr.send(fd);
+}
+
+function applyAutofill(fields) {
+  const VIDEO_TYPES = ['홍보영상','다큐멘터리','교육영상','캠페인영상','뉴스형영상'];
+  const map = {
+    client_name:  'input[name="client"]',
+    project_name: 'input[name="project"]',
+    budget:       'input[name="budget"]',
+    deadline:     'input[name="deadline"]',
+    duration:     'input[name="duration"]',
+  };
+  let filled = 0;
+  for (const [field, selector] of Object.entries(map)) {
+    if (fields[field]) {
+      const el = document.querySelector(selector);
+      if (el && !el.value) { el.value = fields[field]; filled++; }
+    }
+  }
+  if (fields.quantity > 0) {
+    const el = document.querySelector('input[name="quantity"]');
+    if (el && (el.value === '3' || el.value === '1')) { el.value = fields.quantity; filled++; }
+  }
+  if (fields.video_type && VIDEO_TYPES.includes(fields.video_type)) {
+    const sel = document.querySelector('select[name="video_type"]');
+    if (sel) { sel.value = fields.video_type; filled++; }
+  }
+  return filled;
+}
+
+function showAutofillBadge(msg, success) {
+  let badge = document.getElementById('autofill-badge');
+  if (!badge) {
+    badge = document.createElement('div');
+    badge.id = 'autofill-badge';
+    badge.style.cssText = 'margin-top:6px;font-size:12px;padding:4px 10px;border-radius:4px;display:inline-block;';
+    document.getElementById('drop-zone').insertAdjacentElement('afterend', badge);
+  }
+  badge.style.background = success ? '#d1fae5' : '#fff7ed';
+  badge.style.color       = success ? '#065f46' : '#92400e';
+  badge.textContent = '🔍 RFP 분석: ' + msg;
+}
+
+function hideAutofillBadge() {
+  const badge = document.getElementById('autofill-badge');
+  if (badge) badge.remove();
+}
+
+// 참고 제안서 파일 업로드
+(function () {
+  const zone  = document.getElementById('ref-drop-zone');
+  const input = document.getElementById('ref-proposal-file');
+  zone.addEventListener('click', function (e) {
+    if (e.target.closest('.file-clear')) return;
+    input.click();
+  });
+  input.addEventListener('change', function () {
+    if (input.files && input.files[0]) showRefFile(input.files[0]);
+  });
+  zone.addEventListener('dragover', function (e) { e.preventDefault(); zone.classList.add('drag-over'); });
+  zone.addEventListener('dragleave', function (e) {
+    if (!zone.contains(e.relatedTarget)) zone.classList.remove('drag-over');
+  });
+  zone.addEventListener('drop', function (e) {
+    e.preventDefault();
+    zone.classList.remove('drag-over');
+    const files = e.dataTransfer.files;
+    if (!files || !files[0]) return;
+    const ext = files[0].name.split('.').pop().toLowerCase();
+    if (!['hwp','hwpx','pdf','txt','docx','pptx'].includes(ext)) {
+      alert('지원 형식: PDF, PPTX, DOCX, HWP, HWPX, TXT');
+      return;
+    }
+    const dt = new DataTransfer();
+    dt.items.add(files[0]);
+    input.files = dt.files;
+    showRefFile(files[0]);
+  });
+  function showRefFile(file) {
+    document.getElementById('ref-file-drop-inner').style.display = 'none';
+    document.getElementById('ref-file-selected').style.display = 'flex';
+    document.getElementById('ref-file-name-display').textContent = file.name;
+  }
+})();
+
+function clearRefFile(e) {
+  e.stopPropagation();
+  document.getElementById('ref-proposal-file').value = '';
+  document.getElementById('ref-file-selected').style.display = 'none';
+  document.getElementById('ref-file-drop-inner').style.display = 'flex';
+}
+</script>
+{% endblock %}

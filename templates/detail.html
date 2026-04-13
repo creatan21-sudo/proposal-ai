@@ -1,0 +1,788 @@
+{% extends "base.html" %}
+{% block title %}{{ detail.case.client_name }} / {{ detail.case.project_name }} — 제안서 상세{% endblock %}
+
+{% block content %}
+
+{# ────────────────────────────────────────────────
+   키 → 한글 레이블 맵
+   ──────────────────────────────────────────────── #}
+{% set KL = {
+  'agency_type':             '기관 유형',
+  'agency_tone_hint':        '커뮤니케이션 힌트',
+  'evaluation_items':        '평가항목',
+  'top_keywords':            '핵심 키워드',
+  'core_tasks':              '핵심 과업',
+  'forbidden_notes':         '금지 사항',
+  'item':                    '항목',
+  'score':                   '배점',
+  'score_int':               '배점(숫자)',
+  'core_problem':            '핵심 문제',
+  'crisis_statement':        '위기 선언',
+  'current_situation':       '현황 분석',
+  'solution_direction':      '해결 방향',
+  'expected_effects':        '기대 효과',
+  'persuasion_structure':    '설득 구조',
+  'high_priority_eval':      '고득점 평가항목',
+  'keyword_map':             '키워드 맵',
+  'stage':                   '단계',
+  'headline':                '헤드라인',
+  'body':                    '내용',
+  'concept':                 '컨셉',
+  'concept_description':     '컨셉 설명',
+  'confirmed_slogan':        '확정 슬로건',
+  'tone_description':        '톤앤매너',
+  'visual_direction':        '비주얼 방향',
+  'slogans':                 '슬로건 후보',
+  'tone_keywords':           '톤 키워드',
+  'forbidden':               '금지 표현',
+  'type':                    '유형',
+  'text':                    '슬로건',
+  'rationale':               '선택 근거',
+  'episodes':                '에피소드 기획',
+  'episode_number':          '편수',
+  'title':                   '제목',
+  'core_message':            '핵심 메시지',
+  'target_audience':         '타겟',
+  'key_scene':               '핵심 장면',
+  'differentiation':         '차별화 포인트',
+  'production_schedule':     '제작 일정',
+  'team_composition':        '팀 구성',
+  'budget_plan':             '예산 계획',
+  'series_plan':             '시리즈 기획',
+  'reporting_system':        '보고 체계',
+  'platforms':               '운용 플랫폼',
+  'youtube_strategy':        '유튜브 전략',
+  'shortform_strategy':      '숏폼 전략',
+  'sns_strategy':            'SNS 전략',
+  'influencer_strategy':     '인플루언서 전략',
+  'kpi':                     'KPI',
+  'marketing_budget':        '마케팅 예산',
+  'primary_kpi':             '핵심 KPI',
+  'secondary_kpi':           '보조 KPI',
+  'metric':                  '지표',
+  'definition':              '정의',
+  'target':                  '목표',
+  'consistency_score':       '일관성 점수',
+  'evaluation_coverage':     '평가항목 커버리지',
+  'issues':                  '보완 이슈',
+  'severity':                '심각도',
+  'section':                 '섹션',
+  'description':             '설명',
+  'company_profile':         '회사 소개',
+  'headline':                '헤드라인',
+  'intro_paragraph':         '소개문',
+  'pt_script':               'PT 스크립트',
+  'opening':                 '오프닝',
+  'qa_prep':                 'Q&A 준비',
+  'final_proposal':          '최종 제안서',
+  'sections':                '섹션',
+  'content':                 '내용',
+  'covered':                 '커버된 항목',
+  'missing':                 '누락 항목',
+  'score':                   '점수',
+  'youtube_shorts':          '유튜브 쇼츠',
+  'instagram_reels':         '인스타그램 릴스',
+  'tiktok':                  '틱톡',
+  'instagram':               '인스타그램',
+  'facebook':                '페이스북',
+  'blog':                    '블로그',
+  'tone':                    '톤',
+  'title_formula':           '제목 공식',
+  'hook_pattern':            '훅 패턴',
+  'posting_frequency':       '게시 빈도',
+  'content_mix':             '콘텐츠 믹스',
+  'production_budget':       '제작 예산',
+  'total_ratio':             '총 비율',
+  'recommended_amount':      '권장 금액',
+} %}
+
+{# ────────────────────────────────────────────────
+   재귀 값 렌더 매크로
+   ──────────────────────────────────────────────── #}
+{% macro render_val(v, depth=0) %}
+  {%- if v is none or v == '' -%}
+    {# 빈 값 생략 #}
+  {%- elif v is string -%}
+    <p class="dv-text">{{ v }}</p>
+  {%- elif v is number -%}
+    <p class="dv-text">{{ v }}</p>
+  {%- elif v == true or v == false -%}
+    <p class="dv-text">{{ '예' if v else '아니오' }}</p>
+  {%- elif v is mapping -%}
+    {%- set has_content = namespace(found=false) -%}
+    {%- for k, vv in v.items() -%}
+      {%- if vv is not none and vv != '' and vv != [] and vv != {} -%}
+        {%- set has_content.found = true -%}
+      {%- endif -%}
+    {%- endfor -%}
+    {%- if has_content.found -%}
+    <div class="dv-dict{{ ' dv-dict-nested' if depth > 0 }}">
+      {%- for k, vv in v.items() -%}
+        {%- if vv is not none and vv != '' and vv != [] and vv != {} -%}
+        <div class="dv-row">
+          <div class="dv-key">{{ KL.get(k, k | replace('_', ' ')) }}</div>
+          <div class="dv-val">{{ render_val(vv, depth + 1) }}</div>
+        </div>
+        {%- endif -%}
+      {%- endfor -%}
+    </div>
+    {%- endif -%}
+  {%- elif v is iterable -%}
+    {%- set items = v | list -%}
+    {%- if items -%}
+      {%- if items[0] is string or items[0] is number -%}
+        <ul class="dv-list">
+          {%- for item in items -%}<li>{{ item }}</li>{%- endfor -%}
+        </ul>
+      {%- else -%}
+        <div class="dv-cards">
+          {%- for item in items -%}
+          <div class="dv-card">{{ render_val(item, depth + 1) }}</div>
+          {%- endfor -%}
+        </div>
+      {%- endif -%}
+    {%- endif -%}
+  {%- else -%}
+    <p class="dv-text">{{ v }}</p>
+  {%- endif -%}
+{% endmacro %}
+
+{# ────────────────────────────────────────────────
+   헤더
+   ──────────────────────────────────────────────── #}
+<div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:24px;">
+  <div>
+    <div class="page-title">{{ detail.case.client_name }}</div>
+    <div class="page-sub">
+      {{ detail.case.project_name }}
+      &nbsp;·&nbsp;
+      <span class="badge badge-blue">{{ detail.case.video_type }}</span>
+      {% if detail.case.agency_type %}
+      &nbsp;<span class="badge badge-gray">{{ detail.case.agency_type }}</span>
+      {% endif %}
+      &nbsp;·&nbsp;
+      <span style="color:#9ca3af;font-size:13px;">
+        {{ detail.case.created_at[:16].replace('T',' ') if detail.case.created_at else '-' }}
+      </span>
+    </div>
+    {% if detail.case.budget or detail.case.deadline %}
+    <div style="font-size:13px;color:#6b7280;margin-top:4px;">
+      {% if detail.case.budget %}예산: {{ detail.case.budget }}{% endif %}
+      {% if detail.case.budget and detail.case.deadline %} &nbsp;·&nbsp; {% endif %}
+      {% if detail.case.deadline %}납품기한: {{ detail.case.deadline }}{% endif %}
+    </div>
+    {% endif %}
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <a href="/history/{{ case_id }}/download" class="btn btn-success">TXT 다운로드</a>
+    <button onclick="openPptModal()"
+            style="padding:8px 16px;background:#4f46e5;color:#fff;border:none;border-radius:8px;
+                   font-size:.9rem;font-weight:600;cursor:pointer;">📊 PPT 작성하기</button>
+    <a href="/history/{{ case_id }}/reuse" class="btn btn-secondary">재활용</a>
+    <a href="/history" class="btn btn-secondary">← 이력 목록</a>
+  </div>
+</div>
+
+{# ────────────────────────────────────────────────
+   스텝 정의 + 탭 아이콘
+   ──────────────────────────────────────────────── #}
+{% set step_defs = [
+  ('rfp_analysis',   'STEP 0',   'RFP 분석',     '🔍'),
+  ('research',       'STEP 1',   '리서치',        '📊'),
+  ('narrative',      'STEP 1.5', '내러티브',      '💡'),
+  ('strategy',       'STEP 2',   '전략 수립',     '🎯'),
+  ('creative',       'STEP 3',   '컨셉 개발',     '✨'),
+  ('plan',           'STEP 4',   '실행 기획',     '📋'),
+  ('script',         'STEP 5',   '대본',          '🎬'),
+  ('marketing',      'STEP 6',   '마케팅 전략',   '📣'),
+  ('final_proposal', 'STEP 7',   '최종 제안서',   '✅'),
+] %}
+
+{# 첫 번째 데이터 있는 스텝 계산 #}
+{% set _first = namespace(key='') %}
+{% for step_key, _, _, _ in step_defs %}
+  {% if not _first.key and detail.steps.get(step_key) %}
+    {% set _first.key = step_key %}
+  {% endif %}
+{% endfor %}
+{% if not _first.key %}
+  {% set _first.key = '__all__' %}
+{% endif %}
+
+{# ────────────────────────────────────────────────
+   공통 건너뛸 키
+   ──────────────────────────────────────────────── #}
+{% set SKIP = ['id','created_at','client_name','project_name',
+               'raw_search','dna_snapshot','is_youtube_channel',
+               'agency_type','case_id'] %}
+
+{# ────────────────────────────────────────────────
+   스텝 탭 네비게이션
+   ──────────────────────────────────────────────── #}
+<div class="detail-tabs" id="detail-tabs" role="tablist">
+  {% for step_key, step_num, step_label, step_icon in step_defs %}
+  {% set has_data = detail.steps.get(step_key) %}
+  <button class="detail-tab{{ ' detail-tab-missing' if not has_data }}"
+          id="tab-{{ step_key }}"
+          role="tab"
+          data-step="{{ step_key }}"
+          {% if not has_data %}disabled title="{{ step_label }} 데이터 없음"{% endif %}
+          onclick="switchTab('{{ step_key }}')">
+    <span class="detail-tab-icon">{{ step_icon }}</span>
+    <span class="detail-tab-label">{{ step_label }}</span>
+  </button>
+  {% endfor %}
+  <button class="detail-tab detail-tab-all"
+          id="tab-__all__"
+          role="tab"
+          data-step="__all__"
+          onclick="switchTab('__all__')">
+    <span class="detail-tab-icon">📄</span>
+    <span class="detail-tab-label">전체보기</span>
+  </button>
+</div>
+
+<div class="detail-steps" id="detail-steps">
+{% for step_key, step_num, step_label, step_icon in step_defs %}
+{% set data = detail.steps.get(step_key) %}
+<div class="detail-step-card {{ 'detail-step-done' if data else 'detail-step-missing' }}"
+     id="step-card-{{ step_key }}"
+     role="tabpanel"
+     data-step="{{ step_key }}">
+
+  {# 전체보기 모드에서만 표시되는 헤더 #}
+  <div class="detail-step-header detail-step-header-accordion" onclick="toggleStep('{{ step_key }}')">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span class="detail-step-badge {{ 'done' if data else 'skip' }}">
+        {{ '✓' if data else '–' }}
+      </span>
+      <span class="detail-step-num">{{ step_num }}</span>
+      <span class="detail-step-name">{{ step_label }}</span>
+    </div>
+    <span class="detail-toggle-arrow" id="arrow-{{ step_key }}">▾</span>
+  </div>
+
+  {# 탭 단독 모드 전용 헤더 (아이콘+제목, 토글 없음) #}
+  <div class="detail-step-header detail-step-header-tab">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span class="detail-step-badge {{ 'done' if data else 'skip' }}">
+        {{ '✓' if data else '–' }}
+      </span>
+      <span class="detail-step-num">{{ step_num }}</span>
+      <span class="detail-step-name">{{ step_icon }} {{ step_label }}</span>
+    </div>
+  </div>
+
+  {# 본문 #}
+  <div class="detail-step-body" id="body-{{ step_key }}"
+       style="{{ '' if data else 'display:none' }}">
+    {% if not data %}
+      <p class="detail-empty">이 스텝 결과가 저장되지 않았습니다.</p>
+
+    {# ── STEP 1.5 내러티브 ── #}
+    {% elif step_key == 'narrative' %}
+      <div class="dv-text-lg">{{ data.narrative | default('') }}</div>
+
+    {# ── STEP 5 대본 ── #}
+    {% elif step_key == 'script' %}
+      {% for ep in data %}
+      <div class="detail-script-ep">
+        <div class="detail-script-ep-title">
+          {{ ep.episode_number }}편 — {{ ep.episode_title | default('') }}
+        </div>
+        {% set sc = ep.script %}
+        {% if sc is mapping and sc %}
+          {# 아웃라인 포맷: opening_hook, scenes, closing_cta 순서로 렌더링 #}
+          {% if sc.get('core_message') %}
+          <div class="detail-field">
+            <div class="detail-field-label">핵심 메시지</div>
+            <p class="dv-text">{{ sc.core_message }}</p>
+          </div>
+          {% endif %}
+          {% if sc.get('opening_hook') %}
+          <div class="detail-field">
+            <div class="detail-field-label">오프닝 훅</div>
+            {{ render_val(sc.opening_hook) }}
+          </div>
+          {% endif %}
+          {% if sc.get('scenes') %}
+          <div class="detail-field">
+            <div class="detail-field-label">씬 구성</div>
+            <div class="dv-cards">
+              {% for scene in sc.scenes %}
+              <div class="dv-card">
+                <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;">
+                  S#{{ scene.get('scene_number', loop.index) }}
+                  {% if scene.get('timecode') %} &nbsp;·&nbsp; {{ scene.timecode }}{% endif %}
+                  {% if scene.get('location') %} &nbsp;·&nbsp; {{ scene.location }}{% endif %}
+                </div>
+                {% if scene.get('key_point') %}
+                <p class="dv-text"><strong>핵심:</strong> {{ scene.key_point }}</p>
+                {% endif %}
+                {% if scene.get('visual_concept') %}
+                <p class="dv-text" style="color:#6b7280;"><strong>비주얼:</strong> {{ scene.visual_concept }}</p>
+                {% endif %}
+                {% if scene.get('narration_key') %}
+                <p class="dv-text" style="color:#4f46e5;"><strong>나레이션:</strong> {{ scene.narration_key }}</p>
+                {% endif %}
+              </div>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+          {% if sc.get('interview_questions') %}
+          <div class="detail-field">
+            <div class="detail-field-label">인터뷰 질문</div>
+            {{ render_val(sc.interview_questions) }}
+          </div>
+          {% endif %}
+          {% if sc.get('closing_cta') %}
+          <div class="detail-field">
+            <div class="detail-field-label">클로징 CTA</div>
+            {{ render_val(sc.closing_cta) }}
+          </div>
+          {% endif %}
+          {% if sc.get('series_hook') %}
+          <div class="detail-field">
+            <div class="detail-field-label">시리즈 연결고리</div>
+            {{ render_val(sc.series_hook) }}
+          </div>
+          {% endif %}
+        {% elif sc is string and sc %}
+          <p class="dv-text">{{ sc }}</p>
+        {% else %}
+          <p class="detail-empty">대본 내용이 없습니다.</p>
+        {% endif %}
+      </div>
+      {% endfor %}
+
+    {# ── STEP 1 리서치 ── #}
+    {% elif step_key == 'research' %}
+      {% set research_sections = [
+        ('agency_characteristics',    '기관 특성'),
+        ('agency_policy',             '기관 정책'),
+        ('leadership_message',        '기관장 메시지'),
+        ('existing_content',          '기존 콘텐츠 현황'),
+        ('best_cases',                '우수사례'),
+        ('content_trends',            '콘텐츠 트렌드'),
+        ('competitor_patterns',       '경쟁사 패턴'),
+        ('target_media_habits',       '타겟 미디어 소비행태'),
+        ('target_content_preference', '타겟 반응 콘텐츠'),
+        ('platform_patterns',         '플랫폼 패턴'),
+        ('policy_changes',            '정책·법령 변화'),
+        ('algorithm_trends',          '알고리즘 동향'),
+        ('market_pricing',            '시장 단가'),
+        ('target_audience',           '타겟 오디언스'),
+        ('preferred_message_style',   '선호 메시지 스타일'),
+        ('real_needs',                '진짜 니즈'),
+        ('recent_issues',             '최근 이슈'),
+        ('similar_cases',             '유사 사례'),
+      ] %}
+      {% set shown_keys = [] %}
+      {% for fk, fl in research_sections %}
+        {% set val = data.get(fk) %}
+        {% if val and val != [] and val != {} and fk not in shown_keys %}
+          {% if shown_keys.append(fk) %}{% endif %}
+          <div class="detail-field">
+            <div class="detail-field-label">{{ fl }}</div>
+            {{ render_val(val) }}
+          </div>
+        {% endif %}
+      {% endfor %}
+      {# 위 목록에 없는 나머지 필드 범용 렌더링 #}
+      {% set skip_research = ['id','created_at','client_name','project_name',
+                              'agency_type','raw_search','raw_searches','raw_search_json',
+                              'recent_issues_json','similar_cases_json'] + shown_keys %}
+      {% for k, v in data.items() %}
+        {% if k not in skip_research and v and v != [] and v != {} %}
+        <div class="detail-field">
+          <div class="detail-field-label">{{ KL.get(k, k | replace('_', ' ')) }}</div>
+          {{ render_val(v) }}
+        </div>
+        {% endif %}
+      {% endfor %}
+
+    {# ── 나머지 스텝: 범용 렌더링 ── #}
+    {% else %}
+      {% for k, v in data.items() %}
+        {% if k not in SKIP and v is not none and v != '' and v != [] and v != {} %}
+        <div class="detail-field">
+          <div class="detail-field-label">{{ KL.get(k, k | replace('_', ' ')) }}</div>
+          {{ render_val(v) }}
+        </div>
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+  </div>
+</div>
+{% endfor %}
+</div>
+
+{# ────────────────────────────────────────────────
+   스타일
+   ──────────────────────────────────────────────── #}
+<style>
+/* ── 탭 네비게이션 ── */
+.detail-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding: 4px 0 12px;
+  border-bottom: 2px solid var(--border);
+  margin-bottom: 16px;
+}
+.detail-tab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 12px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--muted);
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+.detail-tab:hover:not(:disabled) { background: #f5f3ff; border-color: var(--accent); color: var(--accent); }
+.detail-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+.detail-tab:disabled, .detail-tab-missing {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.detail-tab-icon { font-size: 18px; line-height: 1; }
+.detail-tab-label { font-size: 11px; font-weight: 600; }
+.detail-tab-all { border-style: dashed; }
+.detail-tab-all.active { border-style: solid; }
+
+/* ── 스텝 카드 ── */
+.detail-steps { display: flex; flex-direction: column; gap: 12px; }
+
+.detail-step-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #fff;
+  overflow: hidden;
+}
+.detail-step-done  { border-left: 4px solid var(--accent); }
+.detail-step-missing { border-left: 4px solid var(--border); opacity: 0.7; }
+
+/* 전체보기용 아코디언 헤더 */
+.detail-step-header-accordion {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; cursor: pointer; user-select: none;
+  background: #fafaf9;
+  transition: background 0.15s;
+}
+.detail-step-header-accordion:hover { background: #f5f3ff; }
+
+/* 탭 단독 모드용 헤더 (토글 없음) */
+.detail-step-header-tab {
+  display: none;
+  padding: 14px 18px;
+  background: #fafaf9;
+  border-bottom: 1px solid var(--border);
+}
+
+/* 전체보기 모드: 아코디언 헤더 표시, 탭 헤더 숨김 */
+.detail-steps.mode-all .detail-step-header-accordion { display: flex; }
+.detail-steps.mode-all .detail-step-header-tab { display: none; }
+
+/* 단독 탭 모드: 탭 헤더 표시, 아코디언 헤더 숨김 */
+.detail-steps.mode-single .detail-step-header-accordion { display: none; }
+.detail-steps.mode-single .detail-step-header-tab { display: flex; }
+
+.detail-step-badge {
+  width: 22px; height: 22px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 12px; font-weight: 700; flex-shrink: 0;
+}
+.detail-step-badge.done { background: var(--accent); color: #fff; }
+.detail-step-badge.skip { background: var(--border); color: var(--muted); }
+
+.detail-step-num  { font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: 0.05em; }
+.detail-step-name { font-size: 15px; font-weight: 600; color: var(--text); }
+.detail-toggle-arrow { font-size: 16px; color: var(--muted); transition: transform 0.2s; }
+
+.detail-step-body { padding: 20px 22px; border-top: 1px solid var(--bg); }
+.detail-empty { color: var(--muted); font-size: 14px; font-style: italic; }
+
+/* ── 필드 블록 ── */
+.detail-field { margin-bottom: 24px; }
+.detail-field:last-child { margin-bottom: 0; }
+.detail-field-label {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--accent);
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #ede9fe;
+}
+
+/* ── 내러티브 ── */
+.dv-text-lg {
+  font-size: 15px; line-height: 1.9; color: var(--text);
+  white-space: pre-wrap;
+}
+
+/* ── 대본 ── */
+.detail-script-ep {
+  margin-bottom: 28px;
+  padding-bottom: 28px;
+  border-bottom: 1px dashed var(--border);
+}
+.detail-script-ep:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
+.detail-script-ep-title {
+  font-size: 15px; font-weight: 700;
+  color: var(--text); margin-bottom: 14px;
+}
+
+/* ── 범용 값 렌더러 ── */
+.dv-text {
+  font-size: 14px; line-height: 1.8; color: var(--text);
+  white-space: pre-wrap; margin: 0 0 4px;
+}
+
+.dv-list {
+  margin: 4px 0 4px 20px; padding: 0;
+  font-size: 14px; line-height: 1.8; color: var(--text);
+}
+.dv-list li { margin-bottom: 4px; }
+
+/* dict 컨테이너 */
+.dv-dict {
+  display: flex; flex-direction: column; gap: 0;
+}
+.dv-dict-nested {
+  background: #fafaf9;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 12px 14px;
+  margin: 4px 0;
+}
+
+.dv-row {
+  display: grid; grid-template-columns: 160px 1fr;
+  gap: 8px 16px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--bg);
+  align-items: start;
+}
+.dv-row:last-child { border-bottom: none; }
+
+.dv-key {
+  font-size: 12px; font-weight: 600; color: var(--muted);
+  padding-top: 3px; flex-shrink: 0;
+}
+.dv-val { font-size: 14px; }
+
+/* 카드 (list-of-dict) */
+.dv-cards { display: flex; flex-direction: column; gap: 10px; margin: 4px 0; }
+.dv-card {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 14px 16px;
+  background: #fff;
+}
+.dv-card .dv-dict-nested {
+  background: #f9fafb;
+  border: none;
+  padding: 0;
+  margin: 0;
+}
+.dv-card .dv-row {
+  grid-template-columns: 140px 1fr;
+}
+</style>
+
+<script>
+const _FIRST_STEP = {{ _first.key | tojson }};
+
+// 아코디언 토글 (전체보기 모드에서 사용)
+function toggleStep(key) {
+  const body  = document.getElementById('body-' + key);
+  const arrow = document.getElementById('arrow-' + key);
+  if (!body) return;
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? 'block' : 'none';
+  if (arrow) arrow.style.transform = hidden ? 'rotate(0deg)' : 'rotate(-90deg)';
+}
+
+// 탭 전환
+function switchTab(stepKey) {
+  const stepsEl = document.getElementById('detail-steps');
+
+  // 탭 버튼 active 상태 업데이트
+  document.querySelectorAll('.detail-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.step === stepKey);
+  });
+
+  if (stepKey === '__all__') {
+    // 전체보기: 모든 카드 표시, 아코디언 모드
+    stepsEl.className = 'detail-steps mode-all';
+    document.querySelectorAll('.detail-step-card').forEach(card => {
+      card.style.display = '';
+    });
+    // 데이터 있는 카드는 펼침, 없는 카드는 접힘
+    document.querySelectorAll('.detail-step-card').forEach(card => {
+      const key = card.dataset.step;
+      const body  = document.getElementById('body-' + key);
+      const arrow = document.getElementById('arrow-' + key);
+      const hasDone = card.classList.contains('detail-step-done');
+      if (body)  body.style.display  = hasDone ? 'block' : 'none';
+      if (arrow) arrow.style.transform = hasDone ? 'rotate(0deg)' : 'rotate(-90deg)';
+    });
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  } else {
+    // 단독 탭: 해당 카드만 표시, 탭 모드
+    stepsEl.className = 'detail-steps mode-single';
+    document.querySelectorAll('.detail-step-card').forEach(card => {
+      const isActive = card.dataset.step === stepKey;
+      card.style.display = isActive ? '' : 'none';
+      if (isActive) {
+        const body = document.getElementById('body-' + stepKey);
+        if (body) body.style.display = 'block';
+      }
+    });
+    history.replaceState(null, '', '#' + stepKey);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  const hash = window.location.hash.replace('#', '');
+  // 유효한 스텝 해시인지 확인 (disabled 탭 제외)
+  const tabEl = hash ? document.getElementById('tab-' + hash) : null;
+  const isValidHash = tabEl && !tabEl.disabled;
+  switchTab(isValidHash ? hash : _FIRST_STEP);
+});
+</script>
+
+<!-- ── PPT 생성 모달 ── -->
+<div id="ppt-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);
+     z-index:10000;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:16px;padding:32px 28px;width:420px;
+              max-width:92vw;position:relative;box-shadow:0 20px 60px rgba(0,0,0,0.25);">
+    <button onclick="closePptModal()"
+            style="position:absolute;top:14px;right:16px;background:none;border:none;
+                   font-size:1.3rem;color:#9ca3af;cursor:pointer;line-height:1;">✕</button>
+
+    <div id="ppt-setup">
+      <h3 style="margin:0 0 6px;font-size:1.15rem;font-weight:700;color:#1e1b4b;">📊 PPT 작성</h3>
+      <p style="margin:0 0 22px;font-size:.85rem;color:#6b7280;">
+        제안서 내용을 바탕으로 PT 자료를 생성합니다.
+      </p>
+      <label style="display:block;font-size:.85rem;font-weight:600;color:#374151;margin-bottom:8px;">
+        페이지 수
+      </label>
+      <input type="range" id="ppt-pages" min="10" max="60" value="30"
+             oninput="document.getElementById('ppt-pages-val').textContent=this.value"
+             style="width:100%;accent-color:#4f46e5;">
+      <div style="display:flex;justify-content:space-between;font-size:.8rem;color:#9ca3af;margin-top:4px;">
+        <span>10페이지</span>
+        <strong id="ppt-pages-val" style="color:#4f46e5;font-size:.95rem;">30</strong>페이지
+        <span>60페이지</span>
+      </div>
+      <button onclick="startPptGeneration()"
+              style="margin-top:24px;width:100%;padding:13px;background:#4f46e5;color:#fff;
+                     border:none;border-radius:8px;font-size:1rem;font-weight:700;cursor:pointer;">
+        PPT 생성하기
+      </button>
+    </div>
+
+    <div id="ppt-progress" style="display:none;text-align:center;padding:8px 0;">
+      <div style="font-size:2.2rem;margin-bottom:14px;">⏳</div>
+      <div id="ppt-progress-msg"
+           style="font-size:.95rem;color:#374151;margin-bottom:14px;font-weight:500;">준비 중...</div>
+      <div style="background:#e5e7eb;border-radius:99px;height:8px;overflow:hidden;">
+        <div id="ppt-progress-bar"
+             style="background:#4f46e5;height:100%;width:0%;transition:width .4s ease;"></div>
+      </div>
+      <div id="ppt-progress-pct" style="font-size:.8rem;color:#9ca3af;margin-top:6px;">0%</div>
+    </div>
+
+    <div id="ppt-done" style="display:none;text-align:center;padding:8px 0;">
+      <div style="font-size:2.8rem;margin-bottom:14px;">📊</div>
+      <p style="color:#059669;font-weight:700;font-size:1.1rem;margin-bottom:6px;">PPT 생성 완료!</p>
+      <p style="font-size:.85rem;color:#6b7280;margin-bottom:20px;">파일이 자동으로 다운로드됩니다.</p>
+      <button onclick="closePptModal()"
+              style="padding:10px 28px;background:#6b7280;color:#fff;border:none;
+                     border-radius:8px;font-size:.9rem;cursor:pointer;">닫기</button>
+    </div>
+
+    <div id="ppt-error" style="display:none;text-align:center;padding:8px 0;">
+      <div style="font-size:2.2rem;margin-bottom:14px;">❌</div>
+      <p id="ppt-error-msg" style="color:#dc2626;margin-bottom:20px;font-size:.9rem;"></p>
+      <button onclick="closePptModal()"
+              style="padding:10px 28px;background:#6b7280;color:#fff;border:none;
+                     border-radius:8px;font-size:.9rem;cursor:pointer;">닫기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const _PPT_CASE_ID = {{ case_id }};
+
+function openPptModal() {
+  const m = document.getElementById('ppt-modal');
+  m.style.display = 'flex';
+  ['ppt-progress','ppt-done','ppt-error'].forEach(id =>
+    document.getElementById(id).style.display = 'none');
+  document.getElementById('ppt-setup').style.display = '';
+}
+function closePptModal() {
+  document.getElementById('ppt-modal').style.display = 'none';
+}
+function startPptGeneration() {
+  const pages = parseInt(document.getElementById('ppt-pages').value);
+  document.getElementById('ppt-setup').style.display    = 'none';
+  document.getElementById('ppt-progress').style.display = '';
+  fetch('/ppt/start', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({case_id: _PPT_CASE_ID, pages})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.ok) throw new Error(d.error || '시작 실패');
+    _listenPpt(d.job_id, pages);
+  })
+  .catch(err => _pptShowError(err.message));
+}
+function _listenPpt(jobId, totalPages) {
+  const es = new EventSource(`/ppt/stream/${jobId}`);
+  es.onmessage = function(e) {
+    try {
+      const ev = JSON.parse(e.data);
+      if (ev.type === 'ppt_progress') {
+        const t = ev.total || totalPages;
+        const pct = t > 0 ? Math.round((ev.current / t) * 100) : 0;
+        document.getElementById('ppt-progress-msg').textContent =
+          `${ev.message} (${ev.current} / ${t})`;
+        document.getElementById('ppt-progress-bar').style.width = pct + '%';
+        document.getElementById('ppt-progress-pct').textContent = pct + '%';
+      } else if (ev.type === 'ppt_done') {
+        es.close();
+        document.getElementById('ppt-progress').style.display = 'none';
+        document.getElementById('ppt-done').style.display = '';
+        const a = document.createElement('a');
+        a.href = ev.download_url; a.click();
+      } else if (ev.type === 'ppt_error') {
+        es.close();
+        _pptShowError(ev.message);
+      }
+    } catch(err) { console.error(err); }
+  };
+  es.onerror = function() { es.close(); _pptShowError('연결 오류가 발생했습니다.'); };
+}
+function _pptShowError(msg) {
+  document.getElementById('ppt-progress').style.display = 'none';
+  document.getElementById('ppt-error').style.display    = '';
+  document.getElementById('ppt-error-msg').textContent  = msg;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,548 @@
+# agents/ppt_generator.py
+# PPT 생성: Claude로 슬라이드 구성 → python-pptx로 파일 생성
+# 디자인: 흰 배경 / 검정 텍스트 / 검정 테두리 사각형 / 컬러 없음
+
+import io
+
+from pptx import Presentation
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
+from pptx.util import Inches, Pt, Emu
+
+from core.claude_client import call_json
+
+# ── 모노크롬 색상
+_BLACK = RGBColor(0x00, 0x00, 0x00)
+_WHITE = RGBColor(0xFF, 0xFF, 0xFF)
+_GRAY  = RGBColor(0x77, 0x77, 0x77)
+_LGRAY = RGBColor(0xCC, 0xCC, 0xCC)
+
+# ── 슬라이드 크기 (와이드스크린 16:9)
+W = Inches(13.33)
+H = Inches(7.5)
+M = Inches(0.55)   # 기본 여백
+
+
+# ─────────────────────────────────────────────
+# 저수준 그리기 헬퍼
+# ─────────────────────────────────────────────
+
+def _border_rect(slide, left, top, width, height, fill_rgb=None, border_rgb=_BLACK, border_pt=1.2):
+    """테두리 사각형. fill_rgb=None 이면 흰 배경."""
+    shape = slide.shapes.add_shape(1, left, top, width, height)
+    if fill_rgb:
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = fill_rgb
+    else:
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = _WHITE
+    shape.line.color.rgb = border_rgb
+    shape.line.width = Pt(border_pt)
+    return shape
+
+
+def _no_border_rect(slide, left, top, width, height, fill_rgb=_WHITE):
+    """테두리 없는 사각형 (구분선 등에 사용)."""
+    shape = slide.shapes.add_shape(1, left, top, width, height)
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = fill_rgb
+    shape.line.fill.background()
+    return shape
+
+
+def _txt(slide, left, top, width, height, text,
+         size=16, bold=False, color=_BLACK, align=PP_ALIGN.LEFT, wrap=True):
+    """텍스트박스 추가."""
+    tx = slide.shapes.add_textbox(left, top, width, height)
+    tf = tx.text_frame
+    tf.word_wrap = wrap
+    p = tf.paragraphs[0]
+    p.alignment = align
+    run = p.add_run()
+    run.text = text
+    run.font.size      = Pt(size)
+    run.font.bold      = bold
+    run.font.color.rgb = color
+    return tx
+
+
+def _pagenum(slide, num, total):
+    _txt(slide, W - Inches(1.6), H - Inches(0.43),
+         Inches(1.4), Inches(0.35),
+         f"{num}  /  {total}", size=11, color=_GRAY, align=PP_ALIGN.RIGHT)
+
+
+def _hline(slide, left, top, width, thickness=Inches(0.015), color=_BLACK):
+    """수평 구분선."""
+    _no_border_rect(slide, left, top, width, thickness, fill_rgb=color)
+
+
+# ─────────────────────────────────────────────
+# 슬라이드 유형별 그리기 (7종)
+# ─────────────────────────────────────────────
+
+def _draw_cover(slide, sl, num, total, meta):
+    """1. 표지: 중앙 대형 제목 + 클라이언트 + 날짜"""
+    title   = sl.get("title", "")
+    client  = sl.get("client", meta.get("client_name", ""))
+    date    = sl.get("date", "")
+
+    # 상단 검정 띠 (얇은 강조선)
+    _no_border_rect(slide, 0, 0, W, Inches(0.08), fill_rgb=_BLACK)
+    # 하단 검정 띠
+    _no_border_rect(slide, 0, H - Inches(0.08), W, Inches(0.08), fill_rgb=_BLACK)
+
+    # 클라이언트
+    if client:
+        _txt(slide, M, Inches(2.1), W - M*2, Inches(0.5),
+             client, size=15, color=_GRAY, align=PP_ALIGN.CENTER)
+
+    # 메인 타이틀
+    _txt(slide, M, Inches(2.75), W - M*2, Inches(1.8),
+         title, size=36, bold=True, color=_BLACK, align=PP_ALIGN.CENTER)
+
+    # 중앙 구분선
+    _hline(slide, Inches(4.0), Inches(4.75), Inches(5.33))
+
+    # 날짜
+    if date:
+        _txt(slide, M, Inches(5.0), W - M*2, Inches(0.5),
+             date, size=13, color=_GRAY, align=PP_ALIGN.CENTER)
+
+    _pagenum(slide, num, total)
+
+
+def _draw_toc(slide, sl, num, total):
+    """2. 목차: 번호 붙은 섹션 목록"""
+    title   = sl.get("title", "목차")
+    items   = sl.get("items", [])
+
+    # 제목 영역
+    _txt(slide, M, Inches(0.45), W - M*2, Inches(0.7),
+         title, size=22, bold=True, color=_BLACK)
+    _hline(slide, M, Inches(1.25), W - M*2)
+
+    # 항목 목록
+    row_h  = Inches(0.65)
+    start_y = Inches(1.5)
+    col_w  = (W - M*2) / 2
+    for idx, item in enumerate(items[:10]):
+        row    = idx // 2
+        col    = idx % 2
+        x      = M + col * col_w
+        y      = start_y + row * row_h
+        label  = f"{idx + 1:02d}.  {item}" if isinstance(item, str) else f"{idx + 1:02d}.  {item.get('title', '')}"
+        _txt(slide, x, y, col_w - Inches(0.2), row_h,
+             label, size=15, color=_BLACK)
+
+    _pagenum(slide, num, total)
+
+
+def _draw_content(slide, sl, num, total):
+    """3. 내용: 제목 바 + 3~5 불릿 포인트"""
+    title   = sl.get("title", "")
+    bullets = sl.get("bullets", sl.get("content", []))
+    if isinstance(bullets, str):
+        bullets = [bullets]
+
+    # 제목 바 (검정 배경, 흰 글자)
+    TH = Inches(1.0)
+    _no_border_rect(slide, 0, 0, W, TH, fill_rgb=_BLACK)
+    _txt(slide, M, Inches(0.18), W - M*2, Inches(0.7),
+         title, size=20, bold=True, color=_WHITE)
+
+    # 불릿 목록
+    body_top = TH + Inches(0.25)
+    body_h   = H - body_top - Inches(0.55)
+    if bullets:
+        bullet_txt = "\n".join(f"•   {line}" for line in bullets if line)
+        _txt(slide, M, body_top, W - M*2, body_h,
+             bullet_txt, size=16, color=_BLACK)
+
+    _pagenum(slide, num, total)
+
+
+def _draw_process(slide, sl, num, total):
+    """4. 프로세스: [Step1] → [Step2] → [Step3] → [Step4]"""
+    title  = sl.get("title", "")
+    steps  = sl.get("steps", [])
+
+    # 제목
+    _txt(slide, M, Inches(0.45), W - M*2, Inches(0.6),
+         title, size=20, bold=True, color=_BLACK)
+    _hline(slide, M, Inches(1.15), W - M*2)
+
+    n = len(steps)
+    if n == 0:
+        _pagenum(slide, num, total)
+        return
+
+    # 박스 배치 계산
+    box_area_w = W - M*2
+    arrow_w    = Inches(0.45)
+    box_w      = (box_area_w - arrow_w * (n - 1)) / n
+    box_h      = Inches(1.8)
+    box_y      = Inches(2.85)
+
+    for idx, step in enumerate(steps):
+        label = step if isinstance(step, str) else step.get("label", f"Step {idx+1}")
+        desc  = "" if isinstance(step, str) else step.get("desc", "")
+        bx    = M + idx * (box_w + arrow_w)
+
+        # 박스
+        _border_rect(slide, bx, box_y, box_w, box_h)
+
+        # 스텝 번호
+        _txt(slide, bx, box_y + Inches(0.15), box_w, Inches(0.45),
+             f"STEP {idx+1}", size=11, bold=True, color=_GRAY, align=PP_ALIGN.CENTER)
+
+        # 스텝 라벨
+        _txt(slide, bx + Inches(0.1), box_y + Inches(0.55), box_w - Inches(0.2), Inches(0.65),
+             label, size=14, bold=True, color=_BLACK, align=PP_ALIGN.CENTER)
+
+        # 스텝 설명
+        if desc:
+            _txt(slide, bx + Inches(0.1), box_y + Inches(1.2), box_w - Inches(0.2), Inches(0.55),
+                 desc, size=11, color=_GRAY, align=PP_ALIGN.CENTER)
+
+        # 화살표 (마지막 박스 이후엔 없음)
+        if idx < n - 1:
+            ax = bx + box_w + Inches(0.05)
+            ay = box_y + box_h / 2 - Inches(0.02)
+            # 화살표 선
+            _no_border_rect(slide, ax, ay, arrow_w - Inches(0.12), Inches(0.04), fill_rgb=_BLACK)
+            # 화살표 머리 (▶ 텍스트로 대체)
+            _txt(slide, ax + arrow_w - Inches(0.3), ay - Inches(0.18),
+                 Inches(0.3), Inches(0.4), "▶", size=12, color=_BLACK, align=PP_ALIGN.CENTER)
+
+    _pagenum(slide, num, total)
+
+
+def _draw_compare(slide, sl, num, total):
+    """5. 비교: [좌측 박스: 문제] | [우측 박스: 해결]"""
+    title       = sl.get("title", "")
+    left_title  = sl.get("left_title", "현재 문제")
+    left_items  = sl.get("left_items", [])
+    right_title = sl.get("right_title", "해결 방향")
+    right_items = sl.get("right_items", [])
+
+    # 슬라이드 제목
+    _txt(slide, M, Inches(0.45), W - M*2, Inches(0.6),
+         title, size=20, bold=True, color=_BLACK)
+    _hline(slide, M, Inches(1.15), W - M*2)
+
+    # 박스 크기
+    half_w  = (W - M*2 - Inches(0.3)) / 2
+    box_top = Inches(1.4)
+    box_h   = H - box_top - Inches(0.6)
+    lx      = M
+    rx      = M + half_w + Inches(0.3)
+
+    # 좌측 박스
+    _border_rect(slide, lx, box_top, half_w, box_h)
+    _txt(slide, lx + Inches(0.2), box_top + Inches(0.2), half_w - Inches(0.4), Inches(0.5),
+         left_title, size=15, bold=True, color=_BLACK, align=PP_ALIGN.CENTER)
+    _hline(slide, lx + Inches(0.15), box_top + Inches(0.8), half_w - Inches(0.3), color=_LGRAY)
+    if left_items:
+        body = "\n".join(f"•  {it}" for it in left_items if it)
+        _txt(slide, lx + Inches(0.2), box_top + Inches(0.95), half_w - Inches(0.4), box_h - Inches(1.1),
+             body, size=14, color=_BLACK)
+
+    # 중앙 구분선
+    cx = M + half_w + Inches(0.12)
+    cy = box_top + Inches(0.3)
+    _no_border_rect(slide, cx, cy, Inches(0.06), box_h - Inches(0.6), fill_rgb=_BLACK)
+
+    # 우측 박스
+    _border_rect(slide, rx, box_top, half_w, box_h)
+    _txt(slide, rx + Inches(0.2), box_top + Inches(0.2), half_w - Inches(0.4), Inches(0.5),
+         right_title, size=15, bold=True, color=_BLACK, align=PP_ALIGN.CENTER)
+    _hline(slide, rx + Inches(0.15), box_top + Inches(0.8), half_w - Inches(0.3), color=_LGRAY)
+    if right_items:
+        body = "\n".join(f"•  {it}" for it in right_items if it)
+        _txt(slide, rx + Inches(0.2), box_top + Inches(0.95), half_w - Inches(0.4), box_h - Inches(1.1),
+             body, size=14, color=_BLACK)
+
+    _pagenum(slide, num, total)
+
+
+def _draw_number(slide, sl, num, total):
+    """6. 숫자 강조: 대형 숫자(48pt) 중앙 + 설명(14pt)"""
+    title       = sl.get("title", "")
+    number      = str(sl.get("number", ""))
+    label       = sl.get("label", "")
+    description = sl.get("description", "")
+
+    # 슬라이드 제목
+    _txt(slide, M, Inches(0.45), W - M*2, Inches(0.6),
+         title, size=20, bold=True, color=_BLACK)
+    _hline(slide, M, Inches(1.15), W - M*2)
+
+    # 중앙 대형 숫자
+    _txt(slide, M, Inches(2.0), W - M*2, Inches(1.8),
+         number, size=72, bold=True, color=_BLACK, align=PP_ALIGN.CENTER)
+
+    # 숫자 라벨
+    if label:
+        _txt(slide, M, Inches(3.85), W - M*2, Inches(0.5),
+             label, size=16, bold=True, color=_BLACK, align=PP_ALIGN.CENTER)
+
+    # 설명
+    if description:
+        _hline(slide, Inches(4.0), Inches(4.55), Inches(5.33), color=_LGRAY)
+        _txt(slide, M, Inches(4.8), W - M*2, Inches(0.8),
+             description, size=14, color=_GRAY, align=PP_ALIGN.CENTER)
+
+    _pagenum(slide, num, total)
+
+
+def _draw_message(slide, sl, num, total):
+    """7. 핵심 메시지: 대형 중앙 문장(28pt) + 하단 노트"""
+    title   = sl.get("title", "")
+    message = sl.get("message", "")
+    note    = sl.get("note", "")
+
+    # 슬라이드 제목
+    if title:
+        _txt(slide, M, Inches(0.45), W - M*2, Inches(0.6),
+             title, size=20, bold=True, color=_BLACK)
+        _hline(slide, M, Inches(1.15), W - M*2)
+
+    # 중앙 메시지 박스
+    msg_top = Inches(1.8) if title else Inches(2.1)
+    _border_rect(slide, M, msg_top, W - M*2, Inches(2.2))
+    _txt(slide, M + Inches(0.3), msg_top + Inches(0.35),
+         W - M*2 - Inches(0.6), Inches(1.5),
+         message, size=28, bold=True, color=_BLACK, align=PP_ALIGN.CENTER)
+
+    # 하단 노트
+    if note:
+        note_top = msg_top + Inches(2.45)
+        _txt(slide, M, note_top, W - M*2, Inches(0.6),
+             note, size=13, color=_GRAY, align=PP_ALIGN.CENTER)
+
+    _pagenum(slide, num, total)
+
+
+# ─────────────────────────────────────────────
+# Claude 프롬프트용 케이스 요약
+# ─────────────────────────────────────────────
+
+def _build_case_summary(case_detail: dict) -> str:
+    case  = case_detail.get("case", {})
+    steps = case_detail.get("steps", {})
+    lines = [
+        f"# {case.get('client_name','')} / {case.get('project_name','')}",
+        f"영상 종류: {case.get('video_type','')} | 예산: {case.get('budget','')} | 납품기한: {case.get('deadline','')}",
+        "",
+    ]
+
+    strat = steps.get("strategy", {})
+    if strat:
+        lines.append("## 전략")
+        for k, lbl in [("core_problem","핵심문제"), ("crisis_statement","위기제시"),
+                        ("current_situation","현황진단"), ("solution_direction","해결방향")]:
+            if strat.get(k):
+                lines.append(f"{lbl}: {str(strat[k])[:220]}")
+        effects = strat.get("expected_effects", [])
+        if effects:
+            lines.append("기대효과: " + " / ".join(str(e)[:80] for e in effects[:4]))
+        lines.append("")
+
+    cr = steps.get("creative", {})
+    if cr:
+        lines.append("## 크리에이티브")
+        for k, lbl in [("concept","컨셉"), ("concept_description","설명"),
+                        ("confirmed_slogan","슬로건"), ("tone_description","톤앤매너")]:
+            if cr.get(k):
+                lines.append(f"{lbl}: {str(cr[k])[:220]}")
+        lines.append("")
+
+    plan = steps.get("plan", {})
+    if plan:
+        lines.append("## 제작 계획")
+        for ep in plan.get("episodes", [])[:6]:
+            if isinstance(ep, dict):
+                lines.append(
+                    f"- {ep.get('episode_number','')}편: {ep.get('title','')} "
+                    f"— {str(ep.get('core_message',''))[:100]}"
+                )
+        lines.append("")
+
+    mkt = steps.get("marketing", {})
+    if mkt:
+        lines.append("## 마케팅")
+        pl = mkt.get("platforms", [])
+        if pl:
+            lines.append("채널: " + ", ".join(str(p)[:30] for p in pl[:5]))
+        lines.append("")
+
+    final = steps.get("final_proposal", {})
+    if final:
+        sc = final.get("consistency_score", 0)
+        if sc:
+            lines.append(
+                f"일관성점수: {sc:.0%}" if isinstance(sc, float) else f"일관성점수: {sc}"
+            )
+
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────
+# Claude → 슬라이드 JSON 생성
+# ─────────────────────────────────────────────
+
+def generate_slides(case_detail: dict, pages: int, progress_cb=None) -> dict:
+    if progress_cb:
+        progress_cb("Claude AI로 슬라이드 구성 생성 중...", 0, pages)
+
+    summary  = _build_case_summary(case_detail)
+    case     = case_detail.get("case", {})
+    client   = case.get("client_name", "")
+
+    import datetime
+    today = datetime.date.today().strftime("%Y년 %m월")
+
+    prompt = f"""당신은 정부기관 제안 PT 전문 기획자입니다.
+아래 제안서 내용을 {pages}페이지 PPT로 구성하세요.
+
+[제안서 내용]
+{summary}
+
+반드시 아래 JSON만 출력하세요 (설명 텍스트 없이 순수 JSON만):
+{{
+  "slides": [
+    {{
+      "number": 1,
+      "type": "cover",
+      "title": "제안서 메인 타이틀",
+      "client": "{client}",
+      "date": "{today}"
+    }},
+    {{
+      "number": 2,
+      "type": "toc",
+      "title": "목차",
+      "items": ["전략 방향", "크리에이티브 컨셉", "제작 계획", "마케팅 전략", "기대 효과"]
+    }},
+    {{
+      "number": 3,
+      "type": "content",
+      "title": "슬라이드 제목",
+      "bullets": ["핵심 내용 1", "핵심 내용 2", "핵심 내용 3"]
+    }},
+    {{
+      "number": 4,
+      "type": "process",
+      "title": "프로세스 제목",
+      "steps": [
+        {{"label": "단계명", "desc": "단계 설명"}},
+        {{"label": "단계명", "desc": "단계 설명"}},
+        {{"label": "단계명", "desc": "단계 설명"}}
+      ]
+    }},
+    {{
+      "number": 5,
+      "type": "compare",
+      "title": "비교 제목",
+      "left_title": "현재 문제",
+      "left_items": ["문제 1", "문제 2", "문제 3"],
+      "right_title": "해결 방향",
+      "right_items": ["해결 1", "해결 2", "해결 3"]
+    }},
+    {{
+      "number": 6,
+      "type": "number",
+      "title": "성과 지표",
+      "number": "300%",
+      "label": "ROI 기대치",
+      "description": "3개월 집중 캠페인 기준 예상 수익률"
+    }},
+    {{
+      "number": 7,
+      "type": "message",
+      "title": "핵심 메시지",
+      "message": "슬라이드에서 전달할 핵심 한 문장",
+      "note": "보조 설명 또는 출처"
+    }}
+  ]
+}}
+
+슬라이드 구성 규칙:
+- slides 배열은 정확히 {pages}개
+- 슬라이드 타입 7종: cover / toc / content / process / compare / number / message
+  · cover: 1번 표지 (반드시 1장)
+  · toc: 목차 (보통 2번)
+  · content: 제목 + 불릿 3~5개 (일반 내용 슬라이드)
+  · process: 단계 흐름도 (steps 3~5개, 각 label+desc 필수)
+  · compare: 좌/우 비교 (left_items, right_items 각 3~5개)
+  · number: 핵심 수치 강조 (number, label, description 필수)
+  · message: 핵심 문장 전달 (message 1~2문장, note 선택)
+- content 타입 bullets는 3~5개, 핵심만 간결하게
+- 마지막 슬라이드는 message 타입으로 마무리 메시지
+- 슬라이드 흐름: 표지 → 목차 → 전략 content/compare/number → 크리에이티브 content/message → 제작계획 process/content → 마케팅 content/number → 마무리 message"""
+
+    return call_json(prompt, max_tokens=8192)
+
+
+# ─────────────────────────────────────────────
+# PPTX 파일 생성
+# ─────────────────────────────────────────────
+
+def build_pptx(slide_data: dict, case: dict, progress_cb=None) -> bytes:
+    prs = Presentation()
+    prs.slide_width  = W
+    prs.slide_height = H
+    blank = prs.slide_layouts[6]   # Blank layout
+
+    slides = slide_data.get("slides", [])
+    total  = len(slides)
+    meta   = {
+        "client_name":  case.get("client_name", ""),
+        "project_name": case.get("project_name", ""),
+    }
+
+    for i, sl in enumerate(slides):
+        if progress_cb:
+            progress_cb("PPTX 파일 생성 중...", i + 1, total)
+
+        prs_slide = prs.slides.add_slide(blank)
+        sl_type   = sl.get("type", "content")
+        num       = sl.get("number", i + 1)
+
+        if sl_type == "cover":
+            _draw_cover(prs_slide, sl, num, total, meta)
+        elif sl_type == "toc":
+            _draw_toc(prs_slide, sl, num, total)
+        elif sl_type == "process":
+            _draw_process(prs_slide, sl, num, total)
+        elif sl_type == "compare":
+            _draw_compare(prs_slide, sl, num, total)
+        elif sl_type == "number":
+            _draw_number(prs_slide, sl, num, total)
+        elif sl_type == "message":
+            _draw_message(prs_slide, sl, num, total)
+        else:
+            # content (기본)
+            _draw_content(prs_slide, sl, num, total)
+
+    buf = io.BytesIO()
+    prs.save(buf)
+    return buf.getvalue()
+
+
+# ─────────────────────────────────────────────
+# 메인 진입점
+# ─────────────────────────────────────────────
+
+def run(case_detail: dict, pages: int, progress_cb=None) -> bytes:
+    """PPTX bytes 반환."""
+    slide_data = generate_slides(case_detail, pages, progress_cb)
+    case       = case_detail.get("case", {})
+    pptx_bytes = build_pptx(slide_data, case, progress_cb)
+
+    if progress_cb:
+        slides = slide_data.get("slides", [])
+        progress_cb("완료!", len(slides), len(slides))
+
+    return pptx_bytes

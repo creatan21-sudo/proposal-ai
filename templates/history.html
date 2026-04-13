@@ -1,0 +1,167 @@
+{% extends "base.html" %}
+{% block title %}MY DB — ProposalAI{% endblock %}
+
+{% block content %}
+<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px;">
+  <div>
+    <div class="page-title">MY DB</div>
+    <p class="page-sub" style="margin:0;">
+      {% if view_all %}팀 전체 제안서{% else %}내 제안서{% endif %}
+      {% if show_hidden %} &middot; 숨긴 항목 표시 중{% endif %}
+    </p>
+  </div>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+    {% if is_admin %}
+    <a href="/history?all=0{{ ('&q='+q) if q else '' }}{{ '&show_hidden=1' if show_hidden else '' }}"
+       class="btn btn-sm {{ 'btn-primary' if not view_all else 'btn-secondary' }}">내 제안서</a>
+    <a href="/history?all=1{{ ('&q='+q) if q else '' }}{{ '&show_hidden=1' if show_hidden else '' }}"
+       class="btn btn-sm {{ 'btn-primary' if view_all else 'btn-secondary' }}">팀 전체</a>
+    {% endif %}
+    <a href="/history?{{ 'all=1&' if view_all else '' }}{{ ('q='+q+'&') if q else '' }}{% if show_hidden %}show_hidden=0{% else %}show_hidden=1{% endif %}"
+       class="btn btn-sm btn-secondary"
+       title="{{ '숨긴 항목 숨기기' if show_hidden else '숨긴 항목 보기' }}">
+      {{ '👁 숨긴 항목 숨기기' if show_hidden else '👁 숨긴 항목 보기' }}
+    </a>
+  </div>
+</div>
+
+<!-- 검색 -->
+<div style="display:flex;gap:10px;margin-bottom:16px;margin-top:12px;">
+  <form method="GET" action="/history" style="display:flex;gap:10px;flex:1;">
+    <input type="hidden" name="all" value="{{ '1' if view_all else '0' }}">
+    {% if show_hidden %}<input type="hidden" name="show_hidden" value="1">{% endif %}
+    <input type="text" name="q" placeholder="발주처 또는 사업명 검색"
+           value="{{ q or '' }}" style="flex:1;">
+    <button type="submit" class="btn btn-primary">검색</button>
+    {% if q %}
+    <a href="/history{% if view_all %}?all=1{% endif %}{% if show_hidden %}{{ ('&' if view_all else '?') }}show_hidden=1{% endif %}"
+       class="btn btn-secondary">초기화</a>
+    {% endif %}
+  </form>
+</div>
+
+<div class="card" style="padding:0;overflow:hidden;">
+  {% if cases %}
+  <table id="history-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>생성일시</th>
+        {% if view_all %}<th>작성자</th>{% endif %}
+        <th>발주처</th>
+        <th>사업명</th>
+        <th>영상종류</th>
+        <th>예산</th>
+        <th>기관유형</th>
+        <th>상태</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in cases %}
+      <tr class="history-row{{ ' hidden-row' if c.get('hidden') }}"
+          id="row-{{ c.id }}"
+          onclick="location.href='/history/{{ c.id }}'" style="cursor:pointer;">
+        <td style="color:#9ca3af;font-size:12px;">{{ c.id }}</td>
+        <td style="font-size:13px;color:#6b7280;white-space:nowrap;">
+          {{ c.created_at[:16].replace('T',' ') if c.created_at else '-' }}
+        </td>
+        {% if view_all %}
+        <td style="font-size:13px;">
+          <span class="badge badge-gray">{{ c.username or '알 수 없음' }}</span>
+        </td>
+        {% endif %}
+        <td style="font-weight:600;">{{ c.client_name }}</td>
+        <td>{{ c.project_name }}</td>
+        <td><span class="badge badge-blue">{{ c.video_type }}</span></td>
+        <td style="font-size:13px;color:#6b7280;">
+          {{ c.budget[:20] if c.budget else '-' }}
+        </td>
+        <td>
+          {% if c.agency_type %}
+          <span class="badge badge-gray">{{ c.agency_type }}</span>
+          {% else %}-{% endif %}
+        </td>
+        <td>
+          {% if c.step_count and c.step_count >= 8 %}
+          <span class="badge badge-green">완료</span>
+          {% elif c.step_count and c.step_count > 0 %}
+          <span class="badge badge-amber">{{ c.step_count }}/8</span>
+          {% else %}
+          <span class="badge badge-gray">미시작</span>
+          {% endif %}
+        </td>
+        <td onclick="event.stopPropagation();" style="white-space:nowrap;">
+          <div style="display:flex;gap:4px;align-items:center;flex-wrap:wrap;">
+            <a href="/history/{{ c.id }}" class="btn btn-primary btn-sm">상세</a>
+            {% if c.step_count and c.step_count > 0 and c.step_count < 8 %}
+            <a href="/history/{{ c.id }}/resume" class="btn btn-sm btn-resume"
+               title="STEP {{ c.step_count }}/8 완료 — 이어서 시작">▶ 이어서</a>
+            {% endif %}
+            <a href="/history/{{ c.id }}/reuse" class="btn btn-secondary btn-sm">재활용</a>
+            <button class="btn btn-sm btn-hide"
+                    onclick="toggleHide(event, {{ c.id }}, {{ '1' if c.get('hidden') else '0' }})"
+                    title="{{ '숨김 해제' if c.get('hidden') else '숨기기' }}">
+              {{ '👁 표시' if c.get('hidden') else '🙈 숨기기' }}
+            </button>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div style="padding:48px;text-align:center;color:#9ca3af;">
+    {% if q %}
+    "{{ q }}" 검색 결과가 없습니다.
+    {% elif show_hidden %}
+    숨긴 항목이 없습니다.
+    {% else %}
+    아직 제안서가 없습니다. <a href="/" style="color:var(--accent);">첫 제안서를 만들어보세요.</a>
+    {% endif %}
+  </div>
+  {% endif %}
+</div>
+
+<style>
+.hidden-row { opacity: 0.45; background: #fafafa; }
+.btn-hide {
+  background: #f3f4f6; color: #6b7280;
+  border: 1px solid #e5e7eb; font-size: 11px; padding: 3px 8px;
+}
+.btn-hide:hover { background: #fee2e2; color: #dc2626; border-color: #fca5a5; }
+.btn-resume {
+  background: #f59e0b; color: #fff; border-color: #f59e0b; font-size: 11px;
+}
+.btn-resume:hover { background: #d97706; }
+</style>
+
+<script>
+function toggleHide(event, caseId, isHidden) {
+  event.stopPropagation();
+  const action = isHidden ? 'unhide' : 'hide';
+  fetch('/history/' + caseId + '/' + action, { method: 'POST' })
+    .then(r => r.json())
+    .then(d => {
+      if (!d.ok) return;
+      const row = document.getElementById('row-' + caseId);
+      const btn = row.querySelector('.btn-hide');
+      if (action === 'hide') {
+        row.classList.add('hidden-row');
+        btn.textContent = '👁 표시';
+        btn.title = '숨김 해제';
+        btn.onclick = (e) => toggleHide(e, caseId, 1);
+        {% if not show_hidden %}
+        setTimeout(() => { row.style.display = 'none'; }, 700);
+        {% endif %}
+      } else {
+        row.classList.remove('hidden-row');
+        btn.textContent = '🙈 숨기기';
+        btn.title = '숨기기';
+        btn.onclick = (e) => toggleHide(e, caseId, 0);
+      }
+    })
+    .catch(() => alert('오류가 발생했습니다.'));
+}
+</script>
+{% endblock %}
