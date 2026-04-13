@@ -31,8 +31,13 @@ from utils.telegram_notify import send_telegram
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "proposal-ai-web-secret-2024")
 
-UPLOAD_DIR  = Path(os.environ.get("UPLOAD_DIR", str(Path(__file__).parent / "uploads")))
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+_IS_PRODUCTION = os.environ.get("FLASK_ENV", "production") == "production"
+_default_upload = "/tmp/uploads" if _IS_PRODUCTION else str(Path(__file__).parent / "uploads")
+UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", _default_upload))
+
+# 시작 시 필요한 폴더 자동 생성
+for _d in [UPLOAD_DIR, Path(__file__).parent / "database", Path(__file__).parent / "output" / "proposals"]:
+    _d.mkdir(parents=True, exist_ok=True)
 
 VIDEO_TYPES = ["홍보영상", "다큐멘터리", "교육영상", "캠페인영상", "뉴스형영상"]
 ALLOWED_EXT     = {".hwp", ".hwpx", ".pdf", ".txt"}
