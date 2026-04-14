@@ -6,13 +6,13 @@
   "deploy": {
     "numReplicas": 1,
     "startCommand": "gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120",
-"restartPolicyType": "ON_FAILURE",
+    "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
   },
   "volumes": [
     {
       "name": "db-volume",
-      "mountPath": "/app/database"
+      "mountPath": "/app/data"
     }
   ]
 }
