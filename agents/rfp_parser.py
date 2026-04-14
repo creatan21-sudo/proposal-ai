@@ -3,6 +3,8 @@
 # 역할: HWP/HWPX/PDF/TXT 파일에서 텍스트 추출 후 Claude API로 분석
 # 출력: 기관정보, 평가항목, 핵심키워드, 과업목록, 금지사항, 톤앤매너 힌트
 
+import json
+import re
 import struct
 import zipfile
 import zlib
@@ -120,7 +122,27 @@ def rfp_quick_extract(rfp_text: str) -> dict:
   "duration": "편당 러닝타임 (예: 3분, 2분 30초, 60초)"
 }}"""
 
-    result = claude_client.call_json(prompt, max_tokens=1024, _validate=False)
+    _empty = {"client_name": "", "project_name": "", "budget": "",
+              "deadline": "", "video_type": "", "quantity": 0, "duration": ""}
+
+    try:
+        result = claude_client.call_json(prompt, max_tokens=1024, _validate=False)
+    except Exception as e:
+        # call_json 3단계 폴백 모두 실패 → 원시 응답에서 {} 블록 직접 추출 시도
+        print(f"  [rfp_quick_extract] call_json 실패: {e}")
+        raw = getattr(e, "__cause__", None)
+        raw_text = str(raw) if raw else ""
+        m = re.search(r"\{.*\}", raw_text, re.DOTALL)
+        if m:
+            try:
+                from json_repair import repair_json
+                result = json.loads(repair_json(m.group()))
+            except Exception as e2:
+                print(f"  [rfp_quick_extract] 중괄호 블록 파싱도 실패: {e2}")
+                return _empty
+        else:
+            return _empty
+
     # 타입 보정
     if "quantity" in result:
         try:
