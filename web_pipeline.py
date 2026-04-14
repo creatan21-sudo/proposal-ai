@@ -51,15 +51,20 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
         return results
     start_idx = _STEP_INDEX.get(start_step_key, 0) if start_step_key else 0
 
-    # 이번 실행에서 실제로 수행한 스텝 추적 (중복 실행 방지용)
-    _executed: set = set()
+    # 이번 실행에서 각 스텝 실행 횟수 추적 (최대 1회 제한)
+    step_executed: dict = {}
 
     i = start_idx
     while i < len(_STEPS):
         step_key, step_name, agent_mod, critical = _STEPS[i]
 
-        # 이미 완료된 스텝 스킵 (prior_results에 결과 있고, 이번 실행에서 재실행 안 했을 때)
-        if step_key in results and results[step_key] and step_key not in _executed:
+        # 이번 실행에서 이미 실행한 스텝은 무조건 스킵 (피드백 재실행 방지)
+        if step_executed.get(step_key, 0) >= 1:
+            i += 1
+            continue
+
+        # prior_results에 결과 있으면 스킵 (이전 실행 결과 재사용)
+        if step_key in results and results[step_key]:
             push_event({"type": "step_skip", "step": step_key,
                         "name": step_name + " (이전 결과 사용)"})
             i += 1
@@ -161,7 +166,7 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
             continue
 
         results[step_key] = result
-        _executed.add(step_key)
+        step_executed[step_key] = step_executed.get(step_key, 0) + 1
 
         _push_summary(push_event, step_key, step_name, elapsed,
                       _build_summary(step_key, dna, result))

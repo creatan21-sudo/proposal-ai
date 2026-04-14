@@ -65,7 +65,7 @@ def run(dna: ConceptDNA) -> dict:
     print(f"  대본 생성: {total}편 / {'숏폼' if is_short else '롱폼'} "
           f"({dna.duration}) {'| 시리즈 연결고리 포함' if is_series else ''}")
 
-    _EP_TIMEOUT = 180  # 편당 최대 3분
+    _EP_TIMEOUT = 120  # 편당 최대 2분
 
     def _generate_one(idx: int, ep_plan: dict) -> dict:
         ep_num = idx + 1
@@ -187,13 +187,13 @@ def _generate_longform_outline(
     # 개요 모드: 씬 수 제한 (속도 우선 — 제안서는 방향 제시용)
     full_scenes = _calc_scene_count(duration_s)
     if is_sample:
-        scene_count = min(full_scenes, 7)   # 샘플: 최대 7씬
+        scene_count = min(full_scenes, 5)   # 샘플: 최대 5씬
         prompt      = _build_outline_sample_prompt(dna, ep_plan, ep_num, all_plans, is_series, scene_count, duration_s)
-        max_tokens  = 1500
+        max_tokens  = 500
     else:
-        scene_count = min(full_scenes, 5)   # 최소 개요: 최대 5씬
+        scene_count = min(full_scenes, 3)   # 최소 개요: 최대 3씬
         prompt      = _build_outline_minimal_prompt(dna, ep_plan, ep_num, scene_count)
-        max_tokens  = 800
+        max_tokens  = 400
 
     raw = claude_client.call_json(prompt, max_tokens=max_tokens, _validate=False)
 
@@ -225,67 +225,28 @@ def _build_outline_sample_prompt(
     scene_count: int,
     duration_s: int,
 ) -> str:
-    """1편 샘플 개요 — 씬별 핵심 포인트 + 나레이션 방향."""
-    dna_ctx  = dna_to_context_string(dna)
-    ep_ctx   = _format_episode_plan(ep_plan)
-    creative = _format_creative_context(dna)
-    sec_per  = duration_s // scene_count
+    """1편 샘플 개요 — 씬 번호·장소·핵심 메시지만 (속도 최우선)."""
+    title      = ep_plan.get("title", f"{ep_num}편")
+    series_tag = f" 시리즈{len(all_plans)}편중{ep_num}편" if is_series else ""
+    cliff      = '"cliffhanger_line":"다음편연결문구"' if is_series else '"cliffhanger_line":null'
 
-    series_note = ""
-    if is_series:
-        series_note = f"\n시리즈 {len(all_plans)}편 중 {ep_num}편. 다음 편으로 이어지는 클리프행어 포함."
+    scenes_template = ",".join(
+        f'{{"scene_number":{n},"location":"장소","key_point":"핵심내용1문장"}}'
+        for n in range(1, scene_count + 1)
+    )
 
-    return f"""제안서용 영상 대본 샘플 개요를 작성하라.
-씬별 핵심 포인트만 작성 (나레이션 전문/대사 전문 금지).
-클라이언트에게 방향을 보여주는 수준으로 간결하게.
-{series_note}
-
-[프로젝트 컨텍스트]
-{dna_ctx}
-
-[크리에이티브 기준]
-{creative}
-
-[이 편 계획]
-{ep_ctx}
-
-총 러닝타임: {dna.duration} / 씬 수: {scene_count}개 (씬당 평균 {sec_per}초)
-
-아래 JSON만 출력 (다른 텍스트 금지):
-{{
-  "episode": {ep_num},
-  "title": "{ep_plan.get('title', f'{ep_num}편')}",
-  "format": "longform",
-  "duration": "{dna.duration}",
-  "opening_hook": {{
-    "timecode": "0:00~0:05",
-    "hook_line": "시청자 시선을 잡는 첫 자막 문구 (15자 이내, 임팩트 최대화)",
-    "hook_concept": "오프닝 장면 방향 — 어떤 화면으로 시작하는지 (1문장)"
-  }},
-  "scenes": [
-    {{
-      "scene_number": 1,
-      "timecode": "0:00~0:{sec_per}",
-      "location": "촬영 장소 또는 상황",
-      "key_point": "이 씬이 전달하는 핵심 내용 (1~2문장)",
-      "visual_concept": "카메라 방향·피사체·분위기 (1문장)",
-      "narration_key": "이 씬의 나레이션 핵심 메시지 또는 대표 문구 (1문장)"
-    }}
-  ],
-  "interview_questions": [
-    "인터뷰 질문 1 (핵심 메시지를 자연스럽게 이끌어내는 질문)",
-    "인터뷰 질문 2",
-    "인터뷰 질문 3"
-  ],
-  "closing_cta": {{
-    "timecode": "마지막 구간",
-    "cta_direction": "클로징 장면 방향 및 CTA 메시지 (2~3문장)"
-  }},
-  "series_hook": {{
-    "cliffhanger_line": "다음 편 연결 문구 (없으면 null)",
-    "callback_line": "이전 편 콜백 (없으면 null)"
-  }}
-}}"""
+    return (
+        f"영상대본개요JSON만출력(설명없이).\n"
+        f"발주처:{dna.client_name} 사업:{dna.project_name} 컨셉:{dna.concept or '미정'}"
+        f" 톤:{dna.tone_and_manner or '미정'} {ep_num}편\"{title}\""
+        f" 러닝타임:{dna.duration}{series_tag}\n\n"
+        f'{{"episode":{ep_num},"title":"{title}","format":"longform","duration":"{dna.duration}",'
+        f'"opening_hook":{{"hook_line":"오프닝훅자막15자내"}},'
+        f'"scenes":[{scenes_template}],'
+        f'"interview_questions":["질문1","질문2"],'
+        f'"closing_cta":{{"cta_direction":"CTA방향1문장"}},'
+        f'"series_hook":{{{cliff},"callback_line":null}}}}'
+    )
 
 
 def _build_outline_minimal_prompt(
@@ -294,47 +255,26 @@ def _build_outline_minimal_prompt(
     ep_num: int,
     scene_count: int,
 ) -> str:
-    """2편 이상 — 제목 + 씬 목록 + 핵심 메시지만."""
-    ep_ctx    = _format_episode_plan(ep_plan)
-    dna_mini  = (
-        f"발주처: {dna.client_name} | 사업명: {dna.project_name} | "
-        f"컨셉: {dna.concept or '미정'} | 슬로건: {dna.slogan or '미정'} | "
-        f"톤: {dna.tone_and_manner or '미정'}"
+    """2편 이상 — 씬 번호·장소·핵심 메시지만 (속도 최우선)."""
+    title      = ep_plan.get("title", f"{ep_num}편")
+    core_msg   = ep_plan.get("core_message", "")
+
+    scenes_template = ",".join(
+        f'{{"scene_number":{n},"location":"장소","key_point":"핵심내용"}}'
+        for n in range(1, scene_count + 1)
     )
 
-    return f"""제안서용 영상 대본 최소 개요 (씬 목록 + 핵심 메시지만).
-
-[기본 정보]
-{dna_mini}
-
-[이 편 계획]
-{ep_ctx}
-
-씬 수: {scene_count}개 / 러닝타임: {dna.duration}
-
-아래 JSON만 출력 (다른 텍스트 금지):
-{{
-  "episode": {ep_num},
-  "title": "{ep_plan.get('title', f'{ep_num}편')}",
-  "format": "longform",
-  "duration": "{dna.duration}",
-  "core_message": "이 편의 핵심 메시지 (1문장)",
-  "opening_hook": {{
-    "hook_line": "오프닝 훅 자막 문구 (15자 이내)"
-  }},
-  "scenes": [
-    {{
-      "scene_number": 1,
-      "key_point": "씬 핵심 내용 (1문장)",
-      "visual_concept": "촬영 방향 (1문장)"
-    }}
-  ],
-  "closing_cta": "CTA 방향 및 핵심 문구",
-  "series_hook": {{
-    "cliffhanger_line": null,
-    "callback_line": null
-  }}
-}}"""
+    return (
+        f"영상대본최소개요JSON만출력.\n"
+        f"발주처:{dna.client_name} 사업:{dna.project_name} {ep_num}편\"{title}\""
+        f" 핵심:{core_msg} 러닝타임:{dna.duration}\n\n"
+        f'{{"episode":{ep_num},"title":"{title}","format":"longform","duration":"{dna.duration}",'
+        f'"core_message":"핵심메시지1문장",'
+        f'"opening_hook":{{"hook_line":"훅자막"}},'
+        f'"scenes":[{scenes_template}],'
+        f'"closing_cta":"CTA방향",'
+        f'"series_hook":{{"cliffhanger_line":null,"callback_line":null}}}}'
+    )
 
 
 def _generate_shortform_outline(
@@ -344,60 +284,24 @@ def _generate_shortform_outline(
     all_plans: list,
     is_series: bool,
 ) -> dict:
-    """숏폼 제안서 개요 — 15/30/60초 각 버전 핵심 포인트만."""
-    dna_ctx  = dna_to_context_string(dna)
-    ep_ctx   = _format_episode_plan(ep_plan)
-    creative = _format_creative_context(dna)
+    """숏폼 제안서 개요 — 15/30/60초 각 버전 핵심 포인트만 (속도 최우선)."""
+    title = ep_plan.get("title", f"{ep_num}편")
 
-    prompt = f"""제안서용 숏폼 대본 개요를 작성하라.
-15초·30초·60초 버전 각각의 핵심 포인트만 (전문 금지).
+    prompt = (
+        f"숏폼대본개요JSON만출력(설명없이).\n"
+        f"발주처:{dna.client_name} 사업:{dna.project_name} 컨셉:{dna.concept or '미정'}"
+        f" {ep_num}편\"{title}\" 러닝타임:{dna.duration}\n\n"
+        f'{{"episode":{ep_num},"title":"{title}","format":"shortform","duration":"{dna.duration}",'
+        f'"versions":{{'
+        f'"15sec":{{"hook_line":"훅10자내","scenes":[{{"scene_number":1,"key_point":"핵심"}},{{"scene_number":2,"key_point":"CTA"}}]}},'
+        f'"30sec":{{"hook_line":"훅12자내","scenes":[{{"scene_number":1,"key_point":"문제"}},{{"scene_number":2,"key_point":"해결"}},{{"scene_number":3,"key_point":"CTA"}}]}},'
+        f'"60sec":{{"hook_line":"훅15자내","scenes":[{{"scene_number":1,"key_point":"훅"}},{{"scene_number":2,"key_point":"공감"}},{{"scene_number":3,"key_point":"해결"}},{{"scene_number":4,"key_point":"CTA"}}]}}'
+        f'}},'
+        f'"closing_cta":{{"cta_direction":"CTA방향"}},'
+        f'"series_hook":{{"cliffhanger_line":null,"callback_line":null}}}}'
+    )
 
-[프로젝트]
-{dna_ctx}
-
-[크리에이티브]
-{creative}
-
-[이 편]
-{ep_ctx}
-
-아래 JSON만 출력:
-{{
-  "episode": {ep_num},
-  "title": "{ep_plan.get('title', f'{ep_num}편')}",
-  "format": "shortform",
-  "duration": "{dna.duration}",
-  "versions": {{
-    "15sec": {{
-      "hook_line": "첫 자막 (10자 이내)",
-      "scenes": [
-        {{"scene_number": 1, "key_point": "핵심 메시지 (1문장)", "visual_concept": "촬영 방향"}},
-        {{"scene_number": 2, "key_point": "CTA", "visual_concept": "마지막 화면"}}
-      ]
-    }},
-    "30sec": {{
-      "hook_line": "첫 자막 (12자 이내)",
-      "scenes": [
-        {{"scene_number": 1, "key_point": "문제 제시 (1문장)", "visual_concept": "오프닝 화면"}},
-        {{"scene_number": 2, "key_point": "핵심 메시지 (1문장)", "visual_concept": "메인 화면"}},
-        {{"scene_number": 3, "key_point": "CTA (1문장)", "visual_concept": "클로징 화면"}}
-      ]
-    }},
-    "60sec": {{
-      "hook_line": "첫 자막 (15자 이내)",
-      "scenes": [
-        {{"scene_number": 1, "key_point": "훅 (1문장)", "visual_concept": "오프닝"}},
-        {{"scene_number": 2, "key_point": "공감/문제 (1문장)", "visual_concept": "전개"}},
-        {{"scene_number": 3, "key_point": "해결책 (1문장)", "visual_concept": "클라이맥스"}},
-        {{"scene_number": 4, "key_point": "CTA (1문장)", "visual_concept": "클로징"}}
-      ]
-    }}
-  }},
-  "closing_cta": {{"cta_direction": "CTA 방향 (1문장)"}},
-  "series_hook": {{"cliffhanger_line": null, "callback_line": null}}
-}}"""
-
-    raw = claude_client.call_json(prompt, max_tokens=1024, _validate=False)
+    raw = claude_client.call_json(prompt, max_tokens=500, _validate=False)
     raw.setdefault("episode",  ep_num)
     raw.setdefault("title",    ep_plan.get("title", f"{ep_num}편"))
     raw.setdefault("format",   "shortform")
