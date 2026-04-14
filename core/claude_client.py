@@ -4,6 +4,7 @@
 # - JSON 파싱, 재시도, 오류처리 일괄 담당
 
 import json
+import os
 import re
 import threading
 import time
@@ -63,9 +64,10 @@ def get_client() -> anthropic.Anthropic:
     """Anthropic 클라이언트 인스턴스 반환 (싱글톤)."""
     global _client
     if _client is None:
-        if not ANTHROPIC_API_KEY:
-            raise RuntimeError(".env 파일에 ANTHROPIC_API_KEY가 설정되지 않았습니다.")
-        _client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        api_key = os.environ.get("ANTHROPIC_API_KEY") or ANTHROPIC_API_KEY
+        if not api_key:
+            raise RuntimeError("ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.")
+        _client = anthropic.Anthropic(api_key=api_key)
     return _client
 
 
