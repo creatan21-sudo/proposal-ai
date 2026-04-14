@@ -319,7 +319,7 @@ function applyAutofill(fields) {
   for (const [field, selector] of Object.entries(map)) {
     if (fields[field]) {
       const el = document.querySelector(selector);
-      if (el && !el.value) { el.value = fields[field]; filled++; }
+      if (el) { el.value = fields[field]; filled++; }
     }
   }
   if (fields.quantity > 0) {
