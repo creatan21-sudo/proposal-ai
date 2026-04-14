@@ -44,11 +44,26 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
         dna.concept = concept
 
     results = dict(prior_results) if prior_results else {}
+
+    # 이미 완료된 파이프라인 재실행 방지
+    if results.get("__pipeline_complete__"):
+        push_event({"type": "pipeline_done"})
+        return results
     start_idx = _STEP_INDEX.get(start_step_key, 0) if start_step_key else 0
+
+    # 이번 실행에서 실제로 수행한 스텝 추적 (중복 실행 방지용)
+    _executed: set = set()
 
     i = start_idx
     while i < len(_STEPS):
         step_key, step_name, agent_mod, critical = _STEPS[i]
+
+        # 이미 완료된 스텝 스킵 (prior_results에 결과 있고, 이번 실행에서 재실행 안 했을 때)
+        if step_key in results and results[step_key] and step_key not in _executed:
+            push_event({"type": "step_skip", "step": step_key,
+                        "name": step_name + " (이전 결과 사용)"})
+            i += 1
+            continue
 
         # concept 주입 시 STEP 3 스킵 (단, DB에는 최소 레코드 저장)
         if step_key == "creative" and concept:
@@ -146,6 +161,7 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
             continue
 
         results[step_key] = result
+        _executed.add(step_key)
 
         _push_summary(push_event, step_key, step_name, elapsed,
                       _build_summary(step_key, dna, result))
@@ -213,6 +229,7 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
         dna.user_feedback = ""
         i += 1
 
+    results["__pipeline_complete__"] = True
     if notify_fn:
         try:
             notify_fn(f"🎉 {dna.project_name} 제안서 생성 완료!\n결과 확인: /history")

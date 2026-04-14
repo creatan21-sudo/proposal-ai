@@ -15,7 +15,9 @@
 # 롱폼 (60초 초과): 장면별 타임코드 + 인터뷰 포함
 # 시리즈 (2편 이상): 편간 클리프행어/복선 후처리 패스
 
+import concurrent.futures
 import re
+import threading
 
 from core import claude_client
 from core.dna import ConceptDNA, update_dna, dna_to_context_string
@@ -63,16 +65,48 @@ def run(dna: ConceptDNA) -> dict:
     print(f"  대본 생성: {total}편 / {'숏폼' if is_short else '롱폼'} "
           f"({dna.duration}) {'| 시리즈 연결고리 포함' if is_series else ''}")
 
+    _EP_TIMEOUT = 180  # 편당 최대 3분
+
+    def _generate_one(idx: int, ep_plan: dict) -> dict:
+        ep_num = idx + 1
+        if is_short:
+            return _generate_shortform_outline(dna, ep_plan, ep_num, ep_plans, is_series)
+        is_sample = (ep_num == 1)
+        return _generate_longform_outline(dna, ep_plan, ep_num, ep_plans, is_series, is_sample)
+
+    def _fallback_script(idx: int, ep_plan: dict) -> dict:
+        ep_num = idx + 1
+        title  = ep_plan.get("title", f"{ep_num}편")
+        if is_short:
+            return {
+                "episode": ep_num, "title": title, "format": "shortform",
+                "duration": dna.duration, "versions": {}, "scenes": [],
+                "closing_cta": {}, "series_hook": {},
+                "_timeout": True,
+            }
+        return {
+            "episode": ep_num, "title": title, "format": "longform",
+            "duration": dna.duration, "opening_hook": {}, "scenes": [],
+            "interview_questions": [], "closing_cta": {}, "series_hook": {},
+            "_timeout": True,
+        }
+
     scripts = []
     for idx, ep_plan in enumerate(ep_plans):
         ep_num = idx + 1
         print(f"  [{ep_num}/{total}] {ep_plan.get('title', f'{ep_num}편')} 대본 생성 중...")
 
-        if is_short:
-            script = _generate_shortform_outline(dna, ep_plan, ep_num, ep_plans, is_series)
-        else:
-            is_sample = (ep_num == 1)  # 1편은 샘플 상세, 나머지는 최소 개요
-            script = _generate_longform_outline(dna, ep_plan, ep_num, ep_plans, is_series, is_sample)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_generate_one, idx, ep_plan)
+            try:
+                script = future.result(timeout=_EP_TIMEOUT)
+            except concurrent.futures.TimeoutError:
+                print(f"  [경고] {ep_num}편 대본 생성 타임아웃 ({_EP_TIMEOUT}초) — 빈 개요로 대체")
+                future.cancel()
+                script = _fallback_script(idx, ep_plan)
+            except Exception as e:
+                print(f"  [경고] {ep_num}편 대본 생성 오류: {e} — 빈 개요로 대체")
+                script = _fallback_script(idx, ep_plan)
 
         scripts.append(script)
 
@@ -155,13 +189,13 @@ def _generate_longform_outline(
     if is_sample:
         scene_count = min(full_scenes, 7)   # 샘플: 최대 7씬
         prompt      = _build_outline_sample_prompt(dna, ep_plan, ep_num, all_plans, is_series, scene_count, duration_s)
-        max_tokens  = 3000
+        max_tokens  = 1500
     else:
         scene_count = min(full_scenes, 5)   # 최소 개요: 최대 5씬
         prompt      = _build_outline_minimal_prompt(dna, ep_plan, ep_num, scene_count)
-        max_tokens  = 1500
+        max_tokens  = 800
 
-    raw = claude_client.call_json(prompt, max_tokens=max_tokens)
+    raw = claude_client.call_json(prompt, max_tokens=max_tokens, _validate=False)
 
     raw.setdefault("episode",             ep_num)
     raw.setdefault("title",               ep_plan.get("title", f"{ep_num}편"))
@@ -363,7 +397,7 @@ def _generate_shortform_outline(
   "series_hook": {{"cliffhanger_line": null, "callback_line": null}}
 }}"""
 
-    raw = claude_client.call_json(prompt, max_tokens=2048)
+    raw = claude_client.call_json(prompt, max_tokens=1024, _validate=False)
     raw.setdefault("episode",  ep_num)
     raw.setdefault("title",    ep_plan.get("title", f"{ep_num}편"))
     raw.setdefault("format",   "shortform")
