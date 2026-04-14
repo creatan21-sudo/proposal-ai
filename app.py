@@ -540,8 +540,11 @@ def stream(sid):
                 idx += 1
             if sess["status"] in ("done", "error"):
                 break
-            sess["sse_event"].wait(timeout=30)
+            fired = sess["sse_event"].wait(timeout=30)
             sess["sse_event"].clear()
+            # Railway 60초 타임아웃 방지: 새 이벤트 없으면 keepalive 핑
+            if not fired:
+                yield "data: {\"type\": \"ping\"}\n\n"
 
     return Response(
         generate(),

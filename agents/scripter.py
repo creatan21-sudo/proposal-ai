@@ -42,11 +42,13 @@ _SHORTFORM_VERSIONS = ["15sec", "30sec", "60sec"]
 # 진입점
 # ─────────────────────────────────────────────
 
-def run(dna: ConceptDNA) -> dict:
+def run(dna: ConceptDNA, progress_fn=None) -> dict:
     """편별 대본 전체 생성.
 
     Args:
         dna: STEP 0~4 결과가 모두 반영된 ConceptDNA
+        progress_fn: 선택적 진행상황 콜백 (SSE push_event 함수)
+                     progress_fn({"type": "step_progress", ...}) 형태로 호출
 
     Returns:
         {
@@ -94,7 +96,17 @@ def run(dna: ConceptDNA) -> dict:
     scripts = []
     for idx, ep_plan in enumerate(ep_plans):
         ep_num = idx + 1
-        print(f"  [{ep_num}/{total}] {ep_plan.get('title', f'{ep_num}편')} 대본 생성 중...")
+        ep_title = ep_plan.get("title", f"{ep_num}편")
+        print(f"  [{ep_num}/{total}] {ep_title} 대본 생성 중...")
+        if progress_fn:
+            try:
+                progress_fn({
+                    "type":    "step_progress",
+                    "step":    "script",
+                    "message": f"대본 생성 중... {ep_num}/{total}편 ({ep_title})",
+                })
+            except Exception:
+                pass
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             future = pool.submit(_generate_one, idx, ep_plan)

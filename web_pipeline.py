@@ -116,6 +116,8 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
                     result = agent_mod.run(dna, file_path=rfp_file)
                 elif step_key == "final_proposal":
                     result = agent_mod.run(dna, pipeline_results=results)
+                elif step_key == "script":
+                    result = agent_mod.run(dna, progress_fn=push_event)
                 else:
                     result = agent_mod.run(dna)
                 elapsed = round(time.time() - t0, 1)
