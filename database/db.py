@@ -956,7 +956,7 @@ def init_users() -> None:
         if count == 0:
             admin_pw = os.environ.get("ADMIN_PASSWORD", "admin1234")
             conn.execute(
-                "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES (?,?,1,?)",
+                "INSERT OR IGNORE INTO users (username, password_hash, is_admin, created_at) VALUES (?,?,1,?)",
                 ("admin", generate_password_hash(admin_pw), datetime.now().isoformat()),
             )
             print(f"  [초기화] admin 계정 생성 (비밀번호: {admin_pw})")
