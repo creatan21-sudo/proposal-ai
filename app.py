@@ -611,10 +611,14 @@ def rfp_analyze():
             fields = rfp_quick_extract(rfp_text)
         except Exception as e:
             print(f"  [rfp_analyze] rfp_quick_extract 오류:\n{_tb.format_exc()}")
-            return jsonify({"ok": False, "error": f"분석 API 오류: {e}"}), 500
+            return jsonify({"ok": False, "error": f"Claude API 오류: {e}"}), 500
 
-        # 빈 결과이면 partial success 로 처리 (ok=True 유지, 빈 필드 반환)
         print(f"  [rfp_analyze] 추출 필드: {fields}")
+        # 모든 문자열 필드가 비어 있으면 API가 빈 결과를 반환한 것 → 에러로 처리
+        has_any = any(v for k, v in fields.items() if k != "quantity" and isinstance(v, str) and v.strip())
+        if not has_any:
+            return jsonify({"ok": False, "error": "Claude API가 빈 결과를 반환했습니다. API 키 및 네트워크 상태를 확인하세요."}), 500
+
         return jsonify({"ok": True, "fields": fields})
     finally:
         try:

@@ -120,21 +120,14 @@ def rfp_quick_extract(rfp_text: str) -> dict:
   "duration": "편당 러닝타임 (예: 3분, 2분 30초, 60초)"
 }}"""
 
-    try:
-        result = claude_client.call_json(prompt, max_tokens=1024, _validate=False)
-        # 타입 보정
-        if "quantity" in result:
-            try:
-                result["quantity"] = int(result["quantity"])
-            except (ValueError, TypeError):
-                result["quantity"] = 0
-        return result
-    except Exception as e:
-        print(f"  [경고] rfp_quick_extract 실패: {e}")
-        return {
-            "client_name": "", "project_name": "", "budget": "",
-            "deadline": "", "video_type": "", "quantity": 0, "duration": "",
-        }
+    result = claude_client.call_json(prompt, max_tokens=1024, _validate=False)
+    # 타입 보정
+    if "quantity" in result:
+        try:
+            result["quantity"] = int(result["quantity"])
+        except (ValueError, TypeError):
+            result["quantity"] = 0
+    return result
 
 
 # ─────────────────────────────────────────────
