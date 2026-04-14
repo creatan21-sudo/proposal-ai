@@ -11,9 +11,9 @@ load_dotenv(Path(__file__).parent / ".env")
 
 IS_PRODUCTION = os.getenv("FLASK_ENV", "production") == "production"
 
-# 경로 — production(Railway)에서는 /tmp 기반으로 전환
+# 경로 — production(Railway)에서는 볼륨 마운트 경로 사용
 BASE_DIR = Path(__file__).parent
-DATABASE_DIR = Path("/tmp/database") if IS_PRODUCTION else BASE_DIR / "database"
+DATABASE_DIR = Path("/app/database") if IS_PRODUCTION else BASE_DIR / "database"
 OUTPUT_DIR   = Path("/tmp/proposals") if IS_PRODUCTION else BASE_DIR / "output" / "proposals"
 
 # Claude API
