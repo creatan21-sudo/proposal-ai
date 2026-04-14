@@ -10,7 +10,7 @@ import threading
 import time
 import anthropic
 from json_repair import repair_json
-from config import ANTHROPIC_API_KEY, DEFAULT_MODEL, MAX_TOKENS
+from config import DEFAULT_MODEL, MAX_TOKENS
 
 _client: anthropic.Anthropic | None = None
 
@@ -64,7 +64,7 @@ def get_client() -> anthropic.Anthropic:
     """Anthropic 클라이언트 인스턴스 반환 (싱글톤)."""
     global _client
     if _client is None:
-        api_key = os.environ.get("ANTHROPIC_API_KEY") or ANTHROPIC_API_KEY
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
             raise RuntimeError("ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.")
         _client = anthropic.Anthropic(api_key=api_key)

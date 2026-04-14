@@ -1,6 +1,9 @@
 # app.py
 # Flask 웹 서비스 — 다중 사용자 + 작업 큐 지원
 
+import os
+print(f"[startup] ANTHROPIC_API_KEY: {'SET' if os.environ.get('ANTHROPIC_API_KEY') else 'NOT SET'}", flush=True)
+
 import dataclasses
 import json
 import os
