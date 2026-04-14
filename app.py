@@ -1,10 +1,6 @@
 # app.py
 # Flask 웹 서비스 — 다중 사용자 + 작업 큐 지원
 
-import os
-print(f"ANTHROPIC_API_KEY 설정 여부: {'SET' if os.environ.get('ANTHROPIC_API_KEY') else 'NOT SET'}")
-print(f"환경변수 키 목록: {[k for k in os.environ.keys() if 'ANTHROPIC' in k or 'API' in k]}")
-
 import dataclasses
 import json
 import os
