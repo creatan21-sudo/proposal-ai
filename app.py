@@ -91,7 +91,7 @@ _active_sids: set = set()     # 현재 실행 중인 sid 집합
 _active_lock = threading.Lock()
 
 # ── 작업 타임아웃 / 세션 보존
-_JOB_TIMEOUT_SEC      = 600   # 10분 이상 running 상태면 강제 종료
+_JOB_TIMEOUT_SEC      = 1800  # 30분 이상 running이면 장기실행 로그 (강제 종료 안 함)
 _SESSION_RETENTION_SEC = 1800 # 30분 — 완료/중지/오류 세션 메모리 보존 기간
 _STALE_WAITING_SEC     = 1800 # 30분 이상 waiting_confirm 상태면 사용자 이탈로 간주
 
@@ -210,15 +210,12 @@ def _timeout_monitor():
                 continue
             status = sess.get("status", "")
 
-            # ① running 10분 초과 → 강제 타임아웃
+            # ① running 상태 장기 체크 — abort는 하지 않고 경고만 로깅
+            #    (파이프라인은 15~20분 소요될 수 있으므로 강제 종료 금지)
             if (status == "running"
                     and (now - sess.get("started_at", now)) > _JOB_TIMEOUT_SEC):
-                print(f"  [타임아웃] {sid} {_JOB_TIMEOUT_SEC}초 초과 → 강제 종료")
-                with _sessions_lock:
-                    s = _sessions.get(sid)
-                    if s:
-                        s["user_input"] = "__abort__"
-                        s["confirm_event"].set()
+                elapsed_min = int((now - sess.get("started_at", now)) / 60)
+                print(f"  [장기실행] {sid} {elapsed_min}분 경과 — 계속 실행 중 (정상)")
 
             # ② 완료/중지/오류 30분 초과 → 메모리에서 제거
             elif status in ("done", "error", "stopped"):
@@ -936,30 +933,39 @@ def history():
     show_hidden = request.args.get("show_hidden") == "1"
 
     with get_connection() as conn:
+        # step_count: case_id 기반 우선 조회, case_id=0인 레거시는 client/project명으로 폴백
+        def _step_exists(table):
+            return (
+                f"(CASE WHEN EXISTS("
+                f"SELECT 1 FROM {table} WHERE (case_id=r.id AND case_id>0)"
+                f" OR (case_id=0 AND client_name=r.client_name AND project_name=r.project_name)"
+                f") THEN 1 ELSE 0 END)"
+            )
         _step_subq = (
             "("
-            "(CASE WHEN EXISTS(SELECT 1 FROM rfp_analyses      WHERE client_name=r.client_name AND project_name=r.project_name) THEN 1 ELSE 0 END)+"
-            "(CASE WHEN EXISTS(SELECT 1 FROM research_results  WHERE client_name=r.client_name AND project_name=r.project_name) THEN 1 ELSE 0 END)+"
-            "(CASE WHEN EXISTS(SELECT 1 FROM strategy_results  WHERE client_name=r.client_name AND project_name=r.project_name) THEN 1 ELSE 0 END)+"
-            "(CASE WHEN EXISTS(SELECT 1 FROM creative_results  WHERE client_name=r.client_name AND project_name=r.project_name) THEN 1 ELSE 0 END)+"
-            "(CASE WHEN EXISTS(SELECT 1 FROM plan_results      WHERE client_name=r.client_name AND project_name=r.project_name) THEN 1 ELSE 0 END)+"
-            "(CASE WHEN EXISTS(SELECT 1 FROM script_results    WHERE client_name=r.client_name AND project_name=r.project_name) THEN 1 ELSE 0 END)+"
-            "(CASE WHEN EXISTS(SELECT 1 FROM marketing_results WHERE client_name=r.client_name AND project_name=r.project_name) THEN 1 ELSE 0 END)+"
-            "(CASE WHEN EXISTS(SELECT 1 FROM final_proposals   WHERE client_name=r.client_name AND project_name=r.project_name) THEN 1 ELSE 0 END)"
-            ") AS step_count"
+            + _step_exists("rfp_analyses")      + "+"
+            + _step_exists("research_results")  + "+"
+            + _step_exists("strategy_results")  + "+"
+            + _step_exists("creative_results")  + "+"
+            + _step_exists("plan_results")      + "+"
+            + _step_exists("script_results")    + "+"
+            + _step_exists("marketing_results") + "+"
+            + _step_exists("final_proposals")
+            + ") AS step_count"
         )
         base = (
             f"SELECT r.id, r.created_at, r.client_name, r.project_name, "
-            f"r.video_type, r.budget, r.agency_type, r.user_id, u.username, "
-            f"{_step_subq} "
+            f"r.video_type, r.budget, r.agency_type, r.user_id, r.stopped, r.hidden, "
+            f"u.username, {_step_subq} "
             "FROM rfp_cases r LEFT JOIN users u ON r.user_id=u.id "
         )
         conditions = []
         params     = []
 
         # 관리자이면서 전체 보기가 아닐 때 or 일반 사용자 → 내 것만
+        # user_id=0 인 레거시 케이스(user_id 마이그레이션 전 저장분)도 포함
         if not (session.get("is_admin") and view_all):
-            conditions.append("r.user_id=?")
+            conditions.append("(r.user_id=? OR r.user_id=0 OR r.user_id IS NULL)")
             params.append(session["user_id"])
 
         # 숨김 필터

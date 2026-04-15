@@ -2,6 +2,7 @@
 # 역할: Flask 웹 서비스용 파이프라인 실행기
 # - input() 대신 push_event/wait_confirm 콜백으로 SSE + 사용자 입력 처리
 
+import concurrent.futures as _cf
 import time
 from core.dna import ConceptDNA
 from core.claude_client import set_retry_callback, clear_retry_callback, OverloadError
@@ -209,10 +210,33 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
                     push_event({"type": "step_start", "step": step_key, "name": step_name})
                 # else: 마지막 시도도 실패 → 루프 종료, pipe_exc 유지
 
-            except Exception as e:
+            except (TimeoutError, _cf.TimeoutError) as e:
+                # 네트워크/API 타임아웃 — OverloadError와 동일하게 재시도
                 clear_retry_callback()
                 pipe_exc = e
-                break   # 과부하 외 오류는 즉시 포기
+                if pipe_attempt < _PIPE_RETRY_MAX:
+                    push_event({
+                        "type": "log",
+                        "message": f"⏱ {step_name.strip()} 타임아웃 — {_PIPE_RETRY_WAIT}초 후 재시도 ({pipe_attempt}/{_PIPE_RETRY_MAX})",
+                    })
+                    time.sleep(_PIPE_RETRY_WAIT)
+                    push_event({"type": "step_start", "step": step_key, "name": step_name})
+                # else: 마지막 시도도 실패 → pipe_exc 유지
+
+            except Exception as e:
+                clear_retry_callback()
+                # 메시지에 'timeout'이 포함된 예외도 재시도 처리
+                if 'timeout' in str(e).lower() and pipe_attempt < _PIPE_RETRY_MAX:
+                    pipe_exc = e
+                    push_event({
+                        "type": "log",
+                        "message": f"⏱ {step_name.strip()} 타임아웃 — {_PIPE_RETRY_WAIT}초 후 재시도 ({pipe_attempt}/{_PIPE_RETRY_MAX})",
+                    })
+                    time.sleep(_PIPE_RETRY_WAIT)
+                    push_event({"type": "step_start", "step": step_key, "name": step_name})
+                else:
+                    pipe_exc = e
+                    break   # 타임아웃 외 오류는 즉시 포기
 
         if pipe_exc is not None:
             elapsed = round(time.time() - t0, 1)
