@@ -467,7 +467,7 @@ def start():
     video_type    = request.form.get("video_type", "홍보영상")
     quantity      = int(request.form.get("quantity") or 1)
     duration      = request.form.get("duration", "3분").strip() or "3분"
-    pages         = int(request.form.get("pages") or 30)
+    pages         = int(request.form.get("pages") or 50)
     concept       = request.form.get("concept", "").strip() or None
     budget        = request.form.get("budget", "").strip()
     deadline      = request.form.get("deadline", "").strip()
@@ -1472,7 +1472,7 @@ def _ppt_push(job_id: str, event: dict):
 def ppt_start():
     data    = request.get_json(force=True) or {}
     case_id = int(data.get("case_id", 0))
-    pages   = max(10, min(60, int(data.get("pages", 30))))
+    pages   = max(10, min(200, int(data.get("pages", 50))))
 
     if not case_id:
         return jsonify({"ok": False, "error": "case_id 필요"}), 400

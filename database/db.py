@@ -968,6 +968,13 @@ def init_users() -> None:
             conn.execute("UPDATE users SET role='admin' WHERE is_admin=1")
         except Exception:
             pass  # 이미 존재하면 무시
+        # viewer 등 비표준 role 정리 → user로 통합
+        try:
+            conn.execute(
+                "UPDATE users SET role='user' WHERE role NOT IN ('admin','operator','user')"
+            )
+        except Exception:
+            pass
 
         # admin 계정이 없으면 생성
         count = conn.execute("SELECT COUNT(*) FROM users WHERE is_admin=1").fetchone()[0]

@@ -679,13 +679,13 @@ document.addEventListener('DOMContentLoaded', function () {
       <label style="display:block;font-size:.85rem;font-weight:600;color:#374151;margin-bottom:8px;">
         페이지 수
       </label>
-      <input type="range" id="ppt-pages" min="10" max="60" value="30"
+      <input type="range" id="ppt-pages" min="10" max="200" value="50"
              oninput="document.getElementById('ppt-pages-val').textContent=this.value"
              style="width:100%;accent-color:#4f46e5;">
       <div style="display:flex;justify-content:space-between;font-size:.8rem;color:#9ca3af;margin-top:4px;">
         <span>10페이지</span>
-        <strong id="ppt-pages-val" style="color:#4f46e5;font-size:.95rem;">30</strong>페이지
-        <span>60페이지</span>
+        <strong id="ppt-pages-val" style="color:#4f46e5;font-size:.95rem;">50</strong>페이지
+        <span>200페이지</span>
       </div>
       <button onclick="startPptGeneration()"
               style="margin-top:24px;width:100%;padding:13px;background:#4f46e5;color:#fff;
