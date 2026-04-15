@@ -69,11 +69,19 @@ def _safe_upload_name(original_filename: str, forced_ext: str) -> str:
 _sessions: dict = {}
 _sessions_lock = threading.Lock()
 
-# ── 작업 큐 (FIFO)
-_job_queue: deque = deque()   # session_id 목록
+# ── 작업 큐 (FIFO, 메모리 전용 — 서버 재시작 시 자동 초기화)
+_job_queue: deque = deque()   # session_id 목록 (queued 순서 보존)
 _queue_lock = threading.Lock()
 _queue_notify = threading.Event()
 _worker_started = False
+
+# ── 동시 실행 제어
+_MAX_CONCURRENT = 3           # 동시 실행 최대 작업 수
+_active_sids: set = set()     # 현재 실행 중인 sid 집합
+_active_lock = threading.Lock()
+
+# ── 작업 타임아웃
+_JOB_TIMEOUT_SEC = 600        # 10분 이상 running 상태면 강제 종료
 
 # ── PPT 생성 작업
 _ppt_jobs: dict = {}
@@ -88,55 +96,127 @@ def _ensure_worker():
     global _worker_started
     if not _worker_started:
         _worker_started = True
-        t = threading.Thread(target=_queue_worker, daemon=True)
-        t.start()
+        threading.Thread(target=_queue_worker, daemon=True).start()
+        threading.Thread(target=_timeout_monitor, daemon=True).start()
 
 
 def _queue_worker():
-    """파이프라인을 순서대로 하나씩 실행하는 워커 스레드."""
+    """큐에서 작업을 꺼내 최대 _MAX_CONCURRENT개 병렬 실행."""
     while True:
         _queue_notify.wait()
         _queue_notify.clear()
-        while True:
+        _dispatch_jobs()
+
+
+def _dispatch_jobs():
+    """대기 중인 작업을 동시 실행 한도만큼 스레드로 디스패치."""
+    while True:
+        sid = None
+        # _queue_lock + _active_lock 동시 획득으로 슬롯 예약을 원자적으로 처리
+        with _queue_lock:
+            with _active_lock:
+                if len(_active_sids) >= _MAX_CONCURRENT:
+                    return
+                for s in _job_queue:
+                    if s not in _active_sids:
+                        sid = s
+                        _active_sids.add(sid)   # 슬롯 선점
+                        break
+
+        if sid is None:
+            return
+
+        with _sessions_lock:
+            sess = _sessions.get(sid)
+
+        if not sess or sess.get("status") != "queued":
+            # 유효하지 않은 항목 → 큐·슬롯 정리 후 다음 항목 시도
+            with _active_lock:
+                _active_sids.discard(sid)
             with _queue_lock:
-                if not _job_queue:
-                    break
-                sid = _job_queue[0]
+                try:
+                    _job_queue.remove(sid)
+                except ValueError:
+                    pass
+            continue
 
-            _broadcast_positions()
+        with _sessions_lock:
+            sess["status"]     = "running"
+            sess["started_at"] = time.time()
 
-            # 파이프라인 실행 (블로킹 — 컨펌 대기 포함)
+        threading.Thread(target=_run_job, args=(sid,), daemon=True).start()
+
+
+def _run_job(sid: str):
+    """개별 파이프라인을 전용 스레드에서 실행하고 반드시 정리."""
+    with _sessions_lock:
+        sess = _sessions.get(sid)
+    if not sess:
+        _finish_job(sid)
+        return
+    try:
+        _push(sid, {"type": "pipeline_starting"})
+        _run_pipeline_sync(sid, sess)
+    except Exception as e:
+        # _run_pipeline_sync 내부에서 대부분 처리되지만 혹시 새는 예외 대비
+        _push(sid, {"type": "pipeline_error", "message": str(e)})
+        with _sessions_lock:
+            s = _sessions.get(sid)
+            if s:
+                s["status"] = "error"
+                s["sse_event"].set()
+    finally:
+        _finish_job(sid)
+
+
+def _finish_job(sid: str):
+    """작업 완료/오류 시 큐·슬롯에서 즉시 제거하고 후속 작업 디스패치."""
+    with _queue_lock:
+        try:
+            _job_queue.remove(sid)
+        except ValueError:
+            pass
+    with _active_lock:
+        _active_sids.discard(sid)
+    _broadcast_positions()
+    _dispatch_jobs()    # 빈 슬롯에 대기 중인 작업 즉시 투입
+
+
+def _timeout_monitor():
+    """10분 이상 running 상태인 작업을 자동 타임아웃 처리."""
+    while True:
+        time.sleep(60)
+        now = time.time()
+        with _sessions_lock:
+            sids = list(_sessions.keys())
+        for sid in sids:
             with _sessions_lock:
                 sess = _sessions.get(sid)
-            if sess:
-                _push(sid, {"type": "pipeline_starting"})
-                with _sessions_lock:
-                    sess["status"] = "running"
-                _run_pipeline_sync(sid, sess)
-            else:
-                # 세션이 없으면 큐에서 제거
-                with _queue_lock:
-                    if _job_queue and _job_queue[0] == sid:
-                        _job_queue.popleft()
+            if not sess:
                 continue
-
-            # 완료 후 큐에서 제거
-            with _queue_lock:
-                if _job_queue and _job_queue[0] == sid:
-                    _job_queue.popleft()
-
-            _broadcast_positions()
+            if (sess.get("status") == "running"
+                    and (now - sess.get("started_at", now)) > _JOB_TIMEOUT_SEC):
+                print(f"  [타임아웃] {sid} {_JOB_TIMEOUT_SEC}초 초과 → 강제 종료")
+                with _sessions_lock:
+                    s = _sessions.get(sid)
+                    if s:
+                        s["user_input"] = "__abort__"
+                        s["confirm_event"].set()
 
 
 def _broadcast_positions():
-    """대기 중인 세션에 큐 순서 이벤트 전송."""
+    """대기 중(queued) 세션에만 큐 순서 이벤트 전송."""
     with _queue_lock:
         queue_list = list(_job_queue)
-    for pos, sid in enumerate(queue_list):
+    with _active_lock:
+        active = set(_active_sids)
+    # 실행 중이 아닌(대기 중인) 항목만 순서 표시
+    waiting = [s for s in queue_list if s not in active]
+    for pos, sid in enumerate(waiting):
         _push(sid, {
             "type":     "queue_position",
             "position": pos + 1,
-            "total":    len(queue_list),
+            "total":    len(waiting),
         })
 
 
@@ -476,7 +556,7 @@ def start():
     with _queue_lock:
         _job_queue.append(sid)
     _ensure_worker()
-    _queue_notify.set()
+    _dispatch_jobs()        # 슬롯 여유 있으면 즉시 실행
     _broadcast_positions()
 
     # 현재 실행 중인 작업을 세션에 기록 (네비게이션 "진행 중" 표시용)
@@ -668,6 +748,7 @@ def retry_pipeline(sid):
     with _queue_lock:
         _job_queue.append(sid)
     _queue_notify.set()
+    _dispatch_jobs()
     _broadcast_positions()
     return jsonify({"ok": True})
 
@@ -1017,7 +1098,7 @@ def resume_case(case_id):
     with _queue_lock:
         _job_queue.append(sid)
     _ensure_worker()
-    _queue_notify.set()
+    _dispatch_jobs()        # 슬롯 여유 있으면 즉시 실행
     _broadcast_positions()
 
     session["current_run_sid"] = sid
@@ -1038,6 +1119,10 @@ def queue_clear():
     with _queue_lock:
         cleared_queue = len(_job_queue)
         _job_queue.clear()
+
+    # active 슬롯도 초기화
+    with _active_lock:
+        _active_sids.clear()
 
     with _sessions_lock:
         stale = [
@@ -1060,6 +1145,39 @@ def queue_clear():
         "cleared_queue": cleared_queue,
         "cleared_sessions": cleared_sessions,
         "message": f"큐 {cleared_queue}개, 실행 중 세션 {cleared_sessions}개 초기화 완료",
+    })
+
+
+@app.route("/queue/status")
+@admin_required
+def queue_status():
+    """관리자 전용: 현재 큐·실행 상태 조회."""
+    with _queue_lock:
+        queue_list = list(_job_queue)
+    with _active_lock:
+        active = set(_active_sids)
+
+    items = []
+    for sid in queue_list:
+        with _sessions_lock:
+            sess = _sessions.get(sid)
+        if sess:
+            started_at = sess.get("started_at")
+            items.append({
+                "sid":        sid,
+                "status":     sess.get("status"),
+                "project":    sess.get("project", ""),
+                "client":     sess.get("client", ""),
+                "is_active":  sid in active,
+                "elapsed_sec": round(time.time() - started_at, 0) if started_at else None,
+            })
+
+    return jsonify({
+        "ok":     True,
+        "queued": len(queue_list),
+        "active": len(active),
+        "max":    _MAX_CONCURRENT,
+        "items":  items,
     })
 
 
