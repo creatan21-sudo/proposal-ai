@@ -11,10 +11,13 @@ from config import DB_PATH
 
 
 def get_connection() -> sqlite3.Connection:
-    """DB 연결 반환. DB 파일이 없으면 자동 생성."""
+    """DB 연결 반환. WAL 모드 + 30초 쓰기 타임아웃으로 동시 접근 충돌 방지."""
     Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row  # dict-like 접근 가능하게
+    conn = sqlite3.connect(DB_PATH, timeout=30)
+    conn.row_factory = sqlite3.Row
+    # WAL: 읽기/쓰기 동시 접근 허용, 쓰기 충돌 최소화
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")  # WAL에서 안전하면서 빠른 설정
     return conn
 
 

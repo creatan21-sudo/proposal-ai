@@ -90,8 +90,10 @@ _MAX_CONCURRENT = 5           # 동시 실행 최대 작업 수 (5명 동시 사
 _active_sids: set = set()     # 현재 실행 중인 sid 집합
 _active_lock = threading.Lock()
 
-# ── 작업 타임아웃
-_JOB_TIMEOUT_SEC = 600        # 10분 이상 running 상태면 강제 종료
+# ── 작업 타임아웃 / 세션 보존
+_JOB_TIMEOUT_SEC      = 600   # 10분 이상 running 상태면 강제 종료
+_SESSION_RETENTION_SEC = 1800 # 30분 — 완료/중지/오류 세션 메모리 보존 기간
+_STALE_WAITING_SEC     = 1800 # 30분 이상 waiting_confirm 상태면 사용자 이탈로 간주
 
 # ── PPT 생성 작업
 _ppt_jobs: dict = {}
@@ -174,7 +176,8 @@ def _run_job(sid: str):
         with _sessions_lock:
             s = _sessions.get(sid)
             if s:
-                s["status"] = "error"
+                s["status"]       = "error"
+                s["completed_at"] = time.time()
                 s["sse_event"].set()
     finally:
         _finish_job(sid)
@@ -194,7 +197,7 @@ def _finish_job(sid: str):
 
 
 def _timeout_monitor():
-    """10분 이상 running 상태인 작업을 자동 타임아웃 처리."""
+    """주기적 세션 상태 감시: 타임아웃·메모리 누수·장기 대기 처리."""
     while True:
         time.sleep(60)
         now = time.time()
@@ -205,7 +208,10 @@ def _timeout_monitor():
                 sess = _sessions.get(sid)
             if not sess:
                 continue
-            if (sess.get("status") == "running"
+            status = sess.get("status", "")
+
+            # ① running 10분 초과 → 강제 타임아웃
+            if (status == "running"
                     and (now - sess.get("started_at", now)) > _JOB_TIMEOUT_SEC):
                 print(f"  [타임아웃] {sid} {_JOB_TIMEOUT_SEC}초 초과 → 강제 종료")
                 with _sessions_lock:
@@ -213,6 +219,25 @@ def _timeout_monitor():
                     if s:
                         s["user_input"] = "__abort__"
                         s["confirm_event"].set()
+
+            # ② 완료/중지/오류 30분 초과 → 메모리에서 제거
+            elif status in ("done", "error", "stopped"):
+                completed_at = sess.get("completed_at", 0)
+                if completed_at and (now - completed_at) > _SESSION_RETENTION_SEC:
+                    with _sessions_lock:
+                        _sessions.pop(sid, None)
+                    print(f"  [정리] {sid} 완료 세션 해제 (status={status})")
+
+            # ③ waiting_confirm 30분 초과 → 사용자 이탈로 간주, abort 신호
+            elif status == "waiting_confirm":
+                started = sess.get("started_at") or sess.get("created_at_ts", now)
+                if (now - started) > _STALE_WAITING_SEC:
+                    print(f"  [정리] {sid} 장시간 응답 없음 → abort")
+                    with _sessions_lock:
+                        s = _sessions.get(sid)
+                        if s:
+                            s["user_input"] = "__abort__"
+                            s["confirm_event"].set()
 
 
 def _broadcast_positions():
@@ -348,8 +373,9 @@ def _run_pipeline_sync(sid: str, sess: dict):
             with _sessions_lock:
                 s = _sessions.get(sid)
                 if s:
-                    s["status"]  = "stopped"
-                    s["results"] = results
+                    s["status"]       = "stopped"
+                    s["results"]      = results
+                    s["completed_at"] = time.time()
                     s["sse_event"].set()
             return
 
@@ -389,9 +415,10 @@ def _run_pipeline_sync(sid: str, sess: dict):
         with _sessions_lock:
             s = _sessions.get(sid)
             if s:
-                s["status"]   = "done"
-                s["txt_path"] = txt_path
-                s["results"]  = results
+                s["status"]       = "done"
+                s["txt_path"]     = txt_path
+                s["results"]      = results
+                s["completed_at"] = time.time()
                 s["sse_event"].set()
 
     except Exception as e:
@@ -399,7 +426,8 @@ def _run_pipeline_sync(sid: str, sess: dict):
         with _sessions_lock:
             s = _sessions.get(sid)
             if s:
-                s["status"] = "error"
+                s["status"]       = "error"
+                s["completed_at"] = time.time()
                 s["sse_event"].set()
 
 
@@ -587,11 +615,24 @@ def start():
         except Exception as _e:
             print(f"[경고] 참고 케이스 로드 실패: {_e}")
 
+    # ── 사용자당 동시 실행 1개 제한
+    uid = session["user_id"]
+    with _sessions_lock:
+        existing_sid = next(
+            (s_id for s_id, d in _sessions.items()
+             if d.get("user_id") == uid
+             and d.get("status") in ("queued", "running", "waiting_confirm")),
+            None,
+        )
+    if existing_sid:
+        flash("이미 진행 중인 작업이 있습니다. 완료 후 새 제안서를 시작하세요.", "warning")
+        return redirect(url_for("run_page", sid=existing_sid))
+
     sid = str(uuid.uuid4())
     with _sessions_lock:
         _sessions[sid] = {
             "status":           "queued",
-            "user_id":          session["user_id"],
+            "user_id":          uid,
             "username":         session["username"],
             "dna":              dna,
             "rfp_file":         rfp_file,
@@ -606,6 +647,7 @@ def start():
             "client":           client,
             "project":          project,
             "created_at":       datetime.now().isoformat(),
+            "created_at_ts":    time.time(),   # 타임아웃 모니터용 타임스탬프
         }
 
     with _queue_lock:
@@ -661,25 +703,30 @@ def stream(sid):
             return
 
         idx = 0
-        while True:
-            with _sessions_lock:
-                sess = _sessions.get(sid)
-            if not sess:
-                payload = json.dumps({"type": "server_restart"}, ensure_ascii=False)
-                yield f"data: {payload}\n\n"
-                break
-            events = sess["events"]
-            while idx < len(events):
-                data = json.dumps(events[idx], ensure_ascii=False)
-                yield f"data: {data}\n\n"
-                idx += 1
-            if sess["status"] in ("done", "error"):
-                break
-            fired = sess["sse_event"].wait(timeout=30)
-            sess["sse_event"].clear()
-            # Railway 60초 타임아웃 방지: 새 이벤트 없으면 keepalive 핑
-            if not fired:
-                yield "data: {\"type\": \"ping\"}\n\n"
+        try:
+            while True:
+                with _sessions_lock:
+                    sess = _sessions.get(sid)
+                if not sess:
+                    payload = json.dumps({"type": "server_restart"}, ensure_ascii=False)
+                    yield f"data: {payload}\n\n"
+                    break
+                events = sess["events"]
+                while idx < len(events):
+                    data = json.dumps(events[idx], ensure_ascii=False)
+                    yield f"data: {data}\n\n"
+                    idx += 1
+                # 완료/중지/오류 → 스트림 종료
+                if sess["status"] in ("done", "error", "stopped"):
+                    break
+                fired = sess["sse_event"].wait(timeout=30)
+                sess["sse_event"].clear()
+                # Railway 60초 타임아웃 방지: 새 이벤트 없으면 keepalive 핑
+                if not fired:
+                    yield "data: {\"type\": \"ping\"}\n\n"
+        except GeneratorExit:
+            # 클라이언트가 연결을 끊음 — 정상 종료, 별도 처리 불필요
+            pass
 
     return Response(
         generate(),
