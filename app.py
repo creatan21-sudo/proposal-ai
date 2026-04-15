@@ -76,7 +76,7 @@ _queue_notify = threading.Event()
 _worker_started = False
 
 # ── 동시 실행 제어
-_MAX_CONCURRENT = 3           # 동시 실행 최대 작업 수
+_MAX_CONCURRENT = 5           # 동시 실행 최대 작업 수 (5명 동시 사용)
 _active_sids: set = set()     # 현재 실행 중인 sid 집합
 _active_lock = threading.Lock()
 
