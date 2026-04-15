@@ -39,7 +39,10 @@ _default_upload = "/tmp/uploads" if _IS_PRODUCTION else str(Path(__file__).paren
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", _default_upload))
 
 # 시작 시 필요한 폴더 자동 생성
-for _d in [UPLOAD_DIR, Path(__file__).parent / "database", Path(__file__).parent / "output" / "proposals"]:
+# /app/data: Railway Volume 마운트 경로 (DB 영구 보존용)
+_extra_dirs = [Path("/app/data")] if os.environ.get("RAILWAY_ENVIRONMENT") else []
+for _d in [UPLOAD_DIR, Path(__file__).parent / "database",
+           Path(__file__).parent / "output" / "proposals"] + _extra_dirs:
     _d.mkdir(parents=True, exist_ok=True)
 
 # gunicorn 등 외부 서버 기동 시에도 DB/테이블이 반드시 존재하도록 초기화
