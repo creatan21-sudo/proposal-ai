@@ -1150,7 +1150,7 @@ def queue_clear():
 
 @app.route("/queue/status")
 @admin_required
-def queue_status():
+def admin_queue_status():
     """관리자 전용: 현재 큐·실행 상태 조회."""
     with _queue_lock:
         queue_list = list(_job_queue)
