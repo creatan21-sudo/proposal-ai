@@ -45,7 +45,7 @@
               {% elif role == 'operator' %}
               <span class="badge badge-blue">운영자</span>
               {% else %}
-              <span class="badge badge-gray">열람자</span>
+              <span class="badge badge-gray">사용자</span>
               {% endif %}
             {% else %}
             <form method="POST" action="/admin/change-role/{{ u.id }}" style="display:inline;">
@@ -53,7 +53,7 @@
                       style="padding:3px 6px;font-size:13px;border:1px solid #d1d5db;border-radius:6px;">
                 <option value="admin"    {% if role == 'admin'    %}selected{% endif %}>관리자</option>
                 <option value="operator" {% if role == 'operator' %}selected{% endif %}>운영자</option>
-                <option value="user"     {% if role == 'user'     %}selected{% endif %}>열람자</option>
+                <option value="user"     {% if role == 'user'     %}selected{% endif %}>사용자</option>
               </select>
             </form>
             {% endif %}
@@ -107,7 +107,7 @@
       <div class="form-group" style="margin-bottom:12px;">
         <label>역할</label>
         <select name="role" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:7px;">
-          <option value="user">열람자 (읽기 전용)</option>
+          <option value="user">사용자 (제안서 생성/조회만)</option>
           <option value="operator" selected>운영자 (파이프라인 + 학습)</option>
           <option value="admin">관리자 (전체 권한)</option>
         </select>
