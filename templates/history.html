@@ -83,7 +83,9 @@
           {% else %}-{% endif %}
         </td>
         <td>
-          {% if c.step_count and c.step_count >= 8 %}
+          {% if c.get('stopped') %}
+          <span class="badge" style="background:#fef3c7;color:#92400e;">⏹ 중지됨</span>
+          {% elif c.step_count and c.step_count >= 8 %}
           <span class="badge badge-green">완료</span>
           {% elif c.step_count and c.step_count > 0 %}
           <span class="badge badge-amber">{{ c.step_count }}/8</span>
@@ -96,7 +98,7 @@
             <a href="/history/{{ c.id }}" class="btn btn-primary btn-sm">상세</a>
             {% if c.step_count and c.step_count > 0 and c.step_count < 8 %}
             <a href="/history/{{ c.id }}/resume" class="btn btn-sm btn-resume"
-               title="STEP {{ c.step_count }}/8 완료 — 이어서 시작">▶ 이어서</a>
+               title="STEP {{ c.step_count }}/8 완료 — 이어서 시작">{% if c.get('stopped') %}↺ 재개{% else %}▶ 이어서{% endif %}</a>
             {% endif %}
             <a href="/history/{{ c.id }}/reuse" class="btn btn-secondary btn-sm">재활용</a>
             <button class="btn btn-sm btn-share"

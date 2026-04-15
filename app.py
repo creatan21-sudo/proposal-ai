@@ -33,6 +33,7 @@ from database.db import (
     update_user_role,
     share_proposal, unshare_proposal, get_shared_cases, get_case_shares,
     list_all_cases,
+    mark_case_stopped,
 )
 from output.txt_writer import write_txt
 from utils.telegram_notify import send_telegram
@@ -255,8 +256,13 @@ def _run_pipeline_sync(sid: str, sess: dict):
     def wait_confirm(step_key):
         with _sessions_lock:
             s = _sessions.get(sid)
-            if s:
-                s["status"] = "waiting_confirm"
+            if not s:
+                return "__abort__"
+            # 대기 진입 전 이미 중단 신호가 있으면 즉시 반환 (스텝 실행 중 stop 클릭 대응)
+            if s.get("user_input") == "__abort__":
+                s["user_input"] = None
+                return "__abort__"
+            s["status"] = "waiting_confirm"
         s = _sessions.get(sid)
         if not s:
             return "__abort__"
@@ -322,6 +328,30 @@ def _run_pipeline_sync(sid: str, sess: dict):
             prior_results=sess.get("results") or {},
             notify_fn=notify_fn,
         )
+
+        # 사용자가 직접 중지한 경우
+        with _sessions_lock:
+            _stopped = _sessions.get(sid, {}).get("stopped_by_user", False)
+
+        if _stopped and "__aborted_at__" in results:
+            # 중단 시점까지의 DNA 스냅샷 + stopped 플래그 저장
+            try:
+                dna_json = json.dumps(_dc.asdict(dna), ensure_ascii=False)
+                if saved_case_id:
+                    mark_case_stopped(saved_case_id, dna_json=dna_json)
+            except Exception as e:
+                push({"type": "log", "message": f"중지 저장 오류: {e}"})
+            if saved_case_id:
+                push({"type": "case_saved", "case_id": saved_case_id})
+            push({"type": "pipeline_stopped",
+                  "step": results.get("__aborted_at__", "")})
+            with _sessions_lock:
+                s = _sessions.get(sid)
+                if s:
+                    s["status"]  = "stopped"
+                    s["results"] = results
+                    s["sse_event"].set()
+            return
 
         txt_path = None
         if "__aborted_at__" not in results:
@@ -675,6 +705,31 @@ def confirm(sid):
         sess["user_input"]       = value
         sess["step_instruction"] = instruction
         sess["confirm_event"].set()
+    return jsonify({"ok": True})
+
+
+@app.route("/stop/<sid>", methods=["POST"])
+@login_required
+def stop_pipeline(sid):
+    """사용자가 진행 중인 파이프라인을 강제 중지."""
+    with _sessions_lock:
+        sess = _sessions.get(sid)
+    if not sess:
+        return jsonify({"ok": False, "error": "세션 없음"}), 404
+    if sess["user_id"] != session["user_id"]:
+        return jsonify({"ok": False}), 403
+
+    with _sessions_lock:
+        s = _sessions.get(sid)
+        if not s:
+            return jsonify({"ok": False}), 404
+        status = s.get("status", "")
+        if status in ("done", "error", "stopped"):
+            return jsonify({"ok": False, "error": "이미 종료된 작업입니다."}), 400
+        s["stopped_by_user"] = True
+        s["user_input"]      = "__abort__"
+        s["confirm_event"].set()
+
     return jsonify({"ok": True})
 
 

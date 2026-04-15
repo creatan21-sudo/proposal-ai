@@ -25,6 +25,10 @@
   <div class="progress-meta">
     <span class="step-status-text" id="step-status-text">준비 중...</span>
     <span class="time-estimate">보통 15~20분 소요됩니다</span>
+    <button id="btn-stop" onclick="doStop()"
+            style="margin-left:auto;padding:6px 14px;background:#dc2626;color:#fff;
+                   border:none;border-radius:6px;font-size:13px;font-weight:600;
+                   cursor:pointer;display:none;">⏹ 중지</button>
   </div>
 </div>
 
@@ -63,6 +67,16 @@
             disabled>📊 PPT 작성하기</button>
     <a href="/" class="btn btn-secondary btn-lg">새 제안서</a>
     <a href="/history" class="btn btn-secondary btn-lg">내 이력</a>
+  </div>
+</div>
+
+<!-- 중지 배너 -->
+<div class="done-banner" id="stop-banner" style="display:none;background:#fef3c7;border-color:#f59e0b;">
+  <h3 style="color:#92400e;">⏹ 생성이 중지되었습니다</h3>
+  <p style="color:#78350f;">지금까지 완료된 스텝은 저장되었습니다. 이력에서 이어서 진행할 수 있습니다.</p>
+  <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+    <a href="/history" class="btn btn-secondary btn-lg">내 이력</a>
+    <a href="/" class="btn btn-secondary btn-lg">새 제안서</a>
   </div>
 </div>
 
@@ -194,6 +208,7 @@ function handleEvent(ev) {
       break;
     case 'pipeline_starting':
       hideQueueBanner();
+      showBtnStop();
       break;
     case 'server_restart':
       // Flask 재시작 → 세션 소멸 → 에러 배너 표시
@@ -316,6 +331,7 @@ function handleEvent(ev) {
       // case_saved 이후에 도착 — UI 완료 처리 후 SSE 종료
       evtSource.close();
       hideConfirm();
+      hideBtnStop();
       document.getElementById('progress-bar-fill').style.width = '100%';
       document.getElementById('progress-bar-fill').classList.add('done');
       { const st = document.getElementById('step-status-text');
@@ -330,6 +346,7 @@ function handleEvent(ev) {
     case 'pipeline_aborted':
       evtSource.close();
       hideConfirm();
+      hideBtnStop();
       showError(`파이프라인이 ${ev.step || ''} 단계에서 중단되었습니다.`, true);
       setTabTitle('error', ev.step || '중단');
       playErrorSound();
@@ -340,6 +357,14 @@ function handleEvent(ev) {
       showError(ev.message || '알 수 없는 오류', true);
       setTabTitle('error', '파이프라인');
       playErrorSound();
+      break;
+    case 'pipeline_stopped':
+      evtSource.close();
+      hideConfirm();
+      hideBtnStop();
+      document.getElementById('stop-banner').style.display = 'block';
+      document.getElementById('stop-banner').scrollIntoView({ behavior: 'smooth' });
+      document.title = `[중지됨] ${CLIENT} — 제안서 AI`;
       break;
     case 'log':
       appendLog(ev.message);
@@ -694,6 +719,31 @@ function _playTone(notes) {
   } catch(e) {}
 }
 
+// ── 중지 버튼
+function showBtnStop() {
+  const btn = document.getElementById('btn-stop');
+  if (btn) btn.style.display = 'inline-block';
+}
+function hideBtnStop() {
+  const btn = document.getElementById('btn-stop');
+  if (btn) btn.style.display = 'none';
+}
+async function doStop() {
+  if (!confirm('정말 중지할까요?\n지금까지 작성된 내용은 저장됩니다.')) return;
+  hideBtnStop();
+  try {
+    const res = await fetch(`/stop/${SID}`, { method: 'POST' });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      alert('중지 실패: ' + (d.error || res.status));
+      showBtnStop();
+    }
+  } catch(e) {
+    alert('중지 요청 오류: ' + e);
+    showBtnStop();
+  }
+}
+
 // ── 유틸
 function showError(msg, retryable = true) {
   document.getElementById('error-msg').textContent = msg;
@@ -760,13 +810,13 @@ function esc(str) {
       <label style="display:block;font-size:.85rem;font-weight:600;color:#374151;margin-bottom:8px;">
         페이지 수
       </label>
-      <input type="range" id="ppt-pages" min="10" max="60" value="30"
+      <input type="range" id="ppt-pages" min="10" max="200" value="50"
              oninput="document.getElementById('ppt-pages-val').textContent=this.value"
              style="width:100%;accent-color:#4f46e5;">
       <div style="display:flex;justify-content:space-between;font-size:.8rem;color:#9ca3af;margin-top:4px;">
         <span>10페이지</span>
-        <strong id="ppt-pages-val" style="color:#4f46e5;font-size:.95rem;">30</strong>페이지
-        <span>60페이지</span>
+        <strong id="ppt-pages-val" style="color:#4f46e5;font-size:.95rem;">50</strong>페이지
+        <span>200페이지</span>
       </div>
       <button onclick="startPptGeneration()"
               style="margin-top:24px;width:100%;padding:13px;background:#4f46e5;color:#fff;

@@ -189,6 +189,7 @@ def init_db() -> None:
             "ALTER TABLE research_results ADD COLUMN result_json TEXT DEFAULT '{}'",
             "ALTER TABLE rfp_cases ADD COLUMN user_id INTEGER DEFAULT 0",
             "ALTER TABLE rfp_cases ADD COLUMN hidden INTEGER DEFAULT 0",
+            "ALTER TABLE rfp_cases ADD COLUMN stopped INTEGER DEFAULT 0",
             "ALTER TABLE script_results ADD COLUMN case_id INTEGER DEFAULT 0",
             "ALTER TABLE marketing_results ADD COLUMN case_id INTEGER DEFAULT 0",
             "ALTER TABLE rfp_analyses ADD COLUMN case_id INTEGER DEFAULT 0",
@@ -243,6 +244,18 @@ def update_case(case_id: int, dna_json: str = None, result_json: str = None) -> 
             f"UPDATE rfp_cases SET {', '.join(fields)} WHERE id=?",
             params,
         )
+
+
+def mark_case_stopped(case_id: int, dna_json: str = None) -> None:
+    """사용자 강제 중지: stopped=1 + 현재까지의 DNA 스냅샷 저장."""
+    fields = ["stopped=1"]
+    params: list = []
+    if dna_json is not None:
+        fields.append("dna_json=?")
+        params.append(dna_json)
+    params.append(case_id)
+    with get_connection() as conn:
+        conn.execute(f"UPDATE rfp_cases SET {', '.join(fields)} WHERE id=?", params)
 
 
 def hide_case(case_id: int) -> None:
