@@ -518,7 +518,7 @@ def index():
 # ─────────────────────────────────────────────
 
 @app.route("/start", methods=["POST"])
-@operator_or_admin_required
+@login_required
 def start():
     client        = request.form.get("client", "").strip()
     project       = request.form.get("project", "").strip()
@@ -1098,7 +1098,7 @@ def _flatten_to_lines(obj, lines: list, indent: int = 0):
 
 
 @app.route("/history/<int:case_id>/reuse")
-@operator_or_admin_required
+@login_required
 def reuse(case_id):
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM rfp_cases WHERE id=?", (case_id,)).fetchone()
@@ -1193,7 +1193,7 @@ def api_shareable_users():
 
 
 @app.route("/history/<int:case_id>/resume")
-@operator_or_admin_required
+@login_required
 def resume_case(case_id):
     """중단된 케이스를 마지막 완료 스텝 다음부터 이어서 실행."""
     import dataclasses as _dc2

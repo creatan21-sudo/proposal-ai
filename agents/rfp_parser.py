@@ -57,6 +57,11 @@ def run(dna: ConceptDNA, file_path: str = None) -> dict:
 
     # 3. DNA 업데이트
     basic = result.get("basic_info", {})
+    eval_items = result.get("evaluation_items", [])
+
+    # 평가 배점표를 프롬프트 주입용 포맷 문자열로 변환
+    evaluation_criteria = _format_evaluation_criteria(eval_items)
+
     update_dna(dna, {
         "client_name":        basic.get("client_name") or dna.client_name,
         "project_name":       basic.get("project_name") or dna.project_name,
@@ -64,7 +69,8 @@ def run(dna: ConceptDNA, file_path: str = None) -> dict:
         "deadline":           basic.get("deadline") or dna.deadline,
         "agency_type":        result.get("agency_type", ""),
         "core_tasks":         result.get("core_tasks", []),
-        "evaluation_items":   result.get("evaluation_items", []),
+        "evaluation_items":   eval_items,
+        "evaluation_criteria": evaluation_criteria,
         "evaluation_keywords": result.get("top_keywords", []),
         "rfp_requirements":   result.get("core_tasks", []),
         "forbidden_notes":    result.get("forbidden_notes", []),
@@ -426,6 +432,44 @@ def _parse_hwp_records(data: bytes) -> str:
 
 
 # ─────────────────────────────────────────────
+# 평가 배점표 포맷 변환
+# ─────────────────────────────────────────────
+
+def _format_evaluation_criteria(eval_items: list) -> str:
+    """evaluation_items 리스트를 프롬프트 주입용 포맷 문자열로 변환.
+
+    Args:
+        eval_items: [{"item": str, "score": str, "criteria": str, "required": str}, ...]
+
+    Returns:
+        예)
+        • 사업이해도 — 20점 (필수): 사업목적과 추진배경 이해 수준
+        • 수행방법론 — 30점: 구체적 제작 방법론 및 실현 가능성
+    """
+    if not eval_items:
+        return ""
+    lines = []
+    for it in eval_items:
+        if not isinstance(it, dict):
+            continue
+        name  = (it.get("item") or "").strip()
+        score = (it.get("score") or "").strip()
+        req   = (it.get("required") or "").strip()
+        crit  = (it.get("criteria") or "").strip()
+        if not name:
+            continue
+        parts = [f"• {name}"]
+        if score:
+            parts.append(f"— {score}")
+        if req:
+            parts.append(f"({req})")
+        if crit:
+            parts.append(f": {crit}")
+        lines.append(" ".join(parts))
+    return "\n".join(lines)
+
+
+# ─────────────────────────────────────────────
 # Claude API 분석
 # ─────────────────────────────────────────────
 
@@ -473,8 +517,10 @@ def _build_prompt(rfp_text: str, dna: ConceptDNA) -> str:
 1. basic_info — 기관명, 사업명, 예산(금액+단위), 납품기한 추출
 2. agency_type — 반드시 다음 중 하나: 중앙부처 / 지자체 / 의회 / 공공기관 / 기타
 3. core_tasks — 핵심 과업 목록 (구체적 수행 항목, 배열)
-4. evaluation_items — 평가항목과 배점 목록 (배열, 각 항목: {{"item": "항목명", "score": "배점"}})
-   배점이 없으면 score는 "" 로 입력
+4. evaluation_items — 평가 배점표 (배열). 평가항목/배점표가 있으면 반드시 모두 추출하라.
+   각 항목: {{"item": "항목명", "score": "배점(점수)", "criteria": "평가 기준 설명 (없으면 빈 문자열)", "required": "필수/선택 (없으면 빈 문자열)"}}
+   예) {{"item": "사업이해도", "score": "20점", "criteria": "사업목적과 추진배경 이해 수준", "required": "필수"}}
+   배점이 없으면 score: "" 로 입력
 5. top_keywords — 발주처가 문서에서 강조하는 핵심 키워드 TOP 10 (단어 또는 짧은 구, 배열)
 6. forbidden_notes — 금지/주의 사항 목록 (배열, 없으면 빈 배열)
 7. agency_tone_hint — 기관 특성 요약 및 톤앤매너 힌트 (2~3문장)
@@ -490,7 +536,7 @@ def _build_prompt(rfp_text: str, dna: ConceptDNA) -> str:
   "agency_type": "...",
   "core_tasks": ["...", "..."],
   "evaluation_items": [
-    {{"item": "...", "score": "..."}}
+    {{"item": "...", "score": "...", "criteria": "...", "required": "..."}}
   ],
   "top_keywords": ["...", "..."],
   "forbidden_notes": ["...", "..."],

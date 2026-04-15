@@ -21,7 +21,8 @@ class ConceptDNA:
     deadline: str = ""                # 납품기한
     rfp_text: str = ""                # 추출된 RFP 원문 (일부)
     core_tasks: list = field(default_factory=list)            # 핵심 과업 목록
-    evaluation_items: list = field(default_factory=list)      # 평가항목 + 배점
+    evaluation_items: list = field(default_factory=list)      # 평가항목 + 배점 (raw list)
+    evaluation_criteria: str = ""                             # 평가 배점표 (프롬프트 주입용 포맷)
     evaluation_keywords: list = field(default_factory=list)   # 평가 핵심 키워드 top10
     rfp_requirements: list = field(default_factory=list)      # RFP 요구사항 목록
     forbidden_notes: list = field(default_factory=list)       # 금지/주의사항
@@ -154,6 +155,11 @@ def dna_to_context_string(dna: ConceptDNA) -> str:
         f"- 기관 유형: {dna.agency_type or '미분류'}",
         f"- 기관 특성: {dna.agency_characteristics or '미분석'}",
     ]
+    if dna.evaluation_criteria:
+        lines.append(
+            f"\n【평가 배점표】\n{dna.evaluation_criteria}\n"
+            "위 배점표 기준으로 높은 점수 항목에 집중해서 작성하라."
+        )
     if dna.evaluation_keywords:
         lines.append(f"- 평가 키워드: {', '.join(dna.evaluation_keywords)}")
     if dna.core_tasks:
