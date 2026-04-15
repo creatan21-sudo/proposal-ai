@@ -11,16 +11,20 @@ from agents import (
 )
 
 _STEPS = [
-    ("rfp_analysis",   "STEP 0    RFP 분석",       rfp_parser,   True),
-    ("research",       "STEP 1    리서치",           researcher,   False),
-    ("narrative",      "STEP 1.5  내러티브",         narrator,     False),
-    ("strategy",       "STEP 2    전략 수립",        strategist,   True),
-    ("creative",       "STEP 3    컨셉 개발",        creative,     True),
-    ("plan",           "STEP 4    실행 기획",        planner,      True),
-    ("script",         "STEP 5    대본 제작",        scripter,     True),
-    ("marketing",      "STEP 6    마케팅 전략",      marketer,     False),
-    ("final_proposal", "STEP 7    최종 검수·완성",   orchestrator, True),
+    ("rfp_analysis",      "STEP 0    RFP 분석",       rfp_parser,   True),
+    ("research",          "STEP 1    리서치",           researcher,   False),
+    ("narrative",         "STEP 1.5  내러티브",         narrator,     False),
+    ("strategy",          "STEP 2    전략 수립",        strategist,   True),
+    ("creative",          "STEP 3    컨셉 개발",        creative,     True),
+    ("plan",              "STEP 4    실행 기획",        planner,      True),
+    ("script",            "STEP 5    대본 제작",        scripter,     True),
+    ("marketing",         "STEP 6    마케팅 전략",      marketer,     False),
+    ("final_proposal",    "STEP 7    최종 검수·완성",   orchestrator, True),
+    ("improvement_report","STEP 7.5  개선 제안",        None,         False),
 ]
+
+# 컨펌 없이 자동 진행하는 스텝 (결과 표시 후 즉시 다음 스텝)
+_AUTO_CONTINUE_STEPS = {"improvement_report"}
 
 _STEP_INDEX          = {k: i for i, (k, *_) in enumerate(_STEPS)}
 _DOWNSTREAM_CREATIVE = ["plan", "script", "marketing", "final_proposal"]
@@ -53,6 +57,8 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
 
     # 이번 실행에서 각 스텝 실행 횟수 추적 (최대 1회 제한)
     step_executed: dict = {}
+    # 스킵 모드: 이전 스텝을 스킵한 경우 다음 스텝 실행 전 확인 요청
+    _skip_mode = False
 
     i = start_idx
     while i < len(_STEPS):
@@ -69,6 +75,27 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
                         "name": step_name + " (이전 결과 사용)"})
             i += 1
             continue
+
+        # 스킵 모드: 다음 스텝 실행 전 실행/건너뛰기 확인
+        if _skip_mode:
+            push_event({
+                "type":       "confirm_needed",
+                "step":       step_key,
+                "name":       step_name,
+                "is_pre_run": True,
+                "slogans":    [],
+            })
+            pre_input = wait_confirm(step_key + "_pre")
+            if pre_input == "__abort__":
+                push_event({"type": "pipeline_aborted", "step": step_key})
+                results["__aborted_at__"] = step_key
+                return results
+            if pre_input == "s":
+                push_event({"type": "step_skipped", "step": step_key, "name": step_name})
+                i += 1
+                continue
+            # y 또는 기타 입력 → 스킵 모드 해제 후 정상 실행
+            _skip_mode = False
 
         # concept 주입 시 STEP 3 스킵 (단, DB에는 최소 레코드 저장)
         if step_key == "creative" and concept:
@@ -108,6 +135,45 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
         pipe_exc = None
         elapsed  = 0.0
 
+        # improvement_report: DB/AI 호출 없이 final_proposal 결과에서 인라인 생성
+        if step_key == "improvement_report":
+            fp = results.get("final_proposal", {})
+            result = {
+                "issues":              fp.get("issues", []),
+                "evaluation_coverage": fp.get("evaluation_coverage", {}),
+                "consistency_score":   fp.get("consistency_score", 0),
+            }
+            elapsed = 0.0
+            pipe_exc = None
+            # 재시도 루프를 통하지 않고 직접 처리
+            step_executed[step_key] = 1
+            results[step_key] = result
+            _push_summary(push_event, step_key, step_name, elapsed,
+                          _build_summary(step_key, dna, result))
+            i += 1
+            continue
+
+        # script: 대본 생성 전 편수 확인
+        if step_key == "script":
+            ep_count = len(getattr(dna, "episodes", []) or []) or getattr(dna, "quantity", 3) or 3
+            push_event({
+                "type":          "episode_count_needed",
+                "step":          "script",
+                "default_count": min(ep_count, 3),
+                "max_count":     ep_count,
+            })
+            ep_input = wait_confirm("script_episode_count")
+            if ep_input == "__abort__":
+                push_event({"type": "pipeline_aborted", "step": step_key})
+                results["__aborted_at__"] = step_key
+                return results
+            try:
+                _max_ep = max(1, int(str(ep_input).strip()))
+            except (ValueError, TypeError):
+                _max_ep = min(ep_count, 3)
+        else:
+            _max_ep = 0  # 제한 없음 (scripter 기본값)
+
         for pipe_attempt in range(1, _PIPE_RETRY_MAX + 1):
             t0 = time.time()
             set_retry_callback(_api_retry_cb)
@@ -117,7 +183,7 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
                 elif step_key == "final_proposal":
                     result = agent_mod.run(dna, pipeline_results=results)
                 elif step_key == "script":
-                    result = agent_mod.run(dna, progress_fn=push_event)
+                    result = agent_mod.run(dna, progress_fn=push_event, max_episodes=_max_ep)
                 else:
                     result = agent_mod.run(dna)
                 elapsed = round(time.time() - t0, 1)
@@ -203,11 +269,12 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
             results["__aborted_at__"] = step_key
             return results
 
-        # ── 스킵 처리 (실행 결과는 보존, 피드백 루프만 건너뜀)
+        # ── 스킵 처리 (실행 결과는 보존, 다음 스텝 실행 전 확인 모드 진입)
         if user_input == "s":
             push_event({"type": "step_skipped", "step": step_key, "name": step_name})
             results[step_key] = result  # 결과 보존
             dna.user_feedback = ""
+            _skip_mode = True           # 연속 스킵 선택 모드 활성화
             i += 1
             continue
 
@@ -400,6 +467,38 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
             total_b = budget.get("total", budget.get("total_budget", ""))
             if total_b:
                 s["마케팅 예산"] = str(total_b)
+
+    elif step_key == "improvement_report":
+        _sev_icon = {"critical": "🔴 필수 개선", "warning": "🟡 권장 개선", "info": "🔵 참고"}
+        issues = result.get("issues", [])
+        formatted = []
+        for iss in issues:
+            if not isinstance(iss, dict):
+                formatted.append(str(iss))
+                continue
+            sev     = _sev_icon.get(iss.get("severity", ""), iss.get("severity", ""))
+            section = iss.get("section", iss.get("field", ""))
+            desc    = iss.get("description", iss.get("message", ""))
+            suggest = iss.get("suggestion", "")
+            line = sev
+            if section: line += f" | {section}"
+            if desc:    line += f"\n{desc}"
+            if suggest: line += f"\n→ {suggest}"
+            formatted.append(line.strip())
+        if formatted:
+            s["개선 포인트"] = formatted
+        else:
+            s["개선 포인트"] = ["개선 필요 항목 없음 — 모든 섹션 기준 충족"]
+        cov = result.get("evaluation_coverage", {})
+        if isinstance(cov, dict):
+            covered = cov.get("covered", [])
+            missing = cov.get("missing", [])
+            total = len(covered) + len(missing)
+            if total:
+                s["평가항목 커버율"] = f"{len(covered)}/{total}개 커버 ({len(covered)/total:.0%})"
+        score = result.get("consistency_score", 0)
+        if score:
+            s["일관성 점수"] = f"{score:.0%}" if isinstance(score, float) else str(score)
 
     elif step_key == "final_proposal":
         score = result.get("consistency_score", result.get("score", 0))

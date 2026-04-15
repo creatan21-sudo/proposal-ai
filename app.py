@@ -5,9 +5,12 @@ import os
 print(f"[startup] ANTHROPIC_API_KEY: {'SET' if os.environ.get('ANTHROPIC_API_KEY') else 'NOT SET'}", flush=True)
 
 import dataclasses
+import datetime as _dt
 import json
 import os
 import threading
+import time
+import urllib.request as _urllib_req
 import uuid
 from collections import deque
 from datetime import datetime
@@ -27,6 +30,9 @@ from database.db import (
     save_case, set_telegram_chat_id, verify_user,
     hide_case, unhide_case,
     save_learning_case, list_learning_cases, delete_learning_case,
+    update_user_role,
+    share_proposal, unshare_proposal, get_shared_cases, get_case_shares,
+    list_all_cases,
 )
 from output.txt_writer import write_txt
 from utils.telegram_notify import send_telegram
@@ -101,6 +107,7 @@ def _ensure_worker():
         _worker_started = True
         threading.Thread(target=_queue_worker, daemon=True).start()
         threading.Thread(target=_timeout_monitor, daemon=True).start()
+        _schedule_credit_report()
 
 
 def _queue_worker():
@@ -390,6 +397,19 @@ def admin_required(f):
     return wrapped
 
 
+def operator_or_admin_required(f):
+    """operator 이상 권한 필요 (파이프라인 생성, 학습 데이터 관리 등)."""
+    @wraps(f)
+    def wrapped(*args, **kwargs):
+        if not session.get("user_id"):
+            return redirect(url_for("login"))
+        role = session.get("role", "")
+        if role not in ("admin", "operator"):
+            abort(403)
+        return f(*args, **kwargs)
+    return wrapped
+
+
 # ─────────────────────────────────────────────
 @app.route("/health")
 def health():
@@ -412,6 +432,8 @@ def login():
             session["user_id"]  = user["id"]
             session["username"] = user["username"]
             session["is_admin"] = bool(user["is_admin"])
+            # role: admin/operator/user (구버전 DB 대비 폴백)
+            session["role"] = user.get("role") or ("admin" if user["is_admin"] else "operator")
             return redirect(url_for("index"))
         error = "아이디 또는 비밀번호가 틀렸습니다."
     return render_template("login.html", error=error)
@@ -438,7 +460,7 @@ def index():
 # ─────────────────────────────────────────────
 
 @app.route("/start", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def start():
     client        = request.form.get("client", "").strip()
     project       = request.form.get("project", "").strip()
@@ -853,8 +875,13 @@ def history():
         rows = conn.execute(base, params).fetchall()
 
     cases = [dict(r) for r in rows]
+
+    # 공유된 제안서 (내 것이 아닌 것 중 나에게 공유된 것)
+    my_ids = {c["id"] for c in cases}
+    shared = [c for c in get_shared_cases(session["user_id"]) if c["id"] not in my_ids]
+
     return render_template(
-        "history.html", cases=cases, q=q,
+        "history.html", cases=cases, shared_cases=shared, q=q,
         view_all=view_all,
         show_hidden=show_hidden,
         is_admin=session.get("is_admin", False),
@@ -869,8 +896,12 @@ def history_detail(case_id):
     if not detail:
         abort(404)
     case = detail["case"]
-    if case.get("user_id") != session["user_id"] and not session.get("is_admin"):
-        abort(403)
+    uid = session["user_id"]
+    if case.get("user_id") != uid and not session.get("is_admin"):
+        # 공유된 케이스인지 확인
+        shares = get_case_shares(case_id)
+        if not any(s["shared_with"] == uid for s in shares):
+            abort(403)
     return render_template("detail.html", detail=detail, case_id=case_id)
 
 
@@ -883,8 +914,11 @@ def history_download(case_id):
     if not detail:
         abort(404)
     case = detail["case"]
-    if case.get("user_id") != session["user_id"] and not session.get("is_admin"):
-        abort(403)
+    uid = session["user_id"]
+    if case.get("user_id") != uid and not session.get("is_admin"):
+        shares = get_case_shares(case_id)
+        if not any(s["shared_with"] == uid for s in shares):
+            abort(403)
 
     lines = _build_history_txt(detail)
     txt = "\n".join(lines)
@@ -962,7 +996,7 @@ def _flatten_to_lines(obj, lines: list, indent: int = 0):
 
 
 @app.route("/history/<int:case_id>/reuse")
-@login_required
+@operator_or_admin_required
 def reuse(case_id):
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM rfp_cases WHERE id=?", (case_id,)).fetchone()
@@ -1007,8 +1041,57 @@ def unhide_case_route(case_id):
     return jsonify({"ok": True})
 
 
-@app.route("/history/<int:case_id>/resume")
+@app.route("/history/<int:case_id>/share", methods=["POST"])
 @login_required
+def share_case_route(case_id):
+    """케이스를 특정 사용자와 공유."""
+    data = request.get_json(force=True) or {}
+    target_uid = int(data.get("user_id", 0))
+    if not target_uid:
+        return jsonify({"ok": False, "error": "user_id 필요"}), 400
+    with get_connection() as conn:
+        row = conn.execute("SELECT user_id FROM rfp_cases WHERE id=?", (case_id,)).fetchone()
+    if not row:
+        abort(404)
+    if dict(row)["user_id"] != session["user_id"] and not session.get("is_admin"):
+        abort(403)
+    share_proposal(case_id, session["user_id"], target_uid)
+    return jsonify({"ok": True})
+
+
+@app.route("/history/<int:case_id>/unshare", methods=["POST"])
+@login_required
+def unshare_case_route(case_id):
+    """공유 취소."""
+    data = request.get_json(force=True) or {}
+    target_uid = int(data.get("user_id", 0))
+    if not target_uid:
+        return jsonify({"ok": False, "error": "user_id 필요"}), 400
+    with get_connection() as conn:
+        row = conn.execute("SELECT user_id FROM rfp_cases WHERE id=?", (case_id,)).fetchone()
+    if not row:
+        abort(404)
+    if dict(row)["user_id"] != session["user_id"] and not session.get("is_admin"):
+        abort(403)
+    unshare_proposal(case_id, session["user_id"], target_uid)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/shareable-users")
+@login_required
+def api_shareable_users():
+    """공유 가능한 사용자 목록 (자기 자신 제외)."""
+    users = list_users()
+    result = [
+        {"id": u["id"], "username": u["username"]}
+        for u in users
+        if u["id"] != session["user_id"]
+    ]
+    return jsonify(result)
+
+
+@app.route("/history/<int:case_id>/resume")
+@operator_or_admin_required
 def resume_case(case_id):
     """중단된 케이스를 마지막 완료 스텝 다음부터 이어서 실행."""
     import dataclasses as _dc2
@@ -1184,11 +1267,94 @@ def admin_queue_status():
     })
 
 
+def get_credit_status() -> dict:
+    """SerpAPI / Tavily 크레딧 현황 조회."""
+    result: dict = {}
+
+    serpapi_key = os.environ.get("SERPAPI_KEY", os.environ.get("SERPER_API_KEY", ""))
+    if serpapi_key:
+        try:
+            url = f"https://serpapi.com/account.json?api_key={serpapi_key}"
+            req = _urllib_req.Request(url, headers={"User-Agent": "ProposalAI/1.0"})
+            with _urllib_req.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read())
+            used  = data.get("this_month_usage", 0)
+            limit = data.get("searches_per_month", 0)
+            result["serpapi"] = {
+                "used":      used,
+                "limit":     limit,
+                "remaining": max(0, limit - used),
+                "percent":   round(used / limit * 100, 1) if limit else 0,
+            }
+        except Exception as e:
+            result["serpapi"] = {"error": str(e)[:120]}
+    else:
+        result["serpapi"] = {"no_key": True}
+
+    tavily_key = os.environ.get("TAVILY_API_KEY", "")
+    result["tavily"] = {"key_set": bool(tavily_key), "note": "잔량 조회 미지원"}
+    result["anthropic"] = {"note": "잔량 조회 미지원"}
+    return result
+
+
+def _schedule_credit_report():
+    """매일 오전 9시 관리자에게 크레딧 현황 텔레그램 리포트."""
+    def _send_report():
+        try:
+            status = get_credit_status()
+            lines = ["📊 [매일 오전 9시] API 크레딧 현황"]
+            s = status.get("serpapi", {})
+            if "no_key" in s:
+                lines.append("• SerpAPI: 키 미설정")
+            elif "error" in s:
+                lines.append(f"• SerpAPI: 조회 실패 ({s['error'][:60]})")
+            else:
+                lines.append(
+                    f"• SerpAPI: {s.get('used',0):,}/{s.get('limit',0):,}회 사용 "
+                    f"(잔량 {s.get('remaining',0):,}회, {s.get('percent',0)}%)"
+                )
+            t = status.get("tavily", {})
+            lines.append(f"• Tavily: 키 {'설정됨' if t.get('key_set') else '미설정'} (잔량 조회 미지원)")
+            msg = "\n".join(lines)
+            with get_connection() as conn:
+                admins = conn.execute(
+                    "SELECT telegram_chat_id FROM users WHERE is_admin=1"
+                ).fetchall()
+            for row in admins:
+                chat_id = dict(row).get("telegram_chat_id", "")
+                if chat_id:
+                    send_telegram(chat_id, msg)
+        except Exception as e:
+            print(f"[credit_report] 오류: {e}")
+        finally:
+            _schedule_credit_report()   # 다음 날 재예약
+
+    now    = _dt.datetime.now()
+    target = now.replace(hour=9, minute=0, second=0, microsecond=0)
+    if target <= now:
+        target += _dt.timedelta(days=1)
+    delay = (target - now).total_seconds()
+    t = threading.Timer(delay, _send_report)
+    t.daemon = True
+    t.start()
+
+
+@app.route("/api/credit-status")
+@admin_required
+def api_credit_status():
+    return jsonify(get_credit_status())
+
+
 @app.route("/admin")
 @admin_required
 def admin():
-    users = list_users()
-    return render_template("admin.html", users=users)
+    users      = list_users()
+    user_filter = int(request.args.get("user_id", 0))
+    all_cases  = list_all_cases(user_filter)
+    credit     = get_credit_status()
+    return render_template("admin.html", users=users,
+                           all_cases=all_cases, user_filter=user_filter,
+                           credit=credit)
 
 
 @app.route("/admin/add-user", methods=["POST"])
@@ -1196,7 +1362,10 @@ def admin():
 def admin_add_user():
     username = request.form.get("username", "").strip()
     password = request.form.get("password", "").strip()
-    is_admin = request.form.get("is_admin") == "1"
+    role     = request.form.get("role", "user")
+    if role not in ("admin", "operator", "user"):
+        role = "user"
+    is_admin = (role == "admin")
     error    = None
 
     if not username or not password:
@@ -1205,13 +1374,16 @@ def admin_add_user():
         error = "비밀번호는 4자 이상이어야 합니다."
     else:
         try:
-            create_user(username, password, is_admin)
+            create_user(username, password, is_admin, role=role)
         except Exception as e:
             error = f"계정 생성 실패: {e}"
 
     if error:
         users = list_users()
-        return render_template("admin.html", users=users, error=error)
+        all_cases = list_all_cases()
+        credit = get_credit_status()
+        return render_template("admin.html", users=users, all_cases=all_cases,
+                               credit=credit, user_filter=0, error=error)
     return redirect(url_for("admin"))
 
 
@@ -1230,6 +1402,18 @@ def admin_change_password(uid):
     new_pw = request.form.get("new_password", "").strip()
     if new_pw and len(new_pw) >= 4:
         change_password(uid, new_pw)
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/change-role/<int:uid>", methods=["POST"])
+@admin_required
+def admin_change_role(uid):
+    """사용자 역할 변경 (admin/operator/user)."""
+    role = request.form.get("role", "user")
+    if role not in ("admin", "operator", "user"):
+        role = "user"
+    if uid != session["user_id"]:  # 자기 자신 역할 변경 방지
+        update_user_role(uid, role)
     return redirect(url_for("admin"))
 
 
@@ -1415,7 +1599,7 @@ def ppt_download(job_id):
 # ─────────────────────────────────────────────
 
 @app.route("/learning", methods=["GET", "POST"])
-@login_required
+@operator_or_admin_required
 def learning():
     user_id   = session["user_id"]
     filter_type = request.args.get("type", "")

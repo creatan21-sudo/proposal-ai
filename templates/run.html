@@ -91,15 +91,16 @@ const evtSource = new EventSource(`/stream/${SID}`);
 
 // ── 스텝 정의
 const STEPS = [
-  { key: 'rfp_analysis',   label: 'RFP 분석', num: 1 },
-  { key: 'research',       label: '리서치',    num: 2 },
-  { key: 'narrative',      label: '내러티브',  num: 3 },
-  { key: 'strategy',       label: '전략',      num: 4 },
-  { key: 'creative',       label: '컨셉',      num: 5 },
-  { key: 'plan',           label: '기획',      num: 6 },
-  { key: 'script',         label: '대본',      num: 7 },
-  { key: 'marketing',      label: '마케팅',    num: 8 },
-  { key: 'final_proposal', label: '최종',      num: 9 },
+  { key: 'rfp_analysis',      label: 'RFP 분석', num: 1 },
+  { key: 'research',          label: '리서치',    num: 2 },
+  { key: 'narrative',         label: '내러티브',  num: 3 },
+  { key: 'strategy',          label: '전략',      num: 4 },
+  { key: 'creative',          label: '컨셉',      num: 5 },
+  { key: 'plan',              label: '기획',      num: 6 },
+  { key: 'script',            label: '대본',      num: 7 },
+  { key: 'marketing',         label: '마케팅',    num: 8 },
+  { key: 'final_proposal',    label: '최종',      num: 9 },
+  { key: 'improvement_report',label: '개선제안',  num: 10 },
 ];
 const stepStatusMap = {};
 STEPS.forEach(s => { stepStatusMap[s.key] = 'pending'; });
@@ -293,6 +294,10 @@ function handleEvent(ev) {
       }
       break;
     }
+    case 'episode_count_needed':
+      showEpisodeCountDialog(ev);
+      playStepSound();
+      break;
     case 'slogan_selected':
       appendLog(`슬로건 확정: ${ev.slogan}`);
       break;
@@ -514,6 +519,21 @@ function showConfirm(ev) {
   const panel = document.getElementById('confirm-panel');
   const title = document.getElementById('confirm-title');
   const body  = document.getElementById('confirm-body');
+
+  // 스킵 체인 모드: 이 스텝 실행 여부 선택
+  if (ev.is_pre_run) {
+    title.textContent = `${ev.name} — 실행하시겠습니까?`;
+    body.innerHTML = `
+      <p class="confirm-hint">이 스텝을 실행하거나 건너뜁니다.</p>
+      <div class="confirm-row">
+        <button class="btn btn-primary" onclick="confirmContinue()">실행 →</button>
+        <button class="btn btn-skip" onclick="confirmSkip()" title="이 스텝을 건너뜁니다">건너뛰기 →</button>
+      </div>`;
+    panel.classList.add('visible');
+    panel.scrollIntoView({ behavior: 'smooth', block: 'end' });
+    return;
+  }
+
   title.textContent = `${ev.name} — 확인`;
 
   let html = '';
@@ -555,6 +575,27 @@ function showConfirm(ev) {
 function hideConfirm() {
   document.getElementById('confirm-panel').classList.remove('visible');
   document.getElementById('confirm-body').innerHTML = '';
+}
+function showEpisodeCountDialog(ev) {
+  const panel = document.getElementById('confirm-panel');
+  const title = document.getElementById('confirm-title');
+  const body  = document.getElementById('confirm-body');
+  const def = ev.default_count || 3;
+  const max = ev.max_count || 5;
+  title.textContent = 'STEP 5 대본 제작 — 편수 선택';
+  let html = `<p class="confirm-hint">기획된 총 ${max}편 중 생성할 편수를 선택하세요. (기본: ${def}편)</p>`;
+  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px;">';
+  for (let n = 1; n <= max; n++) {
+    const style = n === def
+      ? 'background:#2563eb;color:#fff;border-color:#2563eb;'
+      : '';
+    html += `<button class="btn btn-secondary" style="min-width:54px;${style}"
+             onclick="hideConfirm();sendConfirm('${n}')">${n}편</button>`;
+  }
+  html += '</div>';
+  body.innerHTML = html;
+  panel.classList.add('visible');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'end' });
 }
 function confirmContinue() {
   const val         = (document.getElementById('confirm-input')?.value || '').trim();

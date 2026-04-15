@@ -174,6 +174,15 @@ def init_db() -> None:
                 eval_score      REAL    DEFAULT 0.0,
                 notes           TEXT    DEFAULT ''
             );
+
+            CREATE TABLE IF NOT EXISTS proposal_shares (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_id     INTEGER NOT NULL,
+                shared_by   INTEGER NOT NULL,
+                shared_with INTEGER NOT NULL,
+                created_at  TEXT    NOT NULL,
+                UNIQUE(case_id, shared_with)
+            );
         """)
         # ── 마이그레이션: 기존 DB에 누락된 컬럼 추가 ──
         for migration in [
@@ -951,12 +960,21 @@ def init_users() -> None:
         except Exception:
             pass  # 이미 존재하면 무시
 
+        # users에 role 컬럼 추가 (최초 1회) + 기존 계정 역할 설정
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
+            # 기존 팀원 → operator, 기존 관리자 → admin (기존 권한 유지)
+            conn.execute("UPDATE users SET role='operator' WHERE is_admin=0")
+            conn.execute("UPDATE users SET role='admin' WHERE is_admin=1")
+        except Exception:
+            pass  # 이미 존재하면 무시
+
         # admin 계정이 없으면 생성
         count = conn.execute("SELECT COUNT(*) FROM users WHERE is_admin=1").fetchone()[0]
         if count == 0:
             admin_pw = os.environ.get("ADMIN_PASSWORD", "admin1234")
             conn.execute(
-                "INSERT OR IGNORE INTO users (username, password_hash, is_admin, created_at) VALUES (?,?,1,?)",
+                "INSERT OR IGNORE INTO users (username, password_hash, is_admin, role, created_at) VALUES (?,?,1,'admin',?)",
                 ("admin", generate_password_hash(admin_pw), datetime.now().isoformat()),
             )
             print(f"  [초기화] admin 계정 생성 (비밀번호: {admin_pw})")
@@ -981,19 +999,118 @@ def get_user_by_id(user_id: int) -> "dict | None":
 def list_users() -> list:
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT id, username, is_admin, created_at FROM users ORDER BY id"
+            "SELECT id, username, is_admin, role, created_at FROM users ORDER BY id"
         ).fetchall()
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            d = dict(r)
+            # role 컬럼이 없는 구버전 DB 대비 폴백
+            if not d.get("role"):
+                d["role"] = "admin" if d.get("is_admin") else "operator"
+            result.append(d)
+        return result
 
 
-def create_user(username: str, password: str, is_admin: bool = False) -> int:
+def create_user(username: str, password: str, is_admin: bool = False,
+                role: str = "") -> int:
     from werkzeug.security import generate_password_hash
+    effective_role = role or ("admin" if is_admin else "user")
     with get_connection() as conn:
         cursor = conn.execute(
-            "INSERT INTO users (username, password_hash, is_admin, created_at) VALUES (?,?,?,?)",
-            (username, generate_password_hash(password), int(is_admin), datetime.now().isoformat()),
+            "INSERT INTO users (username, password_hash, is_admin, role, created_at) VALUES (?,?,?,?,?)",
+            (username, generate_password_hash(password), int(is_admin),
+             effective_role, datetime.now().isoformat()),
         )
         return cursor.lastrowid
+
+
+def update_user_role(user_id: int, role: str) -> None:
+    """사용자 역할 변경 (admin/operator/user). is_admin 플래그도 동기화."""
+    is_admin = 1 if role == "admin" else 0
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE users SET role=?, is_admin=? WHERE id=?",
+            (role, is_admin, user_id),
+        )
+
+
+def share_proposal(case_id: int, shared_by: int, shared_with: int) -> bool:
+    """케이스를 특정 사용자에게 공유."""
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO proposal_shares "
+                "(case_id, shared_by, shared_with, created_at) VALUES (?,?,?,?)",
+                (case_id, shared_by, shared_with, datetime.now().isoformat()),
+            )
+        return True
+    except Exception:
+        return False
+
+
+def unshare_proposal(case_id: int, shared_by: int, shared_with: int) -> bool:
+    """공유 취소."""
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                "DELETE FROM proposal_shares WHERE case_id=? AND shared_by=? AND shared_with=?",
+                (case_id, shared_by, shared_with),
+            )
+        return True
+    except Exception:
+        return False
+
+
+def get_shared_cases(user_id: int) -> list:
+    """이 user_id에게 공유된 케이스 목록 반환."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT r.id, r.created_at, r.client_name, r.project_name,
+                      r.video_type, r.budget, r.agency_type, r.user_id,
+                      u.username, ps.shared_by, su.username AS shared_by_name
+               FROM rfp_cases r
+               JOIN proposal_shares ps ON ps.case_id = r.id
+               LEFT JOIN users u ON r.user_id = u.id
+               LEFT JOIN users su ON ps.shared_by = su.id
+               WHERE ps.shared_with = ? AND (r.hidden IS NULL OR r.hidden = 0)
+               ORDER BY r.created_at DESC""",
+            (user_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def get_case_shares(case_id: int) -> list:
+    """특정 케이스의 공유 대상 목록."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT ps.shared_with, u.username
+               FROM proposal_shares ps
+               JOIN users u ON ps.shared_with = u.id
+               WHERE ps.case_id = ?""",
+            (case_id,),
+        ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def list_all_cases(user_id_filter: int = 0) -> list:
+    """관리자용: 전체 케이스 목록 조회."""
+    with get_connection() as conn:
+        if user_id_filter:
+            rows = conn.execute(
+                "SELECT r.id, r.created_at, r.client_name, r.project_name, "
+                "r.video_type, r.budget, r.agency_type, r.user_id, r.hidden, "
+                "u.username FROM rfp_cases r LEFT JOIN users u ON r.user_id=u.id "
+                "WHERE r.user_id=? ORDER BY r.created_at DESC LIMIT 200",
+                (user_id_filter,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT r.id, r.created_at, r.client_name, r.project_name, "
+                "r.video_type, r.budget, r.agency_type, r.user_id, r.hidden, "
+                "u.username FROM rfp_cases r LEFT JOIN users u ON r.user_id=u.id "
+                "ORDER BY r.created_at DESC LIMIT 200"
+            ).fetchall()
+        return [dict(row) for row in rows]
 
 
 def delete_user(user_id: int) -> None:

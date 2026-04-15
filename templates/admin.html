@@ -5,6 +5,15 @@
 <div class="page-title">관리자 패널</div>
 <p class="page-sub">팀원 계정을 관리합니다.</p>
 
+<!-- ── 탭 네비게이션 -->
+<div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:20px;">
+  <button class="admin-tab active" onclick="switchTab('users',this)">계정 관리</button>
+  <button class="admin-tab" onclick="switchTab('proposals',this)">전체 제안서</button>
+  <button class="admin-tab" onclick="switchTab('credits',this)">크레딧 현황</button>
+</div>
+
+<!-- ────────── 탭 1: 계정 관리 ────────── -->
+<div id="tab-users" class="tab-pane">
 <div style="display:grid;grid-template-columns:1fr 340px;gap:24px;align-items:start;">
 
   <!-- 사용자 목록 -->
@@ -17,7 +26,7 @@
         <tr>
           <th>#</th>
           <th>아이디</th>
-          <th>권한</th>
+          <th>역할</th>
           <th>생성일</th>
           <th>비밀번호 변경</th>
           <th></th>
@@ -29,10 +38,24 @@
           <td style="color:#9ca3af;font-size:12px;">{{ u.id }}</td>
           <td style="font-weight:600;">{{ u.username }}</td>
           <td>
-            {% if u.is_admin %}
-            <span class="badge" style="background:#fef3c7;color:#92400e;">관리자</span>
+            {% set role = u.role or ('admin' if u.is_admin else 'operator') %}
+            {% if u.id == session.get('user_id') %}
+              {% if role == 'admin' %}
+              <span class="badge" style="background:#fef3c7;color:#92400e;">관리자</span>
+              {% elif role == 'operator' %}
+              <span class="badge badge-blue">운영자</span>
+              {% else %}
+              <span class="badge badge-gray">열람자</span>
+              {% endif %}
             {% else %}
-            <span class="badge badge-gray">팀원</span>
+            <form method="POST" action="/admin/change-role/{{ u.id }}" style="display:inline;">
+              <select name="role" onchange="this.form.submit()"
+                      style="padding:3px 6px;font-size:13px;border:1px solid #d1d5db;border-radius:6px;">
+                <option value="admin"    {% if role == 'admin'    %}selected{% endif %}>관리자</option>
+                <option value="operator" {% if role == 'operator' %}selected{% endif %}>운영자</option>
+                <option value="user"     {% if role == 'user'     %}selected{% endif %}>열람자</option>
+              </select>
+            </form>
             {% endif %}
           </td>
           <td style="font-size:13px;color:#6b7280;">
@@ -81,10 +104,13 @@
         <label>비밀번호 (4자 이상)</label>
         <input type="password" name="password" placeholder="비밀번호" required minlength="4">
       </div>
-      <div class="form-group" style="margin-bottom:18px;">
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-          <input type="checkbox" name="is_admin" value="1"> 관리자 권한 부여
-        </label>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label>역할</label>
+        <select name="role" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:7px;">
+          <option value="user">열람자 (읽기 전용)</option>
+          <option value="operator" selected>운영자 (파이프라인 + 학습)</option>
+          <option value="admin">관리자 (전체 권한)</option>
+        </select>
       </div>
       <button type="submit" class="btn btn-primary" style="width:100%;">계정 생성</button>
     </form>
@@ -106,4 +132,178 @@
   </div>
 
 </div>
+</div><!-- /tab-users -->
+
+<!-- ────────── 탭 2: 전체 제안서 ────────── -->
+<div id="tab-proposals" class="tab-pane" style="display:none;">
+  <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
+    <span style="font-weight:700;">전체 제안서 ({{ all_cases|length }}건)</span>
+    <form method="GET" action="/admin" style="display:flex;gap:8px;align-items:center;">
+      <input type="hidden" name="_tab" value="proposals">
+      <select name="user_id" style="padding:5px 8px;font-size:13px;border:1px solid #d1d5db;border-radius:6px;"
+              onchange="this.form.submit()">
+        <option value="0" {% if not user_filter %}selected{% endif %}>전체 팀원</option>
+        {% for u in users %}
+        <option value="{{ u.id }}" {% if user_filter == u.id %}selected{% endif %}>{{ u.username }}</option>
+        {% endfor %}
+      </select>
+    </form>
+  </div>
+  <div class="card" style="padding:0;overflow:hidden;">
+    {% if all_cases %}
+    <table>
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>생성일</th>
+          <th>작성자</th>
+          <th>발주처</th>
+          <th>사업명</th>
+          <th>영상종류</th>
+          <th>기관유형</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in all_cases %}
+        <tr>
+          <td style="color:#9ca3af;font-size:12px;">{{ c.id }}</td>
+          <td style="font-size:13px;color:#6b7280;white-space:nowrap;">
+            {{ c.created_at[:10] if c.created_at else '-' }}
+          </td>
+          <td><span class="badge badge-gray">{{ c.username or '-' }}</span></td>
+          <td style="font-weight:600;">{{ c.client_name }}</td>
+          <td>{{ c.project_name }}</td>
+          <td><span class="badge badge-blue">{{ c.video_type }}</span></td>
+          <td style="font-size:13px;color:#6b7280;">{{ c.agency_type or '-' }}</td>
+          <td>
+            <a href="/history/{{ c.id }}" class="btn btn-primary btn-sm">상세</a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="padding:48px;text-align:center;color:#9ca3af;">제안서가 없습니다.</div>
+    {% endif %}
+  </div>
+</div><!-- /tab-proposals -->
+
+<!-- ────────── 탭 3: 크레딧 현황 ────────── -->
+<div id="tab-credits" class="tab-pane" style="display:none;">
+  <div style="display:flex;gap:12px;align-items:center;margin-bottom:16px;">
+    <span style="font-weight:700;font-size:15px;">API 크레딧 현황</span>
+    <button class="btn btn-secondary btn-sm" onclick="refreshCredit()">새로고침</button>
+    <span id="credit-loading" style="font-size:13px;color:#6b7280;display:none;">조회 중...</span>
+  </div>
+
+  <div id="credit-content" style="display:grid;gap:14px;max-width:600px;">
+    <!-- SerpAPI -->
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:10px;font-size:14px;">SerpAPI</div>
+      {% set s = credit.get('serpapi', {}) %}
+      {% if s.get('no_key') %}
+      <div style="color:#9ca3af;font-size:13px;">API 키 미설정 (<code>SERPAPI_KEY</code>)</div>
+      {% elif s.get('error') %}
+      <div style="color:#dc2626;font-size:13px;">조회 실패: {{ s.error }}</div>
+      {% else %}
+      <div style="margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;">
+          <span>{{ s.get('used',0)|int }}회 / {{ s.get('limit',0)|int }}회</span>
+          <span style="font-weight:600;{% if s.get('percent',0) > 80 %}color:#dc2626{% elif s.get('percent',0) > 60 %}color:#f59e0b{% else %}color:#059669{% endif %}">
+            {{ s.get('percent',0) }}%
+          </span>
+        </div>
+        <div style="background:#e5e7eb;border-radius:4px;height:8px;overflow:hidden;">
+          <div style="background:{% if s.get('percent',0) > 80 %}#dc2626{% elif s.get('percent',0) > 60 %}#f59e0b{% else %}#2563eb{% endif %};
+                      height:100%;width:{{ [s.get('percent',0)|int, 100]|min }}%;transition:width .4s;"></div>
+        </div>
+      </div>
+      <div style="font-size:13px;color:#6b7280;">잔량: <strong>{{ s.get('remaining',0)|int }}회</strong></div>
+      {% endif %}
+    </div>
+
+    <!-- Tavily -->
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:8px;font-size:14px;">Tavily</div>
+      {% set t = credit.get('tavily', {}) %}
+      <div style="font-size:13px;color:#6b7280;">
+        키 상태: <strong>{{ '설정됨' if t.get('key_set') else '미설정' }}</strong>
+        &nbsp;·&nbsp; {{ t.get('note', '') }}
+      </div>
+    </div>
+
+    <!-- Anthropic -->
+    <div class="card">
+      <div style="font-weight:700;margin-bottom:8px;font-size:14px;">Anthropic (Claude)</div>
+      <div style="font-size:13px;color:#6b7280;">{{ credit.get('anthropic', {}).get('note', '') }}</div>
+    </div>
+  </div>
+
+  <p style="font-size:12px;color:#9ca3af;margin-top:16px;">
+    매일 오전 9시 관리자 텔레그램으로 자동 리포트가 전송됩니다.
+  </p>
+</div><!-- /tab-credits -->
+
+<style>
+.admin-tab {
+  padding: 10px 20px; font-size: 14px; font-weight: 600;
+  border: none; background: none; cursor: pointer; color: #6b7280;
+  border-bottom: 2px solid transparent; margin-bottom: -2px;
+}
+.admin-tab.active { color: #2563eb; border-bottom-color: #2563eb; }
+.admin-tab:hover  { color: #374151; }
+</style>
+
+<script>
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-pane').forEach(el => el.style.display = 'none');
+  document.querySelectorAll('.admin-tab').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + name).style.display = '';
+  btn.classList.add('active');
+}
+
+// URL 파라미터로 탭 복원
+(function() {
+  const params = new URLSearchParams(location.search);
+  const tab = params.get('_tab') || 'users';
+  const btn = document.querySelector(`.admin-tab[onclick*="${tab}"]`);
+  if (btn) switchTab(tab, btn);
+})();
+
+async function refreshCredit() {
+  document.getElementById('credit-loading').style.display = 'inline';
+  try {
+    const res = await fetch('/api/credit-status');
+    const data = await res.json();
+    const s = data.serpapi || {};
+    let html = '';
+    if (s.no_key) {
+      html = '<div style="color:#9ca3af;font-size:13px;">API 키 미설정</div>';
+    } else if (s.error) {
+      html = `<div style="color:#dc2626;font-size:13px;">조회 실패: ${s.error}</div>`;
+    } else {
+      const pct = s.percent || 0;
+      const color = pct > 80 ? '#dc2626' : pct > 60 ? '#f59e0b' : '#2563eb';
+      html = `<div style="margin-bottom:8px;">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px;">
+          <span>${(s.used||0).toLocaleString()}회 / ${(s.limit||0).toLocaleString()}회</span>
+          <span style="font-weight:600;color:${color}">${pct}%</span>
+        </div>
+        <div style="background:#e5e7eb;border-radius:4px;height:8px;overflow:hidden;">
+          <div style="background:${color};height:100%;width:${Math.min(pct,100)}%;"></div>
+        </div>
+      </div>
+      <div style="font-size:13px;color:#6b7280;">잔량: <strong>${(s.remaining||0).toLocaleString()}회</strong></div>`;
+    }
+    document.querySelector('#credit-content .card:first-child > div:last-child')?.insertAdjacentHTML('afterend', '');
+    // Simple reload of credit section
+    location.reload();
+  } catch(e) {
+    alert('조회 실패: ' + e);
+  } finally {
+    document.getElementById('credit-loading').style.display = 'none';
+  }
+}
+</script>
 {% endblock %}

@@ -42,13 +42,14 @@ _SHORTFORM_VERSIONS = ["15sec", "30sec", "60sec"]
 # 진입점
 # ─────────────────────────────────────────────
 
-def run(dna: ConceptDNA, progress_fn=None) -> dict:
+def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
     """편별 대본 전체 생성.
 
     Args:
         dna: STEP 0~4 결과가 모두 반영된 ConceptDNA
         progress_fn: 선택적 진행상황 콜백 (SSE push_event 함수)
                      progress_fn({"type": "step_progress", ...}) 형태로 호출
+        max_episodes: 생성할 최대 편수 (0이면 기획된 전체 편수)
 
     Returns:
         {
@@ -59,6 +60,8 @@ def run(dna: ConceptDNA, progress_fn=None) -> dict:
         }
     """
     ep_plans   = _get_episode_plans(dna)
+    if max_episodes > 0:
+        ep_plans = ep_plans[:max_episodes]
     total      = len(ep_plans)
     is_series  = total > 1
     duration_s = _duration_to_seconds(dna.duration)
