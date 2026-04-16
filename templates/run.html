@@ -236,6 +236,10 @@ function handleEvent(ev) {
       appendProcessingCard(ev.name);
       break;
     }
+    case 'step_progress':
+      // 에이전트 진행상황 → 처리 중 카드 메시지 업데이트
+      if (ev.message) updateProcessingMsg(ev.message);
+      break;
     case 'step_done':
       removeProcessingCard();
       setStep(ev.step, 'done');
@@ -448,12 +452,19 @@ function appendProcessingCard(stepName) {
   const card = document.createElement('div');
   card.id = 'processing-card';
   card.className = 'processing-card';
-  card.innerHTML = `<span class="processing-spinner"></span><span>${esc(stepName)} 처리 중...</span>`;
+  card.innerHTML = `<span class="processing-spinner"></span><span class="processing-msg">${esc(stepName)} 처리 중...</span>`;
   feed.appendChild(card);
   card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 function removeProcessingCard() {
   document.getElementById('processing-card')?.remove();
+}
+function updateProcessingMsg(message) {
+  const pc = document.getElementById('processing-card');
+  if (pc) {
+    const msg = pc.querySelector('.processing-msg');
+    if (msg && message) msg.textContent = message;
+  }
 }
 
 // ── 결과 카드

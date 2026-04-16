@@ -3,6 +3,7 @@
 # - input() 대신 push_event/wait_confirm 콜백으로 SSE + 사용자 입력 처리
 
 import concurrent.futures as _cf
+import threading
 import time
 from core.dna import ConceptDNA
 from core.claude_client import set_retry_callback, clear_retry_callback, OverloadError
@@ -175,6 +176,9 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
         else:
             _max_ep = 0  # 제한 없음 (scripter 기본값)
 
+        # 장시간 스텝 킵얼라이브 (Railway 프록시 60s 타임아웃 방지)
+        _ka_stop = _keepalive_start(push_event, step_key)
+
         for pipe_attempt in range(1, _PIPE_RETRY_MAX + 1):
             t0 = time.time()
             set_retry_callback(_api_retry_cb)
@@ -185,6 +189,8 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
                     result = agent_mod.run(dna, pipeline_results=results)
                 elif step_key == "script":
                     result = agent_mod.run(dna, progress_fn=push_event, max_episodes=_max_ep)
+                elif step_key == "marketing":
+                    result = agent_mod.run(dna, progress_fn=push_event)
                 else:
                     result = agent_mod.run(dna)
                 elapsed = round(time.time() - t0, 1)
@@ -237,6 +243,8 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
                 else:
                     pipe_exc = e
                     break   # 타임아웃 외 오류는 즉시 포기
+
+        _ka_stop.set()  # 킵얼라이브 스레드 종료
 
         if pipe_exc is not None:
             elapsed = round(time.time() - t0, 1)
@@ -334,6 +342,44 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
         except Exception:
             pass
     return results
+
+
+# ─────────────────────────────────────────────
+# SSE 킵얼라이브 헬퍼
+# ─────────────────────────────────────────────
+
+_KA_INTERVAL = 15  # 15초마다 step_progress 이벤트 전송 (Railway 60s 프록시 타임아웃 방지)
+
+
+def _keepalive_start(push_event, step_key: str) -> threading.Event:
+    """백그라운드 킵얼라이브 스레드 시작.
+
+    Returns:
+        stop_event — .set()을 호출하면 스레드가 종료됨
+    """
+    stop_ev = threading.Event()
+
+    def _loop():
+        msg_map = {
+            "research":     "리서치 진행 중...",
+            "narrative":    "내러티브 작성 중...",
+            "strategy":     "전략 수립 중...",
+            "creative":     "컨셉 개발 중...",
+            "plan":         "실행 계획 작성 중...",
+            "script":       "대본 작성 중...",
+            "marketing":    "마케팅 전략 수립 중...",
+            "final_proposal": "최종 제안서 완성 중...",
+        }
+        msg = msg_map.get(step_key, "처리 중...")
+        while not stop_ev.wait(_KA_INTERVAL):
+            try:
+                push_event({"type": "step_progress", "step": step_key, "message": msg})
+            except Exception:
+                break
+
+    t = threading.Thread(target=_loop, daemon=True)
+    t.start()
+    return stop_ev
 
 
 # ─────────────────────────────────────────────
@@ -486,16 +532,30 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
             n_scene = len(sc.get('scenes', []))
             hook    = sc.get('opening_hook', {})
             hook_line = (hook.get('hook_line', '') if isinstance(hook, dict) else '') or ''
-            line = f"{ep_num}편 [{title}] — {n_scene}씬"
+            core_msg = sc.get('core_message', sc.get('key_message', ''))
+            line = f"## {ep_num}편 [{title}] — {n_scene}씬"
+            if core_msg:
+                line += f"\n핵심 메시지: {core_msg}"
             if hook_line:
                 line += f"\n오프닝 훅: {hook_line}"
+            # 첫 번째 장면 미리보기
+            scenes = sc.get('scenes', [])
+            if scenes and isinstance(scenes[0], dict):
+                s1 = scenes[0]
+                s1_narr = s1.get('narration', s1.get('script', ''))
+                if s1_narr and isinstance(s1_narr, str):
+                    preview = s1_narr[:150].strip()
+                    if preview:
+                        line += f"\n1씬 나레이션: {preview}{'...' if len(s1_narr) > 150 else ''}"
             ep_lines.append(line)
-        s["편별 대본"] = ep_lines
-        # 첫 편 핵심 메시지
-        if scripts and isinstance(scripts[0], dict):
-            core_msg = scripts[0].get("core_message", "")
-            if core_msg:
-                s["핵심 메시지 (1편)"] = core_msg
+        s["편별 대본 개요"] = ep_lines
+        # 숏폼 여부
+        if dna.has_shortform:
+            s["포맷"] = "숏폼 (15/30/60초 버전)"
+        elif scripts and isinstance(scripts[0], dict):
+            fmt = scripts[0].get("format", "")
+            if fmt:
+                s["포맷"] = fmt
 
     elif step_key == "marketing":
         # result 키: "platforms" (distribution_channels 아님), "kpi" → "primary_kpi"
@@ -505,22 +565,55 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
             for ch in channels
         ]
         kpis = dna.kpi_targets or (result.get("kpi") or {}).get("primary_kpi", [])
-        s["KPI 목표"] = [
-            f"{kpi.get('metric', '')}: {kpi.get('target', '')}" if isinstance(kpi, dict) else str(kpi)
-            for kpi in kpis
-        ]
+        if kpis:
+            s["KPI 목표"] = [
+                f"{kpi.get('metric', '')}: {kpi.get('target', '')}" if isinstance(kpi, dict) else str(kpi)
+                for kpi in kpis
+            ]
         # 유튜브 SEO 핵심 전략
-        yt = result.get("youtube_seo", {})
-        if isinstance(yt, dict):
-            kw = yt.get("keyword_strategy", "") or yt.get("keywords", "")
+        yt = dna.youtube_strategy or result.get("youtube_seo", {})
+        if isinstance(yt, dict) and yt:
+            title_formula = yt.get("title_formula", yt.get("title_format", ""))
+            kw = yt.get("keyword_strategy", yt.get("keywords", yt.get("main_keywords", "")))
+            upload_time = yt.get("upload_time", yt.get("best_upload_time", ""))
+            yt_lines = []
+            if title_formula:
+                yt_lines.append(f"제목 공식: {str(title_formula)[:120]}")
             if kw:
-                s["유튜브 키워드 전략"] = kw[:300] if isinstance(kw, str) else str(kw)
+                yt_lines.append(f"키워드: {str(kw)[:200]}")
+            if upload_time:
+                yt_lines.append(f"업로드 시간: {str(upload_time)[:80]}")
+            if yt_lines:
+                s["유튜브 SEO 전략"] = "\n".join(yt_lines)
+        # SNS 채널별 운영 계획 요약
+        sns = dna.sns_strategy or result.get("sns_channels", {})
+        if isinstance(sns, dict) and sns:
+            sns_lines = []
+            for ch, plan in list(sns.items())[:3]:  # 상위 3개 채널만
+                if isinstance(plan, dict):
+                    freq = plan.get("posting_frequency", plan.get("frequency", ""))
+                    content = plan.get("content_format", plan.get("format", ""))
+                    detail = f"{freq}" if freq else ""
+                    if content:
+                        detail += f" / {content}" if detail else content
+                    sns_lines.append(f"{ch}: {detail[:100]}" if detail else ch)
+                else:
+                    sns_lines.append(f"{ch}: {str(plan)[:100]}")
+            if sns_lines:
+                s["SNS 운영 계획"] = sns_lines
         # 예산 배분 요약
-        budget = result.get("marketing_budget", {})
-        if isinstance(budget, dict):
-            total_b = budget.get("total", budget.get("total_budget", ""))
+        budget = dna.marketing_budget or result.get("marketing_budget", {})
+        if isinstance(budget, dict) and budget:
+            total_b = budget.get("total", budget.get("total_budget", budget.get("마케팅_예산", "")))
+            breakdown = budget.get("breakdown", budget.get("배분", []))
             if total_b:
                 s["마케팅 예산"] = str(total_b)
+            if breakdown and isinstance(breakdown, list):
+                s["예산 배분"] = [
+                    f"{b.get('category', b.get('항목', ''))}: {b.get('amount', b.get('금액', ''))}"
+                    if isinstance(b, dict) else str(b)
+                    for b in breakdown[:4]
+                ]
 
     elif step_key == "improvement_report":
         _sev_icon = {"critical": "🔴 필수 개선", "warning": "🟡 권장 개선", "info": "🔵 참고"}

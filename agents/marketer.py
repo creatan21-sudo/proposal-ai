@@ -71,11 +71,12 @@ _MARKETING_BREAKDOWN = [
 # 진입점
 # ─────────────────────────────────────────────
 
-def run(dna: ConceptDNA) -> dict:
+def run(dna: ConceptDNA, progress_fn=None) -> dict:
     """유통/마케팅 전략 수립.
 
     Args:
         dna: STEP 0~5 결과가 모두 반영된 ConceptDNA
+        progress_fn: 선택적 진행상황 콜백 (SSE push_event 함수)
 
     Returns:
         {
@@ -91,6 +92,13 @@ def run(dna: ConceptDNA) -> dict:
             "marketing_budget":    dict,  # 예산 배분
         }
     """
+    def _progress(msg: str):
+        if progress_fn:
+            try:
+                progress_fn({"type": "step_progress", "step": "marketing", "message": msg})
+            except Exception:
+                pass
+
     # 1. 플랫폼 자동 선정
     platforms = _select_platforms(dna)
     print(f"  선정 플랫폼: {', '.join(platforms)}")
@@ -108,6 +116,7 @@ def run(dna: ConceptDNA) -> dict:
 
     # 5. 세 파트를 동시 실행 (병렬 Claude 호출)
     print("  유통·SEO·SNS·KPI 전략 병렬 생성 중...")
+    _progress(f"유통·SEO 전략 생성 중... (선정 플랫폼: {', '.join(platforms[:3])})")
     part1, part2, part3 = {}, {}, {}
 
     with _cf.ThreadPoolExecutor(max_workers=3) as ex:
@@ -117,16 +126,19 @@ def run(dna: ConceptDNA) -> dict:
 
         try:
             part1 = f1.result()
+            _progress("유통·SEO 전략 완료 — SNS·KPI 전략 생성 중...")
         except Exception as e:
             print(f"  [오류] distribution_strategy 생성 실패: {e}")
 
         try:
             part2 = f2.result()
+            _progress("SNS 전략 완료 — KPI 전략 마무리 중...")
         except Exception as e:
             print(f"  [오류] sns_strategy 생성 실패: {e}")
 
         try:
             part3 = f3.result()
+            _progress("KPI·예산 전략 완료 — 결과 병합 중...")
         except Exception as e:
             print(f"  [오류] kpi_strategy 생성 실패: {e}")
 
