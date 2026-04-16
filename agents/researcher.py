@@ -30,7 +30,7 @@ from database.db import (find_similar_analyses, find_past_research, save_researc
                           get_learning_cases_for_researcher,
                           get_research_cache, save_research_cache)
 
-_HAIKU_MODEL = "claude-haiku-4-5-20251001"
+_SONNET_MODEL = "claude-sonnet-4-6"
 
 _AGENCY_PROFILES_PATH = Path(__file__).parent.parent / "database" / "agency_profiles.json"
 
@@ -273,7 +273,7 @@ def _analyze(dna: ConceptDNA, profile: dict, past_cases: list,
     prompt = _build_prompt(dna, profile, past_cases, serp_results, tavily_results, learning_cases or [])
 
     try:
-        result = claude_client.call_json(prompt, model=_HAIKU_MODEL,
+        result = claude_client.call_json(prompt, model=_SONNET_MODEL,
                                          max_tokens=1500, max_retries=2)
         defaults = dict(_RESEARCH_DEFAULTS)
         for k, v in defaults.items():

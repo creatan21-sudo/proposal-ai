@@ -23,7 +23,7 @@ from core import claude_client
 from core.dna import ConceptDNA, update_dna, dna_to_context_string
 from database.db import save_marketing
 
-_HAIKU_MODEL = "claude-haiku-4-5-20251001"
+_SONNET_MODEL = "claude-sonnet-4-6"
 
 
 # ─────────────────────────────────────────────
@@ -384,7 +384,7 @@ def _generate_sns_strategy(dna: ConceptDNA, platforms: list[str]) -> dict:
 
 빈 객체/빈 문자열 금지. 모든 채널에 구체적 내용 포함."""
 
-    result = claude_client.call_json(prompt, model=_HAIKU_MODEL, max_tokens=2000)
+    result = claude_client.call_json(prompt, model=_SONNET_MODEL, max_tokens=2000)
     if not result.get("sns_channels"):
         print("  [경고] marketer: sns_channels 비어있음!")
     return result
@@ -552,7 +552,7 @@ def _generate_kpi_strategy(
 ) -> dict:
     """KPI 지표 + 월별 목표 + 보고체계 생성."""
     prompt = _build_kpi_prompt(dna, platforms, rfp_kpis, mkt_budget)
-    result = claude_client.call_json(prompt, model=_HAIKU_MODEL, max_tokens=2000)
+    result = claude_client.call_json(prompt, model=_SONNET_MODEL, max_tokens=2000)
     return result
 
 
