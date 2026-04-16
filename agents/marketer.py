@@ -17,10 +17,13 @@
 #   - 롱폼·숏폼 보유 여부에 따라 재편집 계획 자동 포함
 
 import re
+import concurrent.futures as _cf
 
 from core import claude_client
 from core.dna import ConceptDNA, update_dna, dna_to_context_string
 from database.db import save_marketing
+
+_HAIKU_MODEL = "claude-haiku-4-5-20251001"
 
 
 # ─────────────────────────────────────────────
@@ -103,30 +106,32 @@ def run(dna: ConceptDNA) -> dict:
     # 4. 마케팅 예산 골격 계산
     mkt_budget = _calc_marketing_budget(dna)
 
-    # 5. 세 파트로 나눠 Claude 호출 (토큰 안정성)
-    print("  유통·SEO·인플루언서 전략 생성 중...")
-    try:
-        part1 = _generate_distribution_strategy(dna, platforms, edit_versions)
-    except Exception as e:
-        print(f"  [오류] distribution_strategy 생성 실패: {e}")
-        part1 = {}
+    # 5. 세 파트를 동시 실행 (병렬 Claude 호출)
+    print("  유통·SEO·SNS·KPI 전략 병렬 생성 중...")
+    part1, part2, part3 = {}, {}, {}
 
-    print("  SNS 채널 운영 계획 생성 중...")
-    try:
-        part3 = _generate_sns_strategy(dna, platforms)
-    except Exception as e:
-        print(f"  [오류] sns_strategy 생성 실패: {e}")
-        part3 = {}
+    with _cf.ThreadPoolExecutor(max_workers=3) as ex:
+        f1 = ex.submit(_generate_distribution_strategy, dna, platforms, edit_versions)
+        f2 = ex.submit(_generate_sns_strategy, dna, platforms)
+        f3 = ex.submit(_generate_kpi_strategy, dna, platforms, rfp_kpis, mkt_budget)
 
-    print("  KPI·보고체계 생성 중...")
-    try:
-        part2 = _generate_kpi_strategy(dna, platforms, rfp_kpis, mkt_budget)
-    except Exception as e:
-        print(f"  [오류] kpi_strategy 생성 실패: {e}")
-        part2 = {}
+        try:
+            part1 = f1.result()
+        except Exception as e:
+            print(f"  [오류] distribution_strategy 생성 실패: {e}")
 
-    # 6. 결과 병합
-    result = {**part1, **part3, **part2}
+        try:
+            part2 = f2.result()
+        except Exception as e:
+            print(f"  [오류] sns_strategy 생성 실패: {e}")
+
+        try:
+            part3 = f3.result()
+        except Exception as e:
+            print(f"  [오류] kpi_strategy 생성 실패: {e}")
+
+    # 6. 결과 병합 (part1=distribution/SEO, part2=SNS, part3=KPI)
+    result = {**part1, **part2, **part3}
     result.setdefault("platforms",           platforms)
     result.setdefault("edit_versions",       edit_versions)
     result.setdefault("marketing_budget",    mkt_budget)
@@ -324,7 +329,7 @@ def _generate_distribution_strategy(
 ) -> dict:
     """유튜브 SEO + 인플루언서 + campaign_linkage + 숏폼 전략 생성."""
     prompt  = _build_distribution_prompt(dna, platforms, edit_versions)
-    result  = claude_client.call_json(prompt, max_tokens=8192)
+    result  = claude_client.call_json(prompt, max_tokens=2000)
 
     # 품질 경고 로그
     if not result.get("youtube_seo"):
@@ -379,7 +384,7 @@ def _generate_sns_strategy(dna: ConceptDNA, platforms: list[str]) -> dict:
 
 빈 객체/빈 문자열 금지. 모든 채널에 구체적 내용 포함."""
 
-    result = claude_client.call_json(prompt, max_tokens=4096)
+    result = claude_client.call_json(prompt, model=_HAIKU_MODEL, max_tokens=2000)
     if not result.get("sns_channels"):
         print("  [경고] marketer: sns_channels 비어있음!")
     return result
@@ -547,7 +552,7 @@ def _generate_kpi_strategy(
 ) -> dict:
     """KPI 지표 + 월별 목표 + 보고체계 생성."""
     prompt = _build_kpi_prompt(dna, platforms, rfp_kpis, mkt_budget)
-    result = claude_client.call_json(prompt, max_tokens=6000)
+    result = claude_client.call_json(prompt, model=_HAIKU_MODEL, max_tokens=2000)
     return result
 
 

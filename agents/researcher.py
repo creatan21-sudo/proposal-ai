@@ -17,6 +17,7 @@
 # 출력: 12개 항목, 각 최소 400자
 
 import json
+import concurrent.futures as _cf
 from pathlib import Path
 
 from serpapi import GoogleSearch
@@ -25,7 +26,11 @@ from tavily import TavilyClient
 from config import SERP_API_KEY, TAVILY_API_KEY
 from core import claude_client
 from core.dna import ConceptDNA, update_dna, dna_to_context_string
-from database.db import find_similar_analyses, find_past_research, save_research, get_learning_cases_for_researcher
+from database.db import (find_similar_analyses, find_past_research, save_research,
+                          get_learning_cases_for_researcher,
+                          get_research_cache, save_research_cache)
+
+_HAIKU_MODEL = "claude-haiku-4-5-20251001"
 
 _AGENCY_PROFILES_PATH = Path(__file__).parent.parent / "database" / "agency_profiles.json"
 
@@ -56,6 +61,16 @@ def run(dna: ConceptDNA) -> dict:
         타겟:   target_media_habits, target_content_preference, platform_patterns
         환경:   policy_changes, algorithm_trends, market_pricing
     """
+    # ── 캐시 확인 (7일 이내 동일 발주처) ────────
+    try:
+        cached = get_research_cache(dna.client_name)
+        if cached:
+            print(f"  [캐시] '{dna.client_name}' 리서치 캐시 재사용 (7일 이내)")
+            update_dna(dna, {"agency_characteristics": cached.get("agency_policy", "")})
+            return cached
+    except Exception as e:
+        print(f"  [경고] 캐시 조회 실패 (계속 진행): {e}")
+
     profile    = _load_agency_profile(dna.agency_type)
     past_cases = _query_past_cases(dna.client_name, dna.agency_type)
     if past_cases:
@@ -66,30 +81,40 @@ def run(dna: ConceptDNA) -> dict:
     if learning_cases:
         print(f"  학습 데이터 참조: {len(learning_cases)}건")
 
-    # ── SerpAPI 한국 검색 ──────────────────────
+    # ── SerpAPI + Tavily 병렬 검색 ────────────
     serp_results: dict[str, list] = {}
-    if SERP_API_KEY:
-        print("  SerpAPI 한국 검색 중...")
-        serp_results = _serp_search(dna.client_name, dna.project_name, dna.agency_type)
-        total = sum(len(v) for v in serp_results.values())
-        print(f"  SerpAPI 완료: {total}건")
-    else:
-        print("  [경고] SERP_API_KEY 없음 — SerpAPI 검색 생략")
-
-    # ── Tavily 글로벌 트렌드 검색 ──────────────
     tavily_results: list[dict] = []
     tavily = _get_tavily()
-    if tavily:
+
+    def _run_serp():
+        if not SERP_API_KEY:
+            print("  [경고] SERP_API_KEY 없음 — SerpAPI 검색 생략")
+            return {}
+        print("  SerpAPI 한국 검색 중...")
+        r = _serp_search(dna.client_name, dna.project_name, dna.agency_type)
+        total = sum(len(v) for v in r.values())
+        print(f"  SerpAPI 완료: {total}건")
+        return r
+
+    def _run_tavily():
+        if not tavily:
+            print("  [경고] TAVILY_API_KEY 없음 — Tavily 검색 생략")
+            return []
         print("  Tavily 글로벌 트렌드 검색 중...")
-        tavily_results = _tavily_search(tavily, dna.agency_type)
-        print(f"  Tavily 완료: {len(tavily_results)}건")
-    else:
-        print("  [경고] TAVILY_API_KEY 없음 — Tavily 검색 생략")
+        r = _tavily_search(tavily, dna.agency_type)
+        print(f"  Tavily 완료: {len(r)}건")
+        return r
+
+    with _cf.ThreadPoolExecutor(max_workers=2) as ex:
+        f_serp   = ex.submit(_run_serp)
+        f_tavily = ex.submit(_run_tavily)
+        serp_results   = f_serp.result()
+        tavily_results = f_tavily.result()
 
     if not serp_results and not tavily_results:
         print("  웹서치 결과 없음 — Claude 지식 활용")
 
-    # ── Claude 분석 ───────────────────────────
+    # ── Claude 분석 (Haiku 모델, 고속) ──────────
     print("  Claude 12개 항목 분석 중...")
     result = _analyze(dna, profile, past_cases, serp_results, tavily_results, learning_cases)
 
@@ -104,6 +129,12 @@ def run(dna: ConceptDNA) -> dict:
     except Exception as e:
         print(f"  [경고] DB 저장 실패: {e}")
 
+    # ── 캐시 저장 ────────────────────────────────
+    try:
+        save_research_cache(dna.client_name, result)
+    except Exception as e:
+        print(f"  [경고] 캐시 저장 실패 (계속 진행): {e}")
+
     return result
 
 
@@ -112,7 +143,7 @@ def run(dna: ConceptDNA) -> dict:
 # ─────────────────────────────────────────────
 
 def _serp_search(client_name: str, project_name: str, agency_type: str) -> dict[str, list]:
-    """6개 쿼리로 한국 정보 수집. 결과를 용도별 키로 분류하여 반환."""
+    """6개 쿼리로 한국 정보 수집. ThreadPoolExecutor(max_workers=3)로 병렬 실행."""
 
     queries = [
         ("agency",   f"{client_name} 2025 주요 정책 사업 계획"),
@@ -124,11 +155,11 @@ def _serp_search(client_name: str, project_name: str, agency_type: str) -> dict[
     ]
 
     results: dict[str, list] = {k: [] for k, _ in queries}
-    seen_urls: set[str] = set()
 
     _SERP_MAX_ATTEMPTS = 2
 
-    for category, query in queries:
+    def _fetch_one(category: str, query: str) -> tuple[str, list]:
+        """단일 쿼리 실행 후 (category, items) 반환."""
         print(f"  [SerpAPI] 검색 중: {query}")
         for attempt in range(_SERP_MAX_ATTEMPTS):
             try:
@@ -140,29 +171,30 @@ def _serp_search(client_name: str, project_name: str, agency_type: str) -> dict[
                     "gl":            "kr",
                     "num":           10,
                 }
-                search = GoogleSearch(params)
-                data   = search.get_dict()
-
+                data = GoogleSearch(params).get_dict()
                 hits = data.get("organic_results", [])
-                print(f"  [SerpAPI] {len(hits)}건 수신")
-
-                for item in hits:
-                    url = item.get("link", "")
-                    if url in seen_urls:
-                        continue
-                    seen_urls.add(url)
-                    results[category].append({
-                        "title":   item.get("title", ""),
-                        "url":     url,
-                        "content": item.get("snippet", ""),
-                    })
-                break   # 성공 → 재시도 불필요
-
+                print(f"  [SerpAPI] {category}: {len(hits)}건 수신")
+                items = [
+                    {"title": h.get("title", ""), "url": h.get("link", ""),
+                     "content": h.get("snippet", "")}
+                    for h in hits if h.get("link")
+                ]
+                return category, items
             except Exception as e:
                 if attempt < _SERP_MAX_ATTEMPTS - 1:
-                    print(f"  [SerpAPI] 실패, 재시도 ({attempt+1}/{_SERP_MAX_ATTEMPTS}): {e}")
+                    print(f"  [SerpAPI] {category} 실패, 재시도 ({attempt+1}): {e}")
                 else:
-                    print(f"  [SerpAPI] 최종 실패, 건너뜀 ({query!r}): {e}")
+                    print(f"  [SerpAPI] {category} 최종 실패: {e}")
+        return category, []
+
+    with _cf.ThreadPoolExecutor(max_workers=3) as ex:
+        futures = [ex.submit(_fetch_one, cat, q) for cat, q in queries]
+        for future in _cf.as_completed(futures):
+            try:
+                cat, items = future.result()
+                results[cat] = items
+            except Exception as e:
+                print(f"  [SerpAPI] 결과 수집 오류: {e}")
 
     return results
 
@@ -172,42 +204,44 @@ def _serp_search(client_name: str, project_name: str, agency_type: str) -> dict[
 # ─────────────────────────────────────────────
 
 def _tavily_search(tavily: TavilyClient, agency_type: str) -> list[dict]:
-    """2개 글로벌 쿼리로 알고리즘/콘텐츠 트렌드 수집."""
+    """2개 글로벌 쿼리로 알고리즘/콘텐츠 트렌드 수집. 병렬 실행."""
 
     queries = [
         "youtube algorithm changes 2025 public sector short-form content",
         "government public sector video content marketing trends 2025 platform",
     ]
 
-    collected: list[dict] = []
-    seen_urls: set[str]   = set()
-
     _TAVILY_MAX_ATTEMPTS = 2
 
-    for query in queries:
-        print(f"  [Tavily] 검색 중: {query}")
+    def _fetch_one(query: str) -> list[dict]:
+        print(f"  [Tavily] 검색 중: {query[:60]}...")
         for attempt in range(_TAVILY_MAX_ATTEMPTS):
             try:
                 resp = tavily.search(query, max_results=5)
                 hits = resp.get("results", [])
                 print(f"  [Tavily] {len(hits)}건 수신")
-                for item in hits:
-                    url = item.get("url", "")
-                    if url in seen_urls:
-                        continue
-                    seen_urls.add(url)
-                    collected.append({
-                        "title":   item.get("title", ""),
-                        "url":     url,
-                        "content": item.get("content", ""),
-                    })
-                break   # 성공
-
+                return [{"title": h.get("title", ""), "url": h.get("url", ""),
+                         "content": h.get("content", "")} for h in hits if h.get("url")]
             except Exception as e:
                 if attempt < _TAVILY_MAX_ATTEMPTS - 1:
-                    print(f"  [Tavily] 실패, 재시도 ({attempt+1}/{_TAVILY_MAX_ATTEMPTS}): {e}")
+                    print(f"  [Tavily] 실패, 재시도 ({attempt+1}): {e}")
                 else:
-                    print(f"  [Tavily] 최종 실패, 건너뜀 ({query!r}): {e}")
+                    print(f"  [Tavily] 최종 실패: {e}")
+        return []
+
+    collected: list[dict] = []
+    seen_urls: set[str]   = set()
+
+    with _cf.ThreadPoolExecutor(max_workers=2) as ex:
+        futures = [ex.submit(_fetch_one, q) for q in queries]
+        for f in futures:
+            try:
+                for item in f.result():
+                    if item["url"] not in seen_urls:
+                        seen_urls.add(item["url"])
+                        collected.append(item)
+            except Exception as e:
+                print(f"  [Tavily] 결과 수집 오류: {e}")
 
     return collected
 
@@ -235,11 +269,12 @@ _RESEARCH_DEFAULTS = {
 def _analyze(dna: ConceptDNA, profile: dict, past_cases: list,
              serp_results: dict[str, list], tavily_results: list[dict],
              learning_cases: list = None) -> dict:
-    """Claude로 12개 항목 분석. 2회 재시도 후 실패 시 빈 defaults 반환 (파이프라인 계속 진행)."""
+    """Claude Haiku로 12개 항목 분석 (고속). 실패 시 빈 defaults 반환."""
     prompt = _build_prompt(dna, profile, past_cases, serp_results, tavily_results, learning_cases or [])
 
     try:
-        result = claude_client.call_json(prompt, max_tokens=10000, max_retries=2)
+        result = claude_client.call_json(prompt, model=_HAIKU_MODEL,
+                                         max_tokens=1500, max_retries=2)
         defaults = dict(_RESEARCH_DEFAULTS)
         for k, v in defaults.items():
             result.setdefault(k, v)

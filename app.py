@@ -716,7 +716,7 @@ def stream(sid):
                 # 완료/중지/오류 → 스트림 종료
                 if sess["status"] in ("done", "error", "stopped"):
                     break
-                fired = sess["sse_event"].wait(timeout=30)
+                fired = sess["sse_event"].wait(timeout=10)
                 sess["sse_event"].clear()
                 # Railway 60초 타임아웃 방지: 새 이벤트 없으면 keepalive 핑
                 if not fired:

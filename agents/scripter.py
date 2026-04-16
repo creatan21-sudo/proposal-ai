@@ -361,7 +361,7 @@ def _generate_longform(
     scene_count  = _calc_scene_count(duration_s)
     prompt       = _build_longform_prompt(dna, ep_plan, ep_num, all_plans,
                                           is_series, scene_count, duration_s)
-    raw          = claude_client.call_json(prompt, max_tokens=8192)
+    raw          = claude_client.call_json(prompt, max_tokens=2000)
 
     raw.setdefault("episode",   ep_num)
     raw.setdefault("title",     ep_plan.get("title", f"{ep_num}편"))
@@ -579,7 +579,7 @@ def _generate_shortform(
         숏폼 script dict (versions 키에 3개 버전 포함)
     """
     prompt = _build_shortform_prompt(dna, ep_plan, ep_num, all_plans, is_series)
-    raw    = claude_client.call_json(prompt, max_tokens=8192)
+    raw    = claude_client.call_json(prompt, max_tokens=2000)
 
     raw.setdefault("episode",  ep_num)
     raw.setdefault("title",    ep_plan.get("title", f"{ep_num}편"))
@@ -778,7 +778,7 @@ def _generate_series_hooks(dna: ConceptDNA, scripts: list) -> list:
         [{"episode": n, "cliffhanger": str, "callback": str}, ...]
     """
     prompt  = _build_series_hook_prompt(dna, scripts)
-    result  = claude_client.call_json(prompt, max_tokens=6000)
+    result  = claude_client.call_json(prompt, max_tokens=2000)
     return result.get("hooks", [])
 
 

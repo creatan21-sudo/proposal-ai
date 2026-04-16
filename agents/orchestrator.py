@@ -401,7 +401,7 @@ def _generate_company_profile(dna: ConceptDNA) -> dict:
     """RFP 키워드 기준으로 인터즈 실적 선별 + 역량 맞춤 재구성 (Claude)."""
     selected = _select_achievements(dna)
     prompt   = _build_company_profile_prompt(dna, selected)
-    result   = claude_client.call_json(prompt, model=_OPUS_MODEL, max_tokens=2500)
+    result   = claude_client.call_json(prompt, model=_OPUS_MODEL, max_tokens=500)
     result["selected_raw_achievements"] = selected
     return result
 
@@ -545,7 +545,7 @@ def _generate_pt_and_qa(
 ) -> dict:
     """PT 발표 원고 초안 + 심사위원 예상 질의응답 5개 생성 (Claude)."""
     prompt = _build_pt_qa_prompt(dna, consistency, company_profile)
-    result = claude_client.call_json(prompt, model=_OPUS_MODEL, max_tokens=4000)
+    result = claude_client.call_json(prompt, model=_OPUS_MODEL, max_tokens=1000)
     result.setdefault("pt_script", {})
     result.setdefault("qa_prep", [])
     return result

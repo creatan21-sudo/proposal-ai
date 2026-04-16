@@ -54,7 +54,7 @@ def run(dna: ConceptDNA) -> dict:
     # 3. Claude API로 설득 구조 생성
     print("  설득 구조 생성 중...")
     prompt = _build_prompt(dna, sorted_eval, priority_keywords)
-    result = claude_client.call_json(prompt, max_tokens=4096)
+    result = claude_client.call_json(prompt, max_tokens=2000)
 
     # 4. 필수 키 보정 (Claude 응답 누락 방지)
     result.setdefault("core_problem", "")
