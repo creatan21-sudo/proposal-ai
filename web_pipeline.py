@@ -474,19 +474,15 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
         s["내러티브"] = result.get("narrative") or dna.narrative or ""
 
     elif step_key == "research":
-        # 12개 항목 전체 — 절삭 없이 전송
+        # 8개 항목 전체 — 절삭 없이 전송 (항목당 max_tokens=3000)
         s["① 기관 특성/정책"]    = result.get("agency_policy", "") or dna.agency_characteristics or ""
         s["② 기관장 메시지"]     = result.get("leadership_message", "")
         s["③ 기존 콘텐츠 현황"]  = result.get("existing_content", "")
-        s["④ 우수사례"]          = result.get("best_cases", "")
-        s["⑤ 콘텐츠 트렌드"]    = result.get("content_trends", "")
-        s["⑥ 경쟁사 패턴"]      = result.get("competitor_patterns", "")
-        s["⑦ 타겟 소비행태"]    = result.get("target_media_habits", "")
-        s["⑧ 반응 콘텐츠"]      = result.get("target_content_preference", "")
-        s["⑨ 플랫폼 패턴"]      = result.get("platform_patterns", "")
-        s["⑩ 정책/법령 변화"]   = result.get("policy_changes", "")
-        s["⑪ 알고리즘 동향"]    = result.get("algorithm_trends", "")
-        s["⑫ 시장 단가"]        = result.get("market_pricing", "")
+        s["④ 최근 이슈/뉴스"]    = result.get("recent_issues_news", "")
+        s["⑤ 유사 기관 사례"]    = result.get("best_cases", "")
+        s["⑥ 유사 과업 분석"]    = result.get("competitor_patterns", "")
+        s["⑦ 타겟 분석"]         = result.get("target_analysis", "")
+        s["⑧ 최근 트렌드"]       = result.get("recent_trends", "")
 
     elif step_key == "strategy":
         s["핵심 문제"] = dna.core_problem or ""

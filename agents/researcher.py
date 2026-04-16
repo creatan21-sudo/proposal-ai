@@ -2,19 +2,19 @@
 # STEP 1: 발주처 리서치 에이전트
 #
 # [검색 전략]
-#   SerpAPI (google.co.kr, hl=ko, gl=kr) — 한국 정보 6개 쿼리
+#   SerpAPI (google.co.kr, hl=ko, gl=kr) — 한국 정보 7개 쿼리
 #     ① 발주처 정책/사업 계획  → agency_policy
 #     ② 기관장 메시지/현안     → leadership_message
 #     ③ 기존 홍보 콘텐츠       → existing_content
-#     ④ 공공영상 우수사례       → best_cases
-#     ⑤ 시장 단가/입찰         → market_pricing
-#     ⑥ 관련 정책/법령 변화    → policy_changes
+#     ④ 최근 이슈/뉴스         → recent_issues_news  [NEW]
+#     ⑤ 공공영상 우수사례       → best_cases
+#     ⑥ 유사 입찰/낙찰 패턴    → competitor_patterns
+#     ⑦ 관련 정책/법령 변화    → (recent_trends 통합)
 #   Tavily — 글로벌 트렌드 2개 쿼리
-#     ⑦ 유튜브 알고리즘        → algorithm_trends
-#     ⑧ 공공 콘텐츠 트렌드     → content_trends / platform_patterns
+#     ⑧ 유튜브 알고리즘·트렌드 → recent_trends / target_analysis
 #   우선순위: SerpAPI → Tavily → Claude 지식
 #
-# 출력: 12개 항목, 각 최소 500자
+# 출력: 8개 항목, 항목당 최소 400자 (max_tokens=24000)
 
 import json
 import concurrent.futures as _cf
@@ -55,11 +55,10 @@ def run(dna: ConceptDNA) -> dict:
     """발주처 리서치 실행.
 
     Returns:
-        12개 항목 dict:
-        발주처: agency_policy, leadership_message, existing_content
-        시장:   best_cases, content_trends, competitor_patterns
-        타겟:   target_media_habits, target_content_preference, platform_patterns
-        환경:   policy_changes, algorithm_trends, market_pricing
+        8개 항목 dict (항목당 최소 400자, max_tokens=24000):
+        발주처: agency_policy, leadership_message, existing_content, recent_issues_news
+        시장:   best_cases, competitor_patterns
+        타겟/트렌드: target_analysis, recent_trends
     """
     # ── 캐시 확인 (7일 이내 동일 발주처) ────────
     try:
@@ -114,8 +113,8 @@ def run(dna: ConceptDNA) -> dict:
     if not serp_results and not tavily_results:
         print("  웹서치 결과 없음 — Claude 지식 활용")
 
-    # ── Claude 분석 (Haiku 모델, 고속) ──────────
-    print("  Claude 12개 항목 분석 중...")
+    # ── Claude 분석 (Sonnet, 고품질) ──────────
+    print("  Claude 8개 항목 분석 중... (항목당 최소 400자, max_tokens=24000)")
     result = _analyze(dna, profile, past_cases, serp_results, tavily_results, learning_cases)
 
     update_dna(dna, {
@@ -149,8 +148,9 @@ def _serp_search(client_name: str, project_name: str, agency_type: str) -> dict[
         ("agency",   f"{client_name} 2025 주요 정책 사업 계획"),
         ("leader",   f"{client_name} 기관장 메시지 현안 2025"),
         ("content",  f"{client_name} 유튜브 홍보 영상 콘텐츠"),
-        ("cases",    f"공공기관 홍보영상 우수사례 2024 2025"),
-        ("pricing",  f"공공기관 영상 제작 입찰 단가 {agency_type} 2025"),
+        ("news",     f"{client_name} 최근 이슈 뉴스 논란 보도 2024 2025"),
+        ("cases",    f"{agency_type} 공공기관 홍보영상 우수사례 조회수 2024 2025"),
+        ("pricing",  f"공공기관 영상 제작 입찰 낙찰 업체 패턴 {agency_type} 2024 2025"),
         ("policy",   f"{client_name} 관련 정책 법령 변화 2024 2025"),
     ]
 
@@ -251,30 +251,29 @@ def _tavily_search(tavily: TavilyClient, agency_type: str) -> list[dict]:
 # ─────────────────────────────────────────────
 
 _RESEARCH_DEFAULTS = {
-    "agency_policy":              "",
-    "leadership_message":         "",
-    "existing_content":           "",
-    "best_cases":                 "",
-    "content_trends":             "",
-    "competitor_patterns":        "",
-    "target_media_habits":        "",
-    "target_content_preference":  "",
-    "platform_patterns":          "",
-    "policy_changes":             "",
-    "algorithm_trends":           "",
-    "market_pricing":             "",
+    "agency_policy":         "",   # ① 기관 특성/정책
+    "leadership_message":    "",   # ② 기관장 메시지 및 현안
+    "existing_content":      "",   # ③ 기존 콘텐츠 현황
+    "recent_issues_news":    "",   # ④ 최근 이슈/뉴스 [NEW]
+    "best_cases":            "",   # ⑤ 유사 기관 홍보전략
+    "competitor_patterns":   "",   # ⑥ 유사 과업 분석
+    "target_analysis":       "",   # ⑦ 타겟 분석 (소비행태+선호콘텐츠 통합)
+    "recent_trends":         "",   # ⑧ 최근 트렌드 (콘텐츠+알고리즘+공공홍보 통합)
 }
 
 
 def _analyze(dna: ConceptDNA, profile: dict, past_cases: list,
              serp_results: dict[str, list], tavily_results: list[dict],
              learning_cases: list = None) -> dict:
-    """Claude Sonnet으로 12개 항목 분석 (고품질). 실패 시 빈 defaults 반환."""
+    """Claude Sonnet으로 8개 항목 분석 (고품질). 실패 시 빈 defaults 반환.
+
+    max_tokens=24000 (항목당 3000 × 8개) — 각 항목 최소 400자 이상 보장.
+    """
     prompt = _build_prompt(dna, profile, past_cases, serp_results, tavily_results, learning_cases or [])
 
     try:
         result = claude_client.call_json(prompt, model=_SONNET_MODEL,
-                                         max_tokens=8000, max_retries=2)
+                                         max_tokens=24000, max_retries=2)
         defaults = dict(_RESEARCH_DEFAULTS)
         for k, v in defaults.items():
             result.setdefault(k, v)
@@ -339,6 +338,7 @@ def _build_prompt(dna: ConceptDNA, profile: dict, past_cases: list,
     serp_agency  = _fmt_serp_block(s.get("agency",  []))
     serp_leader  = _fmt_serp_block(s.get("leader",  []))
     serp_content = _fmt_serp_block(s.get("content", []))
+    serp_news    = _fmt_serp_block(s.get("news",    []))
     serp_cases   = _fmt_serp_block(s.get("cases",   []))
     serp_pricing = _fmt_serp_block(s.get("pricing", []))
     serp_policy  = _fmt_serp_block(s.get("policy",  []))
@@ -349,30 +349,21 @@ def _build_prompt(dna: ConceptDNA, profile: dict, past_cases: list,
     return f"""당신은 대한민국 정부 입찰 전략 전문가이자 공공 홍보 분야 수석 리서처입니다.
 아래 [SerpAPI 한국 검색 결과]와 [Tavily 글로벌 트렌드]를 최우선 근거로 활용하고,
 검색 결과가 부족한 항목은 Claude 학습 지식으로 보완하여
-12개 항목을 JSON으로 작성하십시오.
+8개 항목을 JSON으로 작성하십시오.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-【절대 원칙】
+【절대 원칙 — 반드시 준수】
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-【품질 기준 — 최우선 준수】
-각 항목은 최소 500자 이상 작성한다. 출처와 수치 데이터를 반드시 포함하라.
-소제목(## 형식)으로 반드시 구분하여 작성. 절대 요약하지 말 것.
-짧은 답변은 품질 기준 미달로 재작성된다. 내용 없는 빈 항목은 절대 금지.
-
-1. 모든 텍스트 필드는 각각 최소 500자 이상 작성한다.
-2. 수치(예산액, 조회수, 비율, %, 명 수)와 구체적 사례를 반드시 포함한다.
-3. "~로 알려져 있다", "~할 것으로 예상된다" 같은 모호한 표현은 절대 금지.
-4. 검색 결과에 날짜·수치가 있으면 우선 인용. 출처 URL 명시.
-5. 【수치 의무】 모든 주장과 분석에는 반드시 구체적인 수치 데이터를 포함해야 한다.
-   '증가했다' (X) → '2024년 대비 23% 증가했다' (O)
-   '낮다' (X) → '전체의 7%에 불과하다' (O)
-   수치 없는 문장은 작성하지 마라.
-6. 【출처 의무】 모든 통계·수치·사실에는 반드시 출처를 표기해야 한다.
-   형식: (출처명, 발행연도)
-   예: '조회수 300만 회를 기록했다 (아리랑TV 공식 발표, 2024)'
-   예: '국내 숏폼 소비율 65% (YouTube Creator Insider, 2024)'
-   출처 불명확한 수치는 '추정치' 또는 '자체 분석'으로 명시.
-   출처 없는 수치는 절대 제시하지 마라.
+1. 모든 항목은 최소 400자 이상 작성한다. 짧은 답변은 품질 기준 미달이다.
+2. ## 소제목으로 반드시 구분하여 작성한다. 소제목 없는 서술은 금지.
+3. 수치(예산액, 조회수, %, 명 수)와 구체적 사례를 반드시 포함한다.
+   - '증가했다' (X) → '2024년 대비 23% 증가했다' (O)
+   - '낮다' (X) → '전체의 7%에 불과하다' (O)
+4. 출처를 반드시 명시한다. 형식: (출처명, 연도)
+   - '조회수 300만 회 (행정안전부 공식 발표, 2024)'
+   - 출처 불명 시 '추정치' 또는 '자체 분석'으로 표기
+5. 모호한 표현 절대 금지: "~로 알려져 있다", "~할 것으로 예상된다"
+6. 내용 없는 빈 항목 절대 금지. 검색 결과가 없으면 Claude 지식으로 보완할 것.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [SerpAPI — 한국 검색 결과 (google.co.kr)]
@@ -387,17 +378,20 @@ def _build_prompt(dna: ConceptDNA, profile: dict, past_cases: list,
 ▶ 기존 홍보 콘텐츠 (→ existing_content 근거)
 {serp_content}
 
-▶ 공공영상 우수사례 (→ best_cases 근거)
+▶ 최근 이슈/뉴스 (→ recent_issues_news 근거)
+{serp_news}
+
+▶ 공공기관 홍보 우수사례 (→ best_cases 근거)
 {serp_cases}
 
-▶ 시장 단가/입찰 (→ market_pricing 근거)
+▶ 유사 입찰/낙찰 패턴 (→ competitor_patterns 근거)
 {serp_pricing}
 
-▶ 관련 정책/법령 변화 (→ policy_changes 근거)
+▶ 관련 정책/법령 변화 (→ recent_trends 참고)
 {serp_policy}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[Tavily — 글로벌 트렌드 (→ algorithm_trends, content_trends, platform_patterns 근거)]
+[Tavily — 글로벌 트렌드 (→ target_analysis, recent_trends 근거)]
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {tavily_block}
 
@@ -419,69 +413,65 @@ def _build_prompt(dna: ConceptDNA, profile: dict, past_cases: list,
 {learning_block}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[12개 항목 작성 지침]
+[8개 항목 작성 지침]
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 【발주처 분석】 ← SerpAPI 한국 검색 결과 우선 활용
-① agency_policy (최소 500자)
-   기관의 법정 미션·비전, 조직 규모(직원 수·예산·산하기관), 최근 2년 핵심 정책·주요 사업,
-   기관 특유의 홍보 성향(보수적/혁신적, 선호 포맷), 국민 인지도·신뢰도 현황(통계 포함).
 
-② leadership_message (최소 500자)
-   기관장 성명·취임 시기, 신년사·공식 발언에서 반복되는 핵심 키워드,
-   올해 기관의 최우선 과제 3가지, 예산 배분 우선순위, 대외 이미지 전략 방향.
+① agency_policy (최소 400자)
+   ## 기관 소개 — 기관 공식명, 설립 목적, 법적 근거, 주요 역할
+   ## 미션·비전 — 공식 미션/비전 문장, 핵심 가치
+   ## 조직 규모 — 직원 수, 예산 규모, 산하기관, 관련 기관
+   ## 최근 정책 우선순위 — 2024-2025 핵심 사업 3개 이상, 예산 배분 현황
+   ## 관련 법령·제도 변화 — 기관 운영에 영향을 주는 법령·고시·가이드라인 최신 변화
+   ## 홍보 성향 — 기존 홍보 방식(보수적/혁신적), 선호 포맷, 국민 인지도
 
-③ existing_content (최소 500자)
-   이 기관이 최근 2년간 제작한 홍보 콘텐츠 현황(유튜브 구독자·평균 조회수),
-   콘텐츠 형식 분포(롱폼/숏폼/카드뉴스 비율), 주요 성공작과 실패작 사례,
-   현재 콘텐츠의 문제점과 개선 여지.
+② leadership_message (최소 400자)
+   ## 기관장 정보 — 성명, 취임 시기, 경력
+   ## 올해 핵심 메시지 — 신년사·공식 발언에서 반복되는 핵심 키워드 5개 이상
+   ## 최우선 과제 — 올해 기관의 최우선 과제 3가지 이상 (구체적 내용 포함)
+   ## 예산·전략 방향 — 예산 배분 우선순위, 대외 이미지 전략 방향
+
+③ existing_content (최소 400자)
+   ## 유튜브·SNS 채널 현황 — 구독자 수, 평균 조회수, 게시물 수
+   ## 기존 홍보영상 스타일 — 최근 2년 제작 영상 포맷/톤/주제
+   ## 조회수·반응 분석 — 가장 높은 조회수 사례, 댓글·공유 반응
+   ## 성공작·실패작 사례 — 구체적 사례 2개 이상, 성공/실패 요인 분석
+   ## 콘텐츠 개선 여지 — 현재 문제점과 개선 방향
+
+④ recent_issues_news (최소 400자) ← SerpAPI 최근 이슈 검색 결과 우선 활용
+   ## 최근 6개월 주요 뉴스 — 2024.10~2025.04 기준 주요 보도 3건 이상
+   ## 긍정 이슈 — 기관 성과, 포상, 정책 성공 사례
+   ## 부정 이슈 — 논란, 비판, 문제 제기 사안 (없으면 '없음'으로 명시)
+   ## 언론 보도 경향 — 어떤 언론이 어떤 각도로 보도하는지 패턴 분석
 
 【과업 시장 분석】 ← SerpAPI 한국 검색 결과 우선 활용
-④ best_cases (최소 500자)
-   최근 2년(2024-2025) 국내외 공공기관 홍보영상 우수사례 4개 이상.
-   각 사례: 기관명, 영상/캠페인명, 조회수·공유수 등 수치, 핵심 전략, 우리 제안서 적용 포인트.
 
-⑤ content_trends (최소 500자)
-   동일 분야 콘텐츠 트렌드. Tavily 글로벌 트렌드 + SerpAPI 국내 사례 통합.
-   숏폼 vs 롱폼 비율 변화, 리얼 다큐·1인칭 내러티브·인터랙티브 포맷 채택 현황,
-   플랫폼별 공공 콘텐츠 인게이지먼트 변화(수치 포함).
+⑤ best_cases (최소 400자)
+   ## 동종 기관 우수사례 2개 이상 (2024-2025)
+   각 사례: 기관명, 영상/캠페인명, 조회수·참여율 등 수치, 핵심 전략
+   ## 성공 요인 분석 — 공통 성공 패턴, 차별화 포인트
+   ## 우리 제안서 적용 포인트 — 이 사례에서 벤치마킹할 전략
 
-⑥ competitor_patterns (최소 500자)
-   공공기관 영상 입찰에서 반복 수주하는 업체들의 제안 패턴.
-   제안서에서 자주 쓰는 차별화 포인트, 심사위원이 높이 평가하는 요소,
-   최근 낙찰 사례의 공통 전략, 우리가 피해야 할 클리셰.
+⑥ competitor_patterns (최소 400자)
+   ## 유사 영상 제작 입찰 사례 — 최근 낙찰 공고 2건 이상 (예산 규모, 발주처, 낙찰 업체)
+   ## 낙찰 업체 전략 패턴 — 반복 수주 업체들의 제안 공통점
+   ## 심사위원 평가 기준 — 높이 평가받는 요소, 감점 요소
+   ## 피해야 할 클리셰 — 심사에서 부정적 평가받는 진부한 표현·구성
 
-【타겟 오디언스 분석】 ← Claude 지식 활용
-⑦ target_media_habits (최소 500자)
-   주요 타겟층(연령·직업·관심사) 미디어 소비 행태.
-   플랫폼별 일평균 이용 시간, 공공기관 콘텐츠 소비 계층 특성(통계 기반),
-   TV vs 디지털 접촉 빈도, 광고 회피율·완주율 데이터.
+【타겟/트렌드 분석】 ← Tavily 글로벌 트렌드 + Claude 지식 활용
 
-⑧ target_content_preference (최소 500자)
-   타겟층이 높은 반응을 보이는 콘텐츠 형식·주제·톤앤매너.
-   공공 콘텐츠 중 바이럴된 사례 분석, 감성적/정보전달형/엔터테인먼트형 선호도,
-   클릭을 유발하는 썸네일·제목 패턴(실제 사례 포함).
+⑦ target_analysis (최소 400자)
+   ## 주요 타겟층 정의 — 연령·직업·관심사·지역 (이 과업의 실제 시청 대상)
+   ## 미디어 소비 행태 — 플랫폼별 일평균 이용 시간, TV vs 디지털 비율 (통계 포함)
+   ## 선호 콘텐츠 유형 — 포맷(숏폼/롱폼), 주제, 톤앤매너 선호도
+   ## 공공기관 콘텐츠 반응 패턴 — 공공 콘텐츠 중 바이럴된 사례, 클릭 유발 패턴
 
-⑨ platform_patterns (최소 500자)
-   Tavily 글로벌 트렌드 기반으로 유튜브·인스타그램·틱톡·페이스북·네이버 블로그
-   각 플랫폼별 공공 콘텐츠 인기 패턴, 최적 영상 길이, 게시 시간대, 해시태그 전략,
-   알고리즘이 밀어주는 콘텐츠 특성(2024-2025 기준 수치 포함).
-
-【환경 분석】
-⑩ policy_changes (최소 500자) ← SerpAPI 정책 검색 결과 우선 활용
-   이 과업과 직접 관련된 정책·법령·행정 규칙 최신 변화(2024-2025).
-   시행령·고시·가이드라인 개정 사항, 예산 편성 지침 변화,
-   이 기관 또는 동일 분야에 영향을 주는 규제 환경.
-
-⑪ algorithm_trends (최소 500자) ← Tavily 글로벌 트렌드 우선 활용
-   유튜브·인스타그램·틱톡 알고리즘 2024-2025 최신 변화.
-   공공기관 계정에 불리하게 작용하는 요소, 조회수 늘리기 위한 최적 전략,
-   숏폼 vs 롱폼 알고리즘 차이, 실제 수치 기반 인사이트.
-
-⑫ market_pricing (최소 500자) ← SerpAPI 단가 검색 결과 우선 활용
-   이 과업 예산 규모({dna.budget or "미정"}) 대비 시장 단가 현황.
-   유사 규모 공공기관 영상 제작비 평균, 편당 단가 범위(최저~최고),
-   예산 내 품질 극대화 전략, 외주 vs 직제작 비용 구조.
+⑧ recent_trends (최소 400자)
+   ## 영상 콘텐츠 트렌드 — 숏폼 vs 롱폼 비율 변화, 리얼 다큐·1인칭 내러티브·AI 활용 현황
+   ## 플랫폼별 알고리즘 변화 — 유튜브·인스타그램·틱톡 2024-2025 최신 변화 (수치 포함)
+   ## 공공기관 홍보 트렌드 — 최근 성공한 공공 콘텐츠의 공통 패턴
+   ## 우리 전략 시사점 — 위 트렌드를 이 제안서에 어떻게 적용할지
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [텍스트 필드 형식 규칙]
@@ -490,16 +480,16 @@ def _build_prompt(dna: ConceptDNA, profile: dict, past_cases: list,
 • ## 소제목  — 섹션 구분 (예: ## 핵심 현황)
 • ### 소제목 — 세부 소제목 (예: ### 주요 수치)
 • **키워드** — 핵심 개념·용어 강조
-• 수치·통계 — 별도 줄에 작성
+• 수치·통계 — 별도 줄에 작성 / 출처 필수 (기관명, 연도)
 • 섹션 사이 — 빈 줄 하나
 
 예시:
-## 핵심 현황
+## 기관 소개
 
-기관은 **위험기상 대응**을 핵심 과제로 설정하고 있다.
+**행정안전부**는 2025년 예산 4조 2천억 원 규모의 중앙부처이다. (행안부 예산서, 2025)
 
-### 주요 수치
-- 2024년 예산 전년 대비 15% 증가 (기상청, 2024)
+### 핵심 수치
+- 직원 수 4,200명 (2024 기준, 행안부 발표)
 - 국민 신뢰도 67% (한국갤럽, 2024)
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -507,18 +497,14 @@ def _build_prompt(dna: ConceptDNA, profile: dict, past_cases: list,
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 {{
-  "agency_policy":             "최소 500자. 미션·예산·조직 규모·홍보 성향 포함.",
-  "leadership_message":        "최소 500자. 기관장 발언·키워드·올해 과제 포함.",
-  "existing_content":          "최소 500자. 유튜브 현황·성공/실패 사례·문제점 포함.",
-  "best_cases":                "최소 500자. 4개 이상 사례·수치·적용 포인트 포함.",
-  "content_trends":            "최소 500자. 트렌드·포맷 변화·수치 포함.",
-  "competitor_patterns":       "최소 500자. 낙찰 패턴·심사 기준·클리셰 포함.",
-  "target_media_habits":       "최소 500자. 플랫폼별 소비 시간·완주율 포함.",
-  "target_content_preference": "최소 500자. 반응 형식·바이럴 사례·썸네일 패턴 포함.",
-  "platform_patterns":         "최소 500자. 플랫폼별 최적 길이·게시 시간·수치 포함.",
-  "policy_changes":            "최소 500자. 관련 법령·고시·예산 지침 변화 포함.",
-  "algorithm_trends":          "최소 500자. 2024-2025 알고리즘 변화·수치 포함.",
-  "market_pricing":            "최소 500자. 편당 단가 범위·예산 전략·비용 구조 포함."
+  "agency_policy":       "최소 400자. ## 기관 소개 / ## 미션·비전 / ## 조직 규모 / ## 최근 정책 우선순위 / ## 관련 법령·제도 변화 포함.",
+  "leadership_message":  "최소 400자. ## 기관장 정보 / ## 올해 핵심 메시지 / ## 최우선 과제 3가지 이상 / ## 예산·전략 방향 포함.",
+  "existing_content":    "최소 400자. ## 유튜브·SNS 채널 현황 / ## 기존 홍보영상 스타일 / ## 조회수·반응 분석 / ## 성공작·실패작 사례 포함.",
+  "recent_issues_news":  "최소 400자. ## 최근 6개월 주요 뉴스 / ## 긍정 이슈 / ## 부정 이슈 / ## 언론 보도 경향 포함.",
+  "best_cases":          "최소 400자. ## 동종 기관 우수사례 2개 이상(수치 포함) / ## 성공 요인 분석 / ## 우리 제안서 적용 포인트 포함.",
+  "competitor_patterns": "최소 400자. ## 유사 입찰 사례 / ## 낙찰 업체 전략 패턴 / ## 심사위원 평가 기준 / ## 피해야 할 클리셰 포함.",
+  "target_analysis":     "최소 400자. ## 주요 타겟층 정의 / ## 미디어 소비 행태(통계) / ## 선호 콘텐츠 유형 / ## 공공기관 콘텐츠 반응 패턴 포함.",
+  "recent_trends":       "최소 400자. ## 영상 콘텐츠 트렌드 / ## 플랫폼별 알고리즘 변화 / ## 공공기관 홍보 트렌드 / ## 우리 전략 시사점 포함."
 }}"""
 
 
