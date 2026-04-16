@@ -85,8 +85,9 @@
   <h3>파이프라인 오류</h3>
   <p id="error-msg"></p>
   <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:12px;">
-    <button class="btn btn-primary" onclick="doRetry()">↺ 다시 시도</button>
-    <a href="/" class="btn btn-secondary">처음으로</a>
+    <button class="btn btn-primary" onclick="doRetry(false)">↺ 다시 시도</button>
+    <button class="btn btn-secondary" id="btn-skip-retry" onclick="doRetry(true)" style="background:#f59e0b;color:#fff;border:none;">⏭ 이어서 하기</button>
+    <a id="btn-back-home" href="/" class="btn btn-secondary">처음으로</a>
   </div>
 </div>
 
@@ -319,6 +320,7 @@ function handleEvent(ev) {
     case 'case_saved': {
       // pipeline_done 보다 먼저 도착 — PPT 버튼 활성화
       window._pptCaseId = ev.case_id;
+      _updateBackHomeLink();
       const pptBtn = document.getElementById('btn-ppt-run');
       if (pptBtn) {
         pptBtn.disabled = false;
@@ -750,14 +752,25 @@ function showError(msg, retryable = true) {
   document.getElementById('error-banner').classList.add('visible');
   document.querySelector('#error-banner .btn-primary').style.display =
     retryable ? '' : 'none';
+  const skipBtn = document.getElementById('btn-skip-retry');
+  if (skipBtn) skipBtn.style.display = retryable ? '' : 'none';
+  _updateBackHomeLink();
 }
-async function doRetry() {
-  const res = await fetch(`/retry/${SID}`, { method: 'POST' });
+async function doRetry(skip = false) {
+  const url = `/retry/${SID}` + (skip ? '?skip=1' : '');
+  const res = await fetch(url, { method: 'POST' });
   if (res.ok) {
     window.location.reload();
   } else {
     const data = await res.json().catch(() => ({}));
     alert(data.error || '재시도 실패');
+  }
+}
+function _updateBackHomeLink() {
+  const caseId = window._pptCaseId;
+  const el = document.getElementById('btn-back-home');
+  if (el && caseId) {
+    el.href = `/history/${caseId}/reuse`;
   }
 }
 // ── 토스트 알림

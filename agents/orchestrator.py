@@ -73,33 +73,48 @@ def run(dna: ConceptDNA, pipeline_results: dict = None) -> dict:
     """
     # ── PASS 1: 규칙 기반 사전 검수 ──────────────
     print("  [PASS 1] 규칙 기반 사전 검수...")
-    pre_checks = _rule_based_checks(dna)
-    pre_score  = _calc_pre_score(pre_checks)
-    print(f"           사전 검수 점수: {pre_score:.0%}  "
-          f"(컨셉흐름 {pre_checks['concept_flow']['score']:.0%} / "
-          f"평가항목 {pre_checks['evaluation_coverage']['score']:.0%} / "
-          f"키워드통합 {pre_checks['keyword_integration']['score']:.0%})")
+    try:
+        pre_checks = _rule_based_checks(dna)
+        pre_score  = _calc_pre_score(pre_checks)
+        print(f"           사전 검수 점수: {pre_score:.0%}  "
+              f"(컨셉흐름 {pre_checks['concept_flow']['score']:.0%} / "
+              f"평가항목 {pre_checks['evaluation_coverage']['score']:.0%} / "
+              f"키워드통합 {pre_checks['keyword_integration']['score']:.0%})")
+    except Exception as e:
+        raise RuntimeError(f"PASS 1 (규칙 기반 사전 검수) 실패: {type(e).__name__}: {e}") from e
 
     # ── PASS 2: Claude 심층 일관성 분석 ──────────
     print("  [PASS 2] 서사 완성도 심층 분석 및 자동 보완...")
-    winning_patterns = get_winning_patterns(limit=5)
-    if winning_patterns:
-        print(f"           낙찰 패턴 {len(winning_patterns)}건 참조")
-    consistency = _deep_consistency_check(dna, pre_checks, winning_patterns)
-    final_score = (pre_score * 0.4 + consistency.get("narrative_score", 0.5) * 0.6)
-    print(f"           최종 일관성 점수: {final_score:.0%}")
+    try:
+        winning_patterns = get_winning_patterns(limit=5)
+        if winning_patterns:
+            print(f"           낙찰 패턴 {len(winning_patterns)}건 참조")
+        consistency = _deep_consistency_check(dna, pre_checks, winning_patterns)
+        final_score = (pre_score * 0.4 + consistency.get("narrative_score", 0.5) * 0.6)
+        print(f"           최종 일관성 점수: {final_score:.0%}")
+    except Exception as e:
+        raise RuntimeError(f"PASS 2 (서사 완성도 심층 분석) 실패: {type(e).__name__}: {e}") from e
 
     # ── PASS 3: 회사소개 맞춤 생성 ───────────────
     print("  [PASS 3] 인터즈 회사소개 맞춤 재구성...")
-    company_profile = _generate_company_profile(dna)
+    try:
+        company_profile = _generate_company_profile(dna)
+    except Exception as e:
+        raise RuntimeError(f"PASS 3 (회사소개 맞춤 재구성) 실패: {type(e).__name__}: {e}") from e
 
     # ── PASS 4: PT 원고 + 심사위원 Q&A ───────────
     print("  [PASS 4] PT 원고 초안 및 예상 질의응답 생성...")
-    pt_qa = _generate_pt_and_qa(dna, consistency, company_profile)
+    try:
+        pt_qa = _generate_pt_and_qa(dna, consistency, company_profile)
+    except Exception as e:
+        raise RuntimeError(f"PASS 4 (PT 원고·예상 Q&A 생성) 실패: {type(e).__name__}: {e}") from e
 
     # ── FINAL: 최종 제안서 조립 ──────────────────
     print("  [FINAL] 최종 제안서 조립 및 저장...")
-    final_proposal = _assemble_final_proposal(dna, consistency, company_profile, pt_qa)
+    try:
+        final_proposal = _assemble_final_proposal(dna, consistency, company_profile, pt_qa)
+    except Exception as e:
+        raise RuntimeError(f"FINAL (최종 제안서 조립) 실패: {type(e).__name__}: {e}") from e
     dna_snapshot   = _snapshot_dna(dna)
 
     result = {

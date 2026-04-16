@@ -845,7 +845,11 @@ def rfp_analyze():
 @app.route("/retry/<sid>", methods=["POST"])
 @login_required
 def retry_pipeline(sid):
-    """실패/중단된 파이프라인을 재시작. 중단 지점부터 재개."""
+    """실패/중단된 파이프라인을 재시작. 중단 지점부터 재개.
+    ?skip=1 이면 실패 스텝을 건너뛰고 다음 스텝부터 재개.
+    """
+    skip = request.args.get("skip") == "1"
+
     with _sessions_lock:
         sess = _sessions.get(sid)
     if not sess:
@@ -858,15 +862,26 @@ def retry_pipeline(sid):
     with _sessions_lock:
         prior = dict(sess.get("results", {}))
         aborted_at = prior.pop("__aborted_at__", None)
+        start_from = aborted_at  # 기본: 실패 스텝부터 재시도
+
+        if skip and aborted_at:
+            # 실패 스텝을 건너뛰고 다음 스텝으로
+            from web_pipeline import _STEPS
+            step_keys = [k for k, *_ in _STEPS]
+            idx = step_keys.index(aborted_at) if aborted_at in step_keys else -1
+            if idx >= 0 and idx + 1 < len(step_keys):
+                start_from = step_keys[idx + 1]
+            else:
+                start_from = None  # 마지막 스텝이면 처음부터
+
         sess["results"]       = prior
-        sess["retry_from"]    = aborted_at   # None 이면 처음부터
+        sess["retry_from"]    = start_from
         sess["status"]        = "queued"
         sess["sse_event"]     = threading.Event()
         sess["confirm_event"] = threading.Event()
         sess["user_input"]    = None
         sess["txt_path"]      = None
-        # 기존 이벤트 유지 — 재시도 구분자 추가
-        sess["events"].append({"type": "retry_start", "step": aborted_at})
+        sess["events"].append({"type": "retry_start", "step": start_from, "skipped": aborted_at if skip else None})
         sess["sse_event"].set()
 
     with _queue_lock:
