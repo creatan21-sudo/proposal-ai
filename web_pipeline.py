@@ -474,15 +474,17 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
         s["내러티브"] = result.get("narrative") or dna.narrative or ""
 
     elif step_key == "research":
-        # 8개 항목 전체 — 절삭 없이 전송 (항목당 max_tokens=3000)
-        s["① 기관 특성/정책"]    = result.get("agency_policy", "") or dna.agency_characteristics or ""
-        s["② 기관장 메시지"]     = result.get("leadership_message", "")
-        s["③ 기존 콘텐츠 현황"]  = result.get("existing_content", "")
-        s["④ 최근 이슈/뉴스"]    = result.get("recent_issues_news", "")
-        s["⑤ 유사 기관 사례"]    = result.get("best_cases", "")
-        s["⑥ 유사 과업 분석"]    = result.get("competitor_patterns", "")
-        s["⑦ 타겟 분석"]         = result.get("target_analysis", "")
-        s["⑧ 최근 트렌드"]       = result.get("recent_trends", "")
+        # 10개 항목 전체 — 절삭 없이 전송
+        s["① 기관 특성/정책"]          = result.get("agency_policy", "") or dna.agency_characteristics or ""
+        s["② 기관장 메시지"]           = result.get("leadership_message", "")
+        s["③ 기존 콘텐츠 현황"]        = result.get("existing_content", "")
+        s["④ 최근 이슈/뉴스"]          = result.get("recent_issues_news", "")
+        s["⑤ 유사 기관 홍보전략"]      = result.get("best_cases", "")
+        s["⑥ 유사 과업 분석"]          = result.get("task_patterns", "")
+        s["⑦ 타겟 미디어 소비 행태"]   = result.get("target_media_habits", "")
+        s["⑧ 타겟 반응 콘텐츠 선호도"] = result.get("target_content_preference", "")
+        s["⑨ 플랫폼 최적화 패턴"]      = result.get("platform_patterns", "")
+        s["⑩ 경쟁사 패턴"]             = result.get("competitor_patterns", "")
 
     elif step_key == "strategy":
         s["핵심 문제"] = dna.core_problem or ""

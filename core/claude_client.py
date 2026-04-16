@@ -196,6 +196,9 @@ def _extract_json(
         # 중괄호가 아예 없는 경우 → 바로 3단계로
         return _fallback_ask_claude(raw, prompt, model, max_tokens)
 
+    # ── 전처리: 문자열 내 닫히지 않은 괄호 보정 ──
+    json_str = _close_unclosed_parens(json_str)
+
     # ── 1단계: 표준 파싱 ──
     try:
         return json.loads(json_str)
@@ -356,6 +359,16 @@ def _deep_set(obj: dict, keys: list, value) -> None:
     last = keys[-1]
     if last in obj and obj[last] == "":
         obj[last] = value
+
+
+def _close_unclosed_parens(text: str) -> str:
+    """JSON 문자열 값 내 닫히지 않은 괄호 자동 보정.
+
+    Claude가 (출처, 2025 처럼 닫는 괄호 없이 문자열을 끝내면
+    json_repair가 해당 지점에서 내용을 잘라낼 수 있다.
+    패턴: ( ... ) 없이 " 로 닫히는 경우 → ) 자동 삽입.
+    """
+    return re.sub(r'\(([^)"]{1,100})(?=")', r'(\1)', text)
 
 
 def _strip_markdown(text: str) -> str:
