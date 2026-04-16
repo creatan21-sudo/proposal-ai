@@ -114,58 +114,65 @@ def run(dna: ConceptDNA, progress_fn=None) -> dict:
     # 4. 마케팅 예산 골격 계산
     mkt_budget = _calc_marketing_budget(dna)
 
-    # 5. 세 파트를 동시 실행 (병렬 Claude 호출)
-    print("  유통·SEO·SNS·KPI 전략 병렬 생성 중...")
+    # 5. 4개 섹션 텍스트 병렬 생성 (ThreadPoolExecutor max_workers=3)
+    # 각 섹션은 call() 텍스트로 받아 저장 — JSON 파싱 없음
+    print("  유튜브·SNS·인플루언서·KPI 전략 텍스트 병렬 생성 중...")
     _progress(f"유통·SEO 전략 생성 중... (선정 플랫폼: {', '.join(platforms[:3])})")
-    part1, part2, part3 = {}, {}, {}
+
+    youtube_text, sns_text, influencer_text, kpi_text = "", "", "", ""
 
     with _cf.ThreadPoolExecutor(max_workers=3) as ex:
-        f1 = ex.submit(_generate_distribution_strategy, dna, platforms, edit_versions)
-        f2 = ex.submit(_generate_sns_strategy, dna, platforms)
-        f3 = ex.submit(_generate_kpi_strategy, dna, platforms, rfp_kpis, mkt_budget)
+        f1 = ex.submit(_gen_youtube_strategy_text, dna, platforms, edit_versions)
+        f2 = ex.submit(_gen_sns_strategy_text, dna, platforms)
+        f3 = ex.submit(_gen_influencer_strategy_text, dna, platforms)
+        f4 = ex.submit(_gen_kpi_targets_text, dna, platforms, rfp_kpis, mkt_budget)
 
         try:
-            part1 = f1.result()
-            _progress("유통·SEO 전략 완료 — SNS·KPI 전략 생성 중...")
+            youtube_text = f1.result()
+            _progress("유튜브 SEO 전략 완료...")
         except Exception as e:
-            print(f"  [오류] distribution_strategy 생성 실패: {e}")
+            print(f"  [오류] youtube_strategy 생성 실패: {e}")
 
         try:
-            part2 = f2.result()
-            _progress("SNS 전략 완료 — KPI 전략 마무리 중...")
+            sns_text = f2.result()
+            _progress("SNS 전략 완료...")
         except Exception as e:
             print(f"  [오류] sns_strategy 생성 실패: {e}")
 
         try:
-            part3 = f3.result()
-            _progress("KPI·예산 전략 완료 — 결과 병합 중...")
+            influencer_text = f3.result()
+            _progress("인플루언서 전략 완료...")
         except Exception as e:
-            print(f"  [오류] kpi_strategy 생성 실패: {e}")
+            print(f"  [오류] influencer_strategy 생성 실패: {e}")
 
-    # 6. 결과 병합 (part1=distribution/SEO, part2=SNS, part3=KPI)
-    result = {**part1, **part2, **part3}
-    result.setdefault("platforms",           platforms)
-    result.setdefault("edit_versions",       edit_versions)
-    result.setdefault("marketing_budget",    mkt_budget)
-    result.setdefault("youtube_seo",         {})
-    result.setdefault("shortform_strategy",  {})
-    result.setdefault("sns_channels",        {})
-    result.setdefault("influencer_strategy", {})
-    result.setdefault("kpi",                 {})
-    result.setdefault("reporting_system",    "")
-    result.setdefault("campaign_linkage",    "")
+        try:
+            kpi_text = f4.result()
+            _progress("KPI·예산 전략 완료...")
+        except Exception as e:
+            print(f"  [오류] kpi_targets 생성 실패: {e}")
+
+    # 6. 결과 병합
+    result = {
+        "platforms":          platforms,
+        "edit_versions":      edit_versions,
+        "marketing_budget":   mkt_budget,
+        "youtube_strategy":   youtube_text,
+        "sns_strategy":       sns_text,
+        "influencer_strategy": influencer_text,
+        "kpi_targets":        kpi_text,
+        "reporting_system":   "",
+    }
 
     # 7. DNA 업데이트
     update_dna(dna, {
         "distribution_channels":  platforms,
-        "youtube_strategy":       result["youtube_seo"],
-        "shortform_strategy":     result["shortform_strategy"],
-        "sns_strategy":           result["sns_channels"],
-        "influencer_strategy":    result["influencer_strategy"],
-        "kpi_targets":            (result.get("kpi") or {}).get("primary_kpi", []),
-        "reporting_system":       result["reporting_system"],
-        "marketing_budget":       result["marketing_budget"],
-        "distribution_strategy":  result.get("campaign_linkage", ""),
+        "youtube_strategy":       youtube_text,
+        "sns_strategy":           sns_text,
+        "influencer_strategy":    influencer_text,
+        "kpi_targets":            [kpi_text] if kpi_text else [],
+        "reporting_system":       "",
+        "marketing_budget":       mkt_budget,
+        "distribution_strategy":  youtube_text[:200] if youtube_text else "",
     })
 
     # 8. DB 저장
@@ -331,7 +338,131 @@ def _calc_marketing_budget(dna: ConceptDNA) -> dict:
 
 
 # ─────────────────────────────────────────────
-# Claude 호출 – PART 1: 유통·SEO 전략
+# 텍스트 전략 생성 함수 (JSON 파싱 없음)
+# ─────────────────────────────────────────────
+
+def _gen_youtube_strategy_text(
+    dna: ConceptDNA,
+    platforms: list[str],
+    edit_versions: list[dict],
+) -> str:
+    """유튜브 SEO + 숏폼 전략을 마크다운 텍스트로 반환."""
+    dna_ctx = dna_to_context_string(dna)
+    platform_block = ", ".join(platforms)
+    edit_block = "\n".join(
+        f"  - {v['version']} ({v['duration']}) → {v['platform']}"
+        for v in edit_versions
+    )
+    has_short_note = "숏폼 버전 보유" if dna.has_shortform else "롱폼만 보유 → 숏폼 재편집 필요"
+    script_summary = _summarize_scripts(dna)
+
+    prompt = (
+        f"당신은 대한민국 공공 캠페인 전문 디지털 마케터입니다.\n"
+        f"아래 정보를 바탕으로 유튜브 SEO 전략과 숏폼 플랫폼 전략을 마크다운 텍스트로 작성하세요.\n\n"
+        f"[프로젝트]\n{dna_ctx}\n\n"
+        f"[대본 요약]\n{script_summary}\n\n"
+        f"[운영 플랫폼]\n{platform_block}\n\n"
+        f"[재편집 버전]\n{has_short_note}\n{edit_block}\n\n"
+        f"[작성 지침]\n"
+        f"## 유튜브 제목 공식 — 감성형·정보형·행동유도형 3가지 완성 제목\n"
+        f"## 설명글 초안 — 실제 업로드할 수 있는 전체 텍스트 (타임스탬프·해시태그 포함)\n"
+        f"## 태그 목록 — 15개 (광역 3개·중간 7개·장문 5개)\n"
+        f"## 썸네일 방향 — 글자·인물·배경색 구체적 묘사\n"
+        f"## 업로드 전략 — 최적 요일·시간대와 근거\n"
+        f"## 숏폼 플랫폼 전략 — 유튜브 Shorts·인스타 Reels·틱톡 각각\n\n"
+        f"모든 주장에 구체적 수치 포함. 출처 표기 필수 (기관명, 연도). 500자 이상."
+    )
+    text = claude_client.call(prompt, model=_SONNET_MODEL, max_tokens=2000)
+    if len(text) < 200:
+        print("  [경고] youtube_strategy 텍스트 짧음!")
+    return text.strip()
+
+
+def _gen_sns_strategy_text(dna: ConceptDNA, platforms: list[str]) -> str:
+    """SNS 채널별 운영 계획을 마크다운 텍스트로 반환."""
+    dna_ctx = dna_to_context_string(dna)
+    platform_block = ", ".join(platforms)
+
+    prompt = (
+        f"당신은 대한민국 공공 캠페인 SNS 전략 전문가입니다.\n"
+        f"아래 정보를 바탕으로 SNS 채널별 운영 계획을 마크다운 텍스트로 작성하세요.\n\n"
+        f"[프로젝트]\n{dna_ctx}\n\n"
+        f"[운영 플랫폼]\n{platform_block}\n\n"
+        f"[작성 지침]\n"
+        f"## 인스타그램 — 게시 빈도·콘텐츠 믹스·피드 포스팅 초안·해시태그 전략\n"
+        f"## 페이스북 — 게시 빈도·콘텐츠 포맷·포스팅 텍스트 초안\n"
+        f"## X(트위터) — 게시 빈도·포스팅 초안 (140자)·캠페인 해시태그\n"
+        f"## 블로그 — 게시 빈도·SEO 제목 예시 2개·주력 키워드 5개\n"
+        f"## 카카오채널 (해당 시) — 운영 전략\n\n"
+        f"모든 채널에 구체적 수치와 실제 게시 가능한 텍스트 포함. 500자 이상."
+    )
+    text = claude_client.call(prompt, model=_SONNET_MODEL, max_tokens=2000)
+    if len(text) < 200:
+        print("  [경고] sns_strategy 텍스트 짧음!")
+    return text.strip()
+
+
+def _gen_influencer_strategy_text(dna: ConceptDNA, platforms: list[str]) -> str:
+    """인플루언서/미디어 협업 전략을 마크다운 텍스트로 반환."""
+    dna_ctx = dna_to_context_string(dna)
+
+    prompt = (
+        f"당신은 대한민국 공공 캠페인 인플루언서 전략 전문가입니다.\n"
+        f"아래 정보를 바탕으로 인플루언서·미디어 협업 전략을 마크다운 텍스트로 작성하세요.\n\n"
+        f"[프로젝트]\n{dna_ctx}\n\n"
+        f"[작성 지침]\n"
+        f"## 인플루언서 협업 방향 — 공공기관 특성(사전 승인·중립성) 고려\n"
+        f"## 추천 인플루언서 유형 — 카테고리·팔로워 규모·협업 포맷·선택 이유\n"
+        f"## 미디어 PR — 보도자료 배포 매체·배포 시점·주요 앵글\n"
+        f"## 캠페인 연계 방안 — 오프라인·타 매체·타부서 사업과의 시너지\n\n"
+        f"구체적 카테고리와 수치 포함. 400자 이상."
+    )
+    text = claude_client.call(prompt, model=_SONNET_MODEL, max_tokens=1500)
+    if len(text) < 150:
+        print("  [경고] influencer_strategy 텍스트 짧음!")
+    return text.strip()
+
+
+def _gen_kpi_targets_text(
+    dna: ConceptDNA,
+    platforms: list[str],
+    rfp_kpis: list[str],
+    mkt_budget: dict,
+) -> str:
+    """KPI 목표 + 성과 보고 체계를 마크다운 텍스트로 반환."""
+    dna_ctx = dna_to_context_string(dna)
+    rfp_kpi_block = (
+        "\n".join(f"  - {k}" for k in rfp_kpis)
+        if rfp_kpis else "  (RFP에서 별도 KPI 미명시)"
+    )
+    budget_block = "\n".join(
+        f"  {b['category']}: {b['ratio']} ({b['amount']})"
+        for b in mkt_budget["breakdown"]
+    )
+    campaign_months = _estimate_campaign_months(dna)
+
+    prompt = (
+        f"당신은 공공 캠페인 전문 퍼포먼스 마케터입니다.\n"
+        f"아래 정보를 바탕으로 KPI 목표와 성과 보고 체계를 마크다운 텍스트로 작성하세요.\n\n"
+        f"[프로젝트]\n{dna_ctx}\n\n"
+        f"[RFP 요구 KPI]\n{rfp_kpi_block}\n\n"
+        f"[운영 플랫폼]\n{', '.join(platforms)}\n\n"
+        f"[마케팅 예산]\n총 권장: {mkt_budget['recommended_amount']} ({mkt_budget['total_ratio']})\n{budget_block}\n\n"
+        f"[작성 지침]\n"
+        f"## 핵심 KPI 지표 — 4~6개 지표·측정 방법·측정 도구·RFP 연결 여부\n"
+        f"## 월별 목표 ({campaign_months}개월) — 런칭/중간/최종 3단계 목표치\n"
+        f"## 성과 보고 체계 — 주간·월간·최종 보고서 구성·대시보드 체계\n"
+        f"## 예산 집행 계획 — 항목별 배분 비율과 주의사항\n\n"
+        f"현실적 목표치 포함. 유사 공공기관 벤치마크 기준. 500자 이상."
+    )
+    text = claude_client.call(prompt, model=_SONNET_MODEL, max_tokens=2000)
+    if len(text) < 200:
+        print("  [경고] kpi_targets 텍스트 짧음!")
+    return text.strip()
+
+
+# ─────────────────────────────────────────────
+# Claude 호출 – PART 1 (레거시 JSON 방식, 미사용)
 # ─────────────────────────────────────────────
 
 def _generate_distribution_strategy(
@@ -339,19 +470,8 @@ def _generate_distribution_strategy(
     platforms: list[str],
     edit_versions: list[dict],
 ) -> dict:
-    """유튜브 SEO + 인플루언서 + campaign_linkage + 숏폼 전략 생성."""
-    prompt  = _build_distribution_prompt(dna, platforms, edit_versions)
-    result  = claude_client.call_json(prompt, max_tokens=2000)
-
-    # 품질 경고 로그
-    if not result.get("youtube_seo"):
-        print("  [경고] marketer: youtube_seo 비어있음!")
-    if not result.get("shortform_strategy"):
-        print("  [경고] marketer: shortform_strategy 비어있음!")
-    if not result.get("influencer_strategy"):
-        print("  [경고] marketer: influencer_strategy 비어있음!")
-
-    return result
+    """레거시: _gen_youtube_strategy_text 로 대체됨."""
+    return {}
 
 
 def _generate_sns_strategy(dna: ConceptDNA, platforms: list[str]) -> dict:

@@ -73,7 +73,8 @@ def get_client() -> anthropic.Anthropic:
 
 
 def call(prompt: str, model: str = DEFAULT_MODEL, max_tokens: int = MAX_TOKENS,
-         max_retries: int = _MAX_RETRIES, _skip_citation: bool = False) -> str:
+         max_retries: int = _MAX_RETRIES, _skip_citation: bool = False,
+         temperature: float | None = None) -> str:
     """Claude API 호출 후 응답 텍스트 반환.
 
     Args:
@@ -82,6 +83,7 @@ def call(prompt: str, model: str = DEFAULT_MODEL, max_tokens: int = MAX_TOKENS,
         max_tokens: 최대 토큰 수
         max_retries: 429/529 시 최대 재시도 횟수 (기본 3)
         _skip_citation: 내부 재시도용 — True이면 출처 규칙 시스템 프롬프트 생략
+        temperature: API temperature (None이면 기본값 사용)
 
     Returns:
         응답 텍스트 (str)
@@ -99,6 +101,8 @@ def call(prompt: str, model: str = DEFAULT_MODEL, max_tokens: int = MAX_TOKENS,
             )
             if system_prompt:
                 kwargs["system"] = system_prompt
+            if temperature is not None:
+                kwargs["temperature"] = temperature
             message = client.messages.create(**kwargs)
             return message.content[0].text.strip()
 
@@ -143,10 +147,14 @@ def call_json(prompt: str, model: str = DEFAULT_MODEL, max_tokens: int = MAX_TOK
               max_retries: int = _MAX_RETRIES, _validate: bool = True) -> dict:
     """Claude API 호출 후 JSON 파싱 결과 반환.
 
-    파싱 3단계 폴백:
-      1. 표준 json.loads
-      2. json_repair 라이브러리로 자동 복구
-      3. Claude에게 "JSON만 다시 출력해줘" 재요청 후 파싱
+    파싱 전략 (최대 3회 시도):
+      각 시도에서:
+        1. 표준 json.loads
+        2. json_repair 라이브러리로 자동 복구
+        3. Claude에게 "JSON만 다시 출력해줘" 재요청
+      재시도마다 temperature 낮춤: 기본 → 0.5 → 0.1
+      재시도 시 "순수 JSON만 반환하라" 프롬프트 추가.
+    완전 실패 시: {"_raw": ..., "_parse_failed": True} 반환 (예외 없이 계속 진행).
 
     Args:
         prompt: JSON 응답을 요청하는 프롬프트
@@ -156,21 +164,44 @@ def call_json(prompt: str, model: str = DEFAULT_MODEL, max_tokens: int = MAX_TOK
         _validate: 빈 필드 자동 재시도 활성화 (기본 True)
 
     Returns:
-        파싱된 dict
-
-    Raises:
-        ValueError: 3단계 폴백 모두 실패 시
+        파싱된 dict. 완전 실패 시 {"_raw": str, "_parse_failed": True}
     """
     if max_tokens == MAX_TOKENS:
         max_tokens = 8192
 
-    raw = call(prompt, model=model, max_tokens=max_tokens, max_retries=max_retries)
-    result = _extract_json(raw, prompt=prompt, model=model, max_tokens=max_tokens)
+    _JSON_RETRY_NOTE = (
+        "\n\n[이전 응답이 JSON 파싱에 실패했습니다. "
+        "반드시 순수 JSON만 반환하세요. "
+        "텍스트 설명, 마크다운, 코드블록 없이 "
+        "{ }로 시작하고 끝나는 JSON만 반환하세요.]"
+    )
+    _TEMPS = [None, 0.5, 0.1]   # None = API 기본값
 
-    if _validate:
-        result = _validate_and_retry(result, prompt, model, max_tokens)
+    last_raw = ""
 
-    return result
+    for attempt in range(3):
+        cur_prompt = prompt if attempt == 0 else (prompt + _JSON_RETRY_NOTE)
+        cur_temp   = _TEMPS[attempt]
+
+        try:
+            raw = call(cur_prompt, model=model, max_tokens=max_tokens,
+                       max_retries=max_retries, temperature=cur_temp)
+            last_raw = raw
+            result = _extract_json(raw, prompt=prompt, model=model, max_tokens=max_tokens)
+            if _validate:
+                result = _validate_and_retry(result, prompt, model, max_tokens)
+            return result
+        except (ValueError, json.JSONDecodeError):
+            if attempt < 2:
+                next_t = _TEMPS[attempt + 1]
+                print(f"  [JSON] 파싱 실패 (시도 {attempt+1}/3) — temperature={next_t}로 재시도")
+            else:
+                print(f"  [JSON] 3회 모두 실패 — raw 텍스트로 대체 (파이프라인 계속)")
+        except Exception:
+            raise  # OverloadError 등은 그대로 전파
+
+    print(f"  [JSON] 경고: raw 저장됨 (앞 200자): {last_raw[:200]}")
+    return {"_raw": last_raw, "_parse_failed": True}
 
 
 def _extract_json(

@@ -195,40 +195,154 @@ def _generate_longform_outline(
     is_sample: bool,
 ) -> dict:
     """제안서 개요용 대본 생성.
-    is_sample=True: 1편 (씬별 핵심 포인트 + 나레이션 방향)
-    is_sample=False: 나머지 편 (제목 + 씬 목록 + 핵심 메시지만)
+
+    is_sample=True  (1편): 메타데이터 JSON + 씬 텍스트 개별 호출 → 합산
+    is_sample=False (나머지): 기존 소형 JSON 방식 유지 (씬 3개, 속도 우선)
     """
     duration_s  = _duration_to_seconds(dna.duration)
-    # 개요 모드: 씬 수 제한 (속도 우선 — 제안서는 방향 제시용)
     full_scenes = _calc_scene_count(duration_s)
-    if is_sample:
-        scene_count = min(full_scenes, 5)   # 샘플: 최대 5씬
-        prompt      = _build_outline_sample_prompt(dna, ep_plan, ep_num, all_plans, is_series, scene_count, duration_s)
-        max_tokens  = 500
-    else:
-        scene_count = min(full_scenes, 3)   # 최소 개요: 최대 3씬
+    title       = ep_plan.get("title", f"{ep_num}편")
+
+    if not is_sample:
+        # ── 2편 이상: 기존 소형 JSON (3씬, max_tokens=400) ──
+        scene_count = min(full_scenes, 3)
         prompt      = _build_outline_minimal_prompt(dna, ep_plan, ep_num, scene_count)
-        max_tokens  = 400
+        raw         = claude_client.call_json(prompt, max_tokens=400, _validate=False)
+        if raw.get("_parse_failed"):
+            raw = {"episode": ep_num, "title": title, "format": "longform",
+                   "duration": dna.duration, "scenes": [], "opening_hook": {},
+                   "closing_cta": {}, "series_hook": {}}
+        raw.setdefault("episode", ep_num)
+        raw.setdefault("title",   title)
+        raw.setdefault("format",  "longform")
+        raw.setdefault("duration", dna.duration)
+        raw.setdefault("opening_hook", {})
+        raw.setdefault("scenes", [])
+        raw.setdefault("interview_questions", [])
+        raw.setdefault("closing_cta", {})
+        raw.setdefault("series_hook", {})
+        n = len(raw.get("scenes") or [])
+        print(f"  [확인] {ep_num}편 개요 대본 완료: {n}씬")
+        return raw
 
-    raw = claude_client.call_json(prompt, max_tokens=max_tokens, _validate=False)
+    # ── 1편 샘플: 메타데이터 JSON + 씬 텍스트 별도 호출 ──
+    scene_count = min(full_scenes, 5)
 
-    raw.setdefault("episode",             ep_num)
-    raw.setdefault("title",               ep_plan.get("title", f"{ep_num}편"))
-    raw.setdefault("format",              "longform")
-    raw.setdefault("duration",            dna.duration)
-    raw.setdefault("opening_hook",        {})
-    raw.setdefault("scenes",              [])
-    raw.setdefault("interview_questions", [])
-    raw.setdefault("closing_cta",         {})
-    raw.setdefault("series_hook",         {})
+    # 1단계: 메타데이터 (작은 JSON, max_tokens=250)
+    meta_prompt = _build_meta_only_prompt(dna, ep_plan, ep_num, all_plans, is_series)
+    meta = claude_client.call_json(meta_prompt, max_tokens=250, _validate=False)
+    if meta.get("_parse_failed"):
+        meta = {}
 
-    scene_count_result = len(raw.get("scenes") or [])
-    if scene_count_result == 0:
-        print(f"  [경고] {ep_num}편 개요: scenes 비어있음!")
-    else:
-        mode = "샘플" if is_sample else "개요"
-        print(f"  [확인] {ep_num}편 {mode} 대본 완료: {scene_count_result}씬")
-    return raw
+    # 2단계: 씬 텍스트 (일반 텍스트, max_tokens=600)
+    scene_prompt = _build_scene_text_prompt(dna, ep_plan, ep_num, scene_count, duration_s, is_series)
+    scene_text   = claude_client.call(scene_prompt, max_tokens=600)
+    scenes       = _parse_scene_text(scene_text, scene_count)
+
+    result = {
+        "episode":             ep_num,
+        "title":               meta.get("title", title),
+        "format":              "longform",
+        "duration":            dna.duration,
+        "opening_hook":        {"hook_line": meta.get("opening_hook", "")},
+        "scenes":              scenes,
+        "interview_questions": meta.get("interview_questions", []),
+        "closing_cta":         {"cta_direction": meta.get("closing_cta", "")},
+        "series_hook": {
+            "cliffhanger_line": meta.get("cliffhanger_line") if is_series else None,
+            "callback_line":    None,
+        },
+    }
+    print(f"  [확인] {ep_num}편 샘플 대본 완료: {len(scenes)}씬")
+    return result
+
+
+def _build_meta_only_prompt(
+    dna: ConceptDNA,
+    ep_plan: dict,
+    ep_num: int,
+    all_plans: list,
+    is_series: bool,
+) -> str:
+    """편 메타데이터 전용 소형 JSON 프롬프트."""
+    title = ep_plan.get("title", f"{ep_num}편")
+    cliff = '"cliffhanger_line":"다음편연결문구"' if is_series else '"cliffhanger_line":null'
+    return (
+        f"영상대본메타데이터JSON만출력(설명없이).\n"
+        f"발주처:{dna.client_name} 사업:{dna.project_name} 컨셉:{dna.concept or '미정'}"
+        f" 톤:{dna.tone_and_manner or '미정'} {ep_num}편\"{title}\"\n\n"
+        f'{{"title":"{title}","opening_hook":"오프닝훅자막15자내",'
+        f'"interview_questions":["질문1","질문2"],'
+        f'"closing_cta":"CTA방향1문장",{cliff}}}'
+    )
+
+
+def _build_scene_text_prompt(
+    dna: ConceptDNA,
+    ep_plan: dict,
+    ep_num: int,
+    scene_count: int,
+    duration_s: int,
+    is_series: bool,
+) -> str:
+    """씬 구성 텍스트 전용 프롬프트 (JSON 없이 마크다운 목록으로 출력)."""
+    title      = ep_plan.get("title", f"{ep_num}편")
+    core_msg   = ep_plan.get("core_message", "")
+    dur_label  = f"{duration_s // 60}분 {duration_s % 60}초" if duration_s % 60 else f"{duration_s // 60}분"
+
+    series_note = ""
+    if is_series:
+        prev = f"{ep_num-1}편 복선 포함" if ep_num > 1 else ""
+        nxt  = f"{ep_num+1}편 클리프행어 포함" if ep_num < len([]) else ""
+        if prev or nxt:
+            series_note = f"시리즈 연결: {prev or ''}{' / ' + nxt if nxt else ''}\n"
+
+    return (
+        f"공공 홍보 영상 {ep_num}편 씬 구성 {scene_count}개를 아래 형식으로 작성하라.\n"
+        f"발주처:{dna.client_name} 사업:{dna.project_name} 제목:{title}\n"
+        f"컨셉:{dna.concept or '미정'} 톤:{dna.tone_and_manner or '미정'} 러닝타임:{dur_label}\n"
+        f"핵심메시지:{core_msg}\n{series_note}\n"
+        f"[출력 형식 — 반드시 아래 형식만 사용]\n"
+        f"씬1 [장소]: 핵심 내용 1문장\n"
+        f"씬2 [장소]: 핵심 내용 1문장\n"
+        f"...\n\n"
+        f"설명 없이 씬 목록만 출력하라."
+    )
+
+
+def _parse_scene_text(text: str, expected_count: int) -> list:
+    """씬 텍스트에서 씬 목록 추출."""
+    scenes = []
+    for line in text.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        # 씬N [장소]: 내용  또는  씬N: 내용
+        m = re.match(r'^씬\s*(\d+)\s*(?:\[([^\]]*)\])?\s*[:\-]\s*(.*)', line)
+        if not m:
+            m = re.match(r'^S#(\d+)\s*(?:\[([^\]]*)\])?\s*[:\-]\s*(.*)', line, re.IGNORECASE)
+        if not m:
+            m = re.match(r'^(\d+)[.\)]\s+(.+)', line)
+            if m:
+                scenes.append({
+                    "scene_number": int(m.group(1)),
+                    "location":     "",
+                    "key_point":    m.group(2).strip(),
+                })
+                continue
+        if m:
+            num = int(m.group(1))
+            loc = (m.group(2) or "").strip()
+            kp  = (m.group(3) if len(m.groups()) >= 3 else m.group(2) or "").strip()
+            scenes.append({"scene_number": num, "location": loc, "key_point": kp})
+
+    # 파싱 실패 시 줄 단위 fallback
+    if not scenes:
+        for i, line in enumerate(text.strip().splitlines()[:expected_count], 1):
+            if line.strip():
+                scenes.append({"scene_number": i, "location": "", "key_point": line.strip()})
+
+    return scenes[:expected_count]
 
 
 def _build_outline_sample_prompt(

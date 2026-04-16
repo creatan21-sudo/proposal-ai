@@ -556,38 +556,35 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
                 s["포맷"] = fmt
 
     elif step_key == "marketing":
-        # result 키: "platforms" (distribution_channels 아님), "kpi" → "primary_kpi"
+        # result 키: "platforms", "youtube_strategy"(텍스트), "sns_strategy"(텍스트),
+        #            "influencer_strategy"(텍스트), "kpi_targets"(텍스트), "marketing_budget"
         channels = dna.distribution_channels or result.get("platforms", [])
-        s["주요 채널"] = [
-            ch.get("channel", ch.get("platform", str(ch))) if isinstance(ch, dict) else str(ch)
-            for ch in channels
-        ]
-        kpis = dna.kpi_targets or (result.get("kpi") or {}).get("primary_kpi", [])
-        if kpis:
-            s["KPI 목표"] = [
-                f"{kpi.get('metric', '')}: {kpi.get('target', '')}" if isinstance(kpi, dict) else str(kpi)
-                for kpi in kpis
+        if channels:
+            s["주요 채널"] = [
+                ch.get("channel", ch.get("platform", str(ch))) if isinstance(ch, dict) else str(ch)
+                for ch in channels
             ]
-        # 유튜브 SEO 핵심 전략
-        yt = dna.youtube_strategy or result.get("youtube_seo", {})
-        if isinstance(yt, dict) and yt:
+        # 유튜브 전략 (텍스트 우선, dict 레거시 호환)
+        yt = dna.youtube_strategy or result.get("youtube_strategy", result.get("youtube_seo", ""))
+        if isinstance(yt, str) and yt:
+            s["유튜브 전략"] = yt[:400]
+        elif isinstance(yt, dict) and yt:
             title_formula = yt.get("title_formula", yt.get("title_format", ""))
             kw = yt.get("keyword_strategy", yt.get("keywords", yt.get("main_keywords", "")))
-            upload_time = yt.get("upload_time", yt.get("best_upload_time", ""))
             yt_lines = []
             if title_formula:
                 yt_lines.append(f"제목 공식: {str(title_formula)[:120]}")
             if kw:
                 yt_lines.append(f"키워드: {str(kw)[:200]}")
-            if upload_time:
-                yt_lines.append(f"업로드 시간: {str(upload_time)[:80]}")
             if yt_lines:
-                s["유튜브 SEO 전략"] = "\n".join(yt_lines)
-        # SNS 채널별 운영 계획 요약
-        sns = dna.sns_strategy or result.get("sns_channels", {})
-        if isinstance(sns, dict) and sns:
+                s["유튜브 전략"] = "\n".join(yt_lines)
+        # SNS 전략 (텍스트 우선)
+        sns = dna.sns_strategy or result.get("sns_strategy", result.get("sns_channels", ""))
+        if isinstance(sns, str) and sns:
+            s["SNS 전략"] = sns[:400]
+        elif isinstance(sns, dict) and sns:
             sns_lines = []
-            for ch, plan in list(sns.items())[:3]:  # 상위 3개 채널만
+            for ch, plan in list(sns.items())[:3]:
                 if isinstance(plan, dict):
                     freq = plan.get("posting_frequency", plan.get("frequency", ""))
                     content = plan.get("content_format", plan.get("format", ""))
@@ -598,7 +595,18 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
                 else:
                     sns_lines.append(f"{ch}: {str(plan)[:100]}")
             if sns_lines:
-                s["SNS 운영 계획"] = sns_lines
+                s["SNS 전략"] = sns_lines
+        # KPI 목표 (텍스트 우선)
+        kpi = dna.kpi_targets or result.get("kpi_targets", result.get("kpi", ""))
+        if isinstance(kpi, str) and kpi:
+            s["KPI 목표"] = kpi[:300]
+        elif isinstance(kpi, dict):
+            kpis = kpi.get("primary_kpi", [])
+            if kpis:
+                s["KPI 목표"] = [
+                    f"{k.get('metric', '')}: {k.get('target', '')}" if isinstance(k, dict) else str(k)
+                    for k in kpis
+                ]
         # 예산 배분 요약
         budget = dna.marketing_budget or result.get("marketing_budget", {})
         if isinstance(budget, dict) and budget:

@@ -341,6 +341,12 @@ def save_marketing(client_name: str, project_name: str, result: dict,
     """마케팅 전략 결과 저장."""
     import json
     with get_connection() as conn:
+        def _mkt_val(v):
+            """텍스트면 그대로, dict/list면 JSON 직렬화."""
+            if isinstance(v, str):
+                return v
+            return json.dumps(v, ensure_ascii=False)
+
         cursor = conn.execute(
             """INSERT INTO marketing_results
                (created_at, client_name, project_name,
@@ -352,14 +358,14 @@ def save_marketing(client_name: str, project_name: str, result: dict,
                 datetime.now().isoformat(),
                 client_name,
                 project_name,
-                json.dumps(result.get("platforms", []), ensure_ascii=False),
-                json.dumps(result.get("youtube_seo", {}), ensure_ascii=False),
-                json.dumps(result.get("shortform_strategy", {}), ensure_ascii=False),
-                json.dumps(result.get("sns_channels", {}), ensure_ascii=False),
-                json.dumps(result.get("influencer_strategy", {}), ensure_ascii=False),
-                json.dumps(result.get("kpi", {}), ensure_ascii=False),
+                _mkt_val(result.get("platforms", [])),
+                _mkt_val(result.get("youtube_strategy", result.get("youtube_seo", {}))),
+                _mkt_val(result.get("shortform_strategy", {})),
+                _mkt_val(result.get("sns_strategy", result.get("sns_channels", {}))),
+                _mkt_val(result.get("influencer_strategy", {})),
+                _mkt_val(result.get("kpi_targets", result.get("kpi", {}))),
                 result.get("reporting_system", ""),
-                json.dumps(result.get("marketing_budget", {}), ensure_ascii=False),
+                _mkt_val(result.get("marketing_budget", {})),
                 case_id,
             ),
         )
@@ -571,14 +577,17 @@ def get_case_detail(case_id: int) -> "dict | None":
             ).fetchone()
             return dict(row) if row else None
 
-        def _parse_json_cols(d: dict, cols: list[str]) -> dict:
+        def _parse_json_cols(d: dict, cols: list[str], text_fallback_cols: set = None) -> dict:
+            if text_fallback_cols is None:
+                text_fallback_cols = set()
             for col in cols:
                 val = d.pop(col, None)
                 key = col.replace("_json", "")
                 try:
                     d[key] = json.loads(val or "[]") if val else []
                 except Exception:
-                    d[key] = []
+                    # 텍스트 형태 값은 원본 문자열로, 그 외는 빈 리스트
+                    d[key] = val if (col in text_fallback_cols and val) else []
             return d
 
         steps = {}
@@ -743,7 +752,11 @@ def get_case_detail(case_id: int) -> "dict | None":
             _parse_json_cols(mkt_row, ["platforms_json", "youtube_strategy_json",
                                        "shortform_strategy_json", "sns_strategy_json",
                                        "influencer_strategy_json", "kpi_json",
-                                       "marketing_budget_json"])
+                                       "marketing_budget_json"],
+                             text_fallback_cols={"youtube_strategy_json",
+                                                 "sns_strategy_json",
+                                                 "influencer_strategy_json",
+                                                 "kpi_json"})
             steps["marketing"] = mkt_row
 
         # STEP 7 최종 제안서
