@@ -216,9 +216,14 @@ def dna_to_context_string(dna: ConceptDNA) -> str:
     if dna.evaluation_keywords:
         lines.append(f"- 평가 키워드: {', '.join(dna.evaluation_keywords)}")
     if dna.core_tasks:
-        lines.append(f"- 핵심 과업: {' / '.join(dna.core_tasks[:5])}")
+        tasks_str = "\n".join(f"  • {t}" for t in dna.core_tasks)
+        lines.append(f"\n【핵심 과업 — 반드시 모두 다뤄야 함】\n{tasks_str}")
     if dna.forbidden_notes:
-        lines.append(f"- 주의사항: {' / '.join(dna.forbidden_notes[:3])}")
+        notes_str = "\n".join(f"  ⚠️ {n}" for n in dna.forbidden_notes)
+        lines.append(
+            f"\n【금지·주의 사항 — 위반 시 감점·실격】\n{notes_str}\n"
+            "위 사항은 제안서 전체에서 절대 위반하지 마라."
+        )
     if dna.concept:
         lines.append(f"- 핵심 컨셉: {dna.concept}")
     if dna.slogan:

@@ -385,6 +385,8 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
         s["기관 유형"] = dna.agency_type or result.get("agency_type", "")
         s["예산"]      = dna.budget or "-"
         s["납품기한"]  = dna.deadline or "-"
+        if dna.agency_characteristics:
+            s["기관 특성"] = dna.agency_characteristics
         items = dna.evaluation_items or result.get("evaluation_items", [])
         if items:
             s["평가배점표"] = [
@@ -403,10 +405,18 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
             ]
         else:
             s["평가항목"] = []
+        # 핵심 과업
+        tasks = dna.core_tasks or result.get("core_tasks", [])
+        if tasks:
+            s["핵심 과업"] = [str(t) for t in tasks]
+        # 금지·주의 사항
+        notes = dna.forbidden_notes or result.get("forbidden_notes", [])
+        if notes:
+            s["금지·주의 사항"] = [str(n) for n in notes]
         # 배점표 전략 분석
         es = dna.evaluation_strategy or result.get("evaluation_strategy", {})
         if isinstance(es, dict):
-            checklist = es.get("정량항목_체크리스트", [])
+            checklist = es.get("정량항목_체크리스트", es.get("정량체크리스트", []))
             if checklist:
                 s["정량평가 체크리스트"] = [str(c) for c in checklist]
             focus = es.get("집중공략", "")

@@ -122,7 +122,7 @@ def run(dna: ConceptDNA, file_path: str = None) -> dict:
 # ─────────────────────────────────────────────
 
 def rfp_quick_extract(rfp_text: str) -> dict:
-    """RFP 텍스트에서 폼 자동채우기용 핵심 필드를 빠르게 추출.
+    """RFP 텍스트에서 폼 자동채우기 + 전략 분석용 핵심 필드를 추출.
 
     Returns:
         {
@@ -130,66 +130,72 @@ def rfp_quick_extract(rfp_text: str) -> dict:
             "project_name": str,
             "budget": str,
             "deadline": str,
-            "video_type": str,  # 홍보영상/다큐멘터리/교육영상/캠페인영상/뉴스형영상
+            "video_type": str,
             "quantity": int,
             "duration": str,
-            "evaluation_criteria": list,  # [{"구분": str, "항목명": str, "배점": int, "세부기준": str, "주의사항": str}]
+            "core_keywords": list,   # 핵심 키워드
+            "core_tasks": list,      # 핵심 과업
+            "prohibited": list,      # 금지 사항
+            "special_notes": list,   # 특이사항
+            "evaluation_criteria": list,
+            "evaluation_strategy": dict,
         }
     """
     text_section = rfp_text[:8000] if len(rfp_text) > 8000 else rfp_text
 
-    prompt = f"""아래 RFP 문서에서 폼 입력 항목과 평가배점표를 추출하라.
-없는 항목은 빈 문자열 또는 0으로 반환.
+    prompt = f"""아래 RFP 문서에서 모든 핵심 정보를 추출하라.
+없는 항목은 빈 문자열 또는 빈 배열로 반환.
 
 [RFP 문서]
 {text_section}
 
-【평가배점표 추출 규칙 — 반드시 준수】
-1. 정성적 평가 항목별 배점 모두 추출 (기술·창의성·방법론 등 주관적 평가)
-2. 정량적 평가 항목별 배점 모두 추출 (실적·인력·등급 등 수치로 검증 가능한 항목)
-3. 가격 평가 배점 추출 (입찰가격 평가)
-4. 세부 평가 기준 (단계별 점수표) 추출 — 예: '5건이상=5점, 3건이상=3점'
-5. 특이사항 (미제출시 최저점, 부정당업자 해당시 0점 등) 추출
-- 평가배점표/평가기준표/심사기준 섹션이 있으면 모든 항목 빠짐없이 추출
-- 배점은 반드시 정수로 변환 (예: '15점' → 15)
+【추출 규칙 — 반드시 준수】
+- 평가배점표/심사기준: 모든 항목 빠짐없이 추출, 배점은 정수로 변환
+- 핵심 과업: "~을 제작", "~을 수행" 형태의 구체적 과업 항목
+- 금지 사항: "금지", "불가", "제한", "제외", "안 됨" 표현 모두
+- 특이사항: 감점 조건, 미제출 불이익, 자격 제한
+- 핵심 키워드: 발주처가 반복 강조하는 단어/개념 (10개 이내)
 
 아래 JSON만 출력 (다른 텍스트 금지):
 {{
-  "client_name": "발주처 기관명 (예: 기상청, 서울시, 국토교통부 등)",
-  "project_name": "사업명 (RFP 제목 또는 과업명)",
-  "budget": "예산 금액 (예: 3억 2천만 원, 150,000,000원 형식 그대로)",
-  "deadline": "납품기한 (예: 2026년 12월 15일, 계약 후 90일)",
-  "video_type": "영상 종류 — 반드시 다음 중 하나: 홍보영상 / 다큐멘터리 / 교육영상 / 캠페인영상 / 뉴스형영상",
-  "quantity": 납품 수량 (정수, 편수),
-  "duration": "편당 러닝타임 (예: 3분, 2분 30초, 60초)",
+  "client_name": "발주처 기관명",
+  "project_name": "사업명",
+  "budget": "예산 금액",
+  "deadline": "납품기한",
+  "video_type": "반드시 다음 중 하나: 홍보영상 / 다큐멘터리 / 교육영상 / 캠페인영상 / 뉴스형영상",
+  "quantity": 납품 수량 (정수),
+  "duration": "편당 러닝타임",
+  "core_keywords": ["핵심 키워드 (최대 10개)"],
+  "core_tasks": ["구체적 과업 항목"],
+  "prohibited": ["금지 또는 제한 사항"],
+  "special_notes": ["감점 조건, 자격 제한 등 특이사항"],
   "evaluation_criteria": [
     {{
       "구분": "정성적 또는 정량적 또는 가격 중 하나",
-      "항목명": "평가 항목명 그대로",
+      "항목명": "평가 항목명",
       "배점": 배점 숫자 (정수),
-      "세부기준": "단계별 점수 기준 (예: 5건이상=5점, 없으면 빈 문자열)",
-      "전략적_의미": "이 항목에서 높은 점수를 받으려면 무엇을 어떻게 준비해야 하는지 (2문장)",
-      "주의사항": "미제출시 최저점 등 특이사항 (없으면 빈 문자열)"
+      "세부기준": "단계별 점수 기준 (없으면 빈 문자열)",
+      "전략": "이 항목에서 높은 점수 받는 방법 (2문장)",
+      "주의사항": "특이사항 (없으면 빈 문자열)"
     }}
   ],
   "evaluation_strategy": {{
     "총점": 전체 배점 합계 숫자,
-    "핵심항목": ["배점 10점 이상 항목명 리스트"],
-    "정량항목_체크리스트": ["항목명: 준비해야 할 서류/실적 기준"],
+    "핵심항목": ["배점 10점 이상 항목명"],
+    "정량체크리스트": ["항목명: 준비 서류/기준"],
     "집중공략": "가장 점수 올리기 쉬운 항목과 공략법 (3문장)"
   }}
 }}
-evaluation_criteria: 없으면 빈 배열 [].
-배점 높은 순으로 정렬.
-evaluation_strategy: 없으면 {{"총점": 0, "핵심항목": [], "정량항목_체크리스트": [], "집중공략": ""}}."""
+evaluation_criteria: 없으면 빈 배열 []. 배점 높은 순으로 정렬."""
 
     _empty = {"client_name": "", "project_name": "", "budget": "",
               "deadline": "", "video_type": "", "quantity": 0, "duration": "",
+              "core_keywords": [], "core_tasks": [], "prohibited": [], "special_notes": [],
               "evaluation_criteria": [],
-              "evaluation_strategy": {"총점": 0, "핵심항목": [], "정량항목_체크리스트": [], "집중공략": ""}}
+              "evaluation_strategy": {"총점": 0, "핵심항목": [], "정량체크리스트": [], "집중공략": ""}}
 
     try:
-        result = claude_client.call_json(prompt, max_tokens=2500, _validate=False)
+        result = claude_client.call_json(prompt, max_tokens=3000, _validate=False)
     except Exception as e:
         # call_json 3단계 폴백 모두 실패 → 원시 응답에서 {} 블록 직접 추출 시도
         print(f"  [rfp_quick_extract] call_json 실패: {e}")
@@ -212,10 +218,11 @@ evaluation_strategy: 없으면 {{"총점": 0, "핵심항목": [], "정량항목_
             result["quantity"] = int(result["quantity"])
         except (ValueError, TypeError):
             result["quantity"] = 0
-    if "evaluation_criteria" not in result or not isinstance(result["evaluation_criteria"], list):
-        result["evaluation_criteria"] = []
+    for list_field in ("core_keywords", "core_tasks", "prohibited", "special_notes", "evaluation_criteria"):
+        if list_field not in result or not isinstance(result[list_field], list):
+            result[list_field] = []
     if "evaluation_strategy" not in result or not isinstance(result["evaluation_strategy"], dict):
-        result["evaluation_strategy"] = {"총점": 0, "핵심항목": [], "정량항목_체크리스트": [], "집중공략": ""}
+        result["evaluation_strategy"] = {"총점": 0, "핵심항목": [], "정량체크리스트": [], "집중공략": ""}
     return result
 
 
