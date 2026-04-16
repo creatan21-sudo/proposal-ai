@@ -23,6 +23,7 @@ class ConceptDNA:
     core_tasks: list = field(default_factory=list)            # 핵심 과업 목록
     evaluation_items: list = field(default_factory=list)      # 평가항목 + 배점 (raw list)
     evaluation_criteria: str = ""                             # 평가 배점표 (프롬프트 주입용 포맷)
+    top_criteria: list = field(default_factory=list)          # 배점 상위 3개 항목명 (전략 집중용)
     evaluation_keywords: list = field(default_factory=list)   # 평가 핵심 키워드 top10
     rfp_requirements: list = field(default_factory=list)      # RFP 요구사항 목록
     forbidden_notes: list = field(default_factory=list)       # 금지/주의사항
@@ -156,10 +157,17 @@ def dna_to_context_string(dna: ConceptDNA) -> str:
         f"- 기관 특성: {dna.agency_characteristics or '미분석'}",
     ]
     if dna.evaluation_criteria:
-        lines.append(
-            f"\n【평가 배점표】\n{dna.evaluation_criteria}\n"
-            "위 배점표 기준으로 높은 점수 항목에 집중해서 작성하라."
-        )
+        criteria_block = f"\n【평가 배점표】\n{dna.evaluation_criteria}\n"
+        if dna.top_criteria:
+            top_names = " / ".join(dna.top_criteria)
+            criteria_block += (
+                f"\n⚠️ 최우선 집중 항목 (배점 TOP 3): {top_names}\n"
+                "이 항목들이 전체 배점에서 가장 큰 비중을 차지한다. "
+                "반드시 이 항목을 중심으로 내용을 구성하라."
+            )
+        else:
+            criteria_block += "위 배점표 기준으로 높은 점수 항목에 집중해서 작성하라."
+        lines.append(criteria_block)
     if dna.evaluation_keywords:
         lines.append(f"- 평가 키워드: {', '.join(dna.evaluation_keywords)}")
     if dna.core_tasks:

@@ -512,6 +512,42 @@ function renderIssueCards(items) {
   }).join('');
 }
 
+// ── 평가 배점표 테이블 렌더링
+function renderEvalTable(items) {
+  if (!items || !items.length) return '<p style="color:#6b7280;font-size:13px;">평가배점표 없음</p>';
+  // 배점 내림차순 정렬
+  const sorted = [...items].sort((a, b) => {
+    const sa = parseInt((a.score || '').replace(/\D/g, '')) || 0;
+    const sb = parseInt((b.score || '').replace(/\D/g, '')) || 0;
+    return sb - sa;
+  });
+  const scores = sorted.map(it => parseInt((it.score || '').replace(/\D/g, '')) || 0);
+  const maxScore = scores[0] || 0;
+  // high importance 또는 배점 상위 30% 이상인 항목 강조
+  const rows = sorted.map(it => {
+    const scoreNum = parseInt((it.score || '').replace(/\D/g, '')) || 0;
+    const isHigh = it.importance === 'high' || (maxScore > 0 && scoreNum >= maxScore * 0.7);
+    const rowStyle = isHigh
+      ? 'background:#fef2f2;color:#b91c1c;font-weight:600;'
+      : 'background:#fff;';
+    return `<tr style="${rowStyle}">
+      <td style="padding:6px 10px;border:1px solid #e5e7eb;">${esc(it.item || '')}</td>
+      <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:center;white-space:nowrap;">${esc(it.score || '-')}</td>
+      <td style="padding:6px 10px;border:1px solid #e5e7eb;font-size:12px;color:inherit;">${esc(it.criteria || '')}</td>
+    </tr>`;
+  }).join('');
+  return `<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:6px;">
+    <thead>
+      <tr style="background:#f3f4f6;">
+        <th style="padding:6px 10px;border:1px solid #e5e7eb;text-align:left;">항목명</th>
+        <th style="padding:6px 10px;border:1px solid #e5e7eb;text-align:center;width:70px;">배점</th>
+        <th style="padding:6px 10px;border:1px solid #e5e7eb;text-align:left;">평가기준</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
 // ── 요약 렌더링
 function renderSummary(summary) {
   const keys = Object.keys(summary);
@@ -522,8 +558,11 @@ function renderSummary(summary) {
     if (val === null || val === undefined || val === '') continue;
     html += `<div class="summary-row"><span class="summary-key">${esc(key)}</span>`;
     if (Array.isArray(val)) {
+      // 평가배점표는 테이블로
+      if (key === '평가배점표') {
+        html += `<div>${renderEvalTable(val)}</div>`;
       // 개선 포인트는 카드 형태로
-      if (key === '개선 포인트') {
+      } else if (key === '개선 포인트') {
         html += `<div>${renderIssueCards(val)}</div>`;
       } else {
         const items = val.map(v => {

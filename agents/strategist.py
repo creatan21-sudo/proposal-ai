@@ -224,6 +224,15 @@ def _build_prompt(dna: ConceptDNA, sorted_eval: list, priority_keywords: list) -
     else:
         eval_block = "  (평가항목 정보 없음)"
 
+    # 배점 TOP 3 항목 블록
+    top_criteria = getattr(dna, "top_criteria", []) or []
+    if top_criteria:
+        top3_block = "  ⚠️ " + " / ".join(top_criteria)
+    elif sorted_eval:
+        top3_block = "  ⚠️ " + " / ".join(it["item"] for it in sorted_eval[:3])
+    else:
+        top3_block = "  (배점 정보 없음)"
+
     # 키워드 블록
     keyword_block = ", ".join(f"'{k}'" for k in priority_keywords) if priority_keywords else "(없음)"
 
@@ -262,7 +271,13 @@ def _build_prompt(dna: ConceptDNA, sorted_eval: list, priority_keywords: list) -
 {dna_ctx}
 
 ━━━━━━━━━━━━━━━━━━━━━━━
-[평가항목 (배점 높은 순 — 이 순서로 전략 집중)]
+[⚠️ 배점 TOP 3 — 전략의 70%를 이 항목에 집중]
+━━━━━━━━━━━━━━━━━━━━━━━
+{top3_block}
+배점 상위 3개 항목에 대해: 위기 제시·현황 진단·해결책·기대효과 모두 이 항목들을 직접적으로 언급하고 논거를 집중시켜라.
+
+━━━━━━━━━━━━━━━━━━━━━━━
+[평가항목 전체 (배점 높은 순)]
 ━━━━━━━━━━━━━━━━━━━━━━━
 {eval_block}
 

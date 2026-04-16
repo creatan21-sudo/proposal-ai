@@ -62,6 +62,17 @@ def run(dna: ConceptDNA, file_path: str = None) -> dict:
     # 평가 배점표를 프롬프트 주입용 포맷 문자열로 변환
     evaluation_criteria = _format_evaluation_criteria(eval_items)
 
+    # 배점 상위 3개 항목명 추출 (top_criteria)
+    def _parse_score_int(s: str) -> int:
+        m = re.search(r"\d+", str(s or ""))
+        return int(m.group()) if m else 0
+
+    top_criteria = [
+        it.get("item", "")
+        for it in sorted(eval_items, key=lambda x: _parse_score_int(x.get("score", "")), reverse=True)
+        if isinstance(it, dict) and it.get("item")
+    ][:3]
+
     update_dna(dna, {
         "client_name":        basic.get("client_name") or dna.client_name,
         "project_name":       basic.get("project_name") or dna.project_name,
@@ -71,6 +82,7 @@ def run(dna: ConceptDNA, file_path: str = None) -> dict:
         "core_tasks":         result.get("core_tasks", []),
         "evaluation_items":   eval_items,
         "evaluation_criteria": evaluation_criteria,
+        "top_criteria":       top_criteria,
         "evaluation_keywords": result.get("top_keywords", []),
         "rfp_requirements":   result.get("core_tasks", []),
         "forbidden_notes":    result.get("forbidden_notes", []),
@@ -96,7 +108,7 @@ def run(dna: ConceptDNA, file_path: str = None) -> dict:
 # ─────────────────────────────────────────────
 
 def rfp_quick_extract(rfp_text: str) -> dict:
-    """RFP 텍스트에서 폼 자동채우기용 핵심 7개 필드만 빠르게 추출.
+    """RFP 텍스트에서 폼 자동채우기용 핵심 필드를 빠르게 추출.
 
     Returns:
         {
@@ -107,11 +119,12 @@ def rfp_quick_extract(rfp_text: str) -> dict:
             "video_type": str,  # 홍보영상/다큐멘터리/교육영상/캠페인영상/뉴스형영상
             "quantity": int,
             "duration": str,
+            "evaluation_criteria": list,  # [{"항목명": str, "배점": str, "평가기준": str, "중요도": str}]
         }
     """
     text_section = rfp_text[:6000] if len(rfp_text) > 6000 else rfp_text
 
-    prompt = f"""아래 RFP 문서에서 폼 입력에 필요한 7개 항목을 추출하라.
+    prompt = f"""아래 RFP 문서에서 폼 입력에 필요한 항목을 추출하라.
 없는 항목은 빈 문자열 또는 0으로 반환.
 
 [RFP 문서]
@@ -125,14 +138,20 @@ def rfp_quick_extract(rfp_text: str) -> dict:
   "deadline": "납품기한 (예: 2026년 12월 15일, 계약 후 90일)",
   "video_type": "영상 종류 — 반드시 다음 중 하나: 홍보영상 / 다큐멘터리 / 교육영상 / 캠페인영상 / 뉴스형영상",
   "quantity": 납품 수량 (정수, 편수),
-  "duration": "편당 러닝타임 (예: 3분, 2분 30초, 60초)"
-}}"""
+  "duration": "편당 러닝타임 (예: 3분, 2분 30초, 60초)",
+  "evaluation_criteria": [
+    {{"항목명": "...", "배점": "...", "평가기준": "...", "중요도": "high/medium/low"}}
+  ]
+}}
+evaluation_criteria: 평가배점표가 있으면 모두 추출. 없으면 빈 배열 [].
+중요도는 배점 크기 기준: high(상위 30%) / medium / low."""
 
     _empty = {"client_name": "", "project_name": "", "budget": "",
-              "deadline": "", "video_type": "", "quantity": 0, "duration": ""}
+              "deadline": "", "video_type": "", "quantity": 0, "duration": "",
+              "evaluation_criteria": []}
 
     try:
-        result = claude_client.call_json(prompt, max_tokens=1024, _validate=False)
+        result = claude_client.call_json(prompt, max_tokens=1500, _validate=False)
     except Exception as e:
         # call_json 3단계 폴백 모두 실패 → 원시 응답에서 {} 블록 직접 추출 시도
         print(f"  [rfp_quick_extract] call_json 실패: {e}")
@@ -155,6 +174,8 @@ def rfp_quick_extract(rfp_text: str) -> dict:
             result["quantity"] = int(result["quantity"])
         except (ValueError, TypeError):
             result["quantity"] = 0
+    if "evaluation_criteria" not in result or not isinstance(result["evaluation_criteria"], list):
+        result["evaluation_criteria"] = []
     return result
 
 
@@ -518,8 +539,8 @@ def _build_prompt(rfp_text: str, dna: ConceptDNA) -> str:
 2. agency_type — 반드시 다음 중 하나: 중앙부처 / 지자체 / 의회 / 공공기관 / 기타
 3. core_tasks — 핵심 과업 목록 (구체적 수행 항목, 배열)
 4. evaluation_items — 평가 배점표 (배열). 평가항목/배점표가 있으면 반드시 모두 추출하라.
-   각 항목: {{"item": "항목명", "score": "배점(점수)", "criteria": "평가 기준 설명 (없으면 빈 문자열)", "required": "필수/선택 (없으면 빈 문자열)"}}
-   예) {{"item": "사업이해도", "score": "20점", "criteria": "사업목적과 추진배경 이해 수준", "required": "필수"}}
+   각 항목: {{"item": "항목명", "score": "배점(점수)", "criteria": "평가 기준 설명 (없으면 빈 문자열)", "required": "필수/선택 (없으면 빈 문자열)", "importance": "배점 기준 중요도 — high(배점 상위 30%) / medium / low"}}
+   예) {{"item": "사업이해도", "score": "20점", "criteria": "사업목적과 추진배경 이해 수준", "required": "필수", "importance": "high"}}
    배점이 없으면 score: "" 로 입력
 5. top_keywords — 발주처가 문서에서 강조하는 핵심 키워드 TOP 10 (단어 또는 짧은 구, 배열)
 6. forbidden_notes — 금지/주의 사항 목록 (배열, 없으면 빈 배열)
@@ -536,7 +557,7 @@ def _build_prompt(rfp_text: str, dna: ConceptDNA) -> str:
   "agency_type": "...",
   "core_tasks": ["...", "..."],
   "evaluation_items": [
-    {{"item": "...", "score": "...", "criteria": "...", "required": "..."}}
+    {{"item": "...", "score": "...", "criteria": "...", "required": "...", "importance": "high/medium/low"}}
   ],
   "top_keywords": ["...", "..."],
   "forbidden_notes": ["...", "..."],

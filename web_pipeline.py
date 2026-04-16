@@ -386,12 +386,19 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
         s["예산"]      = dna.budget or "-"
         s["납품기한"]  = dna.deadline or "-"
         items = dna.evaluation_items or result.get("evaluation_items", [])
-        s["평가항목"] = [
-            (f"{it.get('item', str(it))} [{it.get('score', '')}점]"
-             if isinstance(it, dict) and it.get("score")
-             else (it.get("item", str(it)) if isinstance(it, dict) else str(it)))
-            for it in items
-        ]
+        if items:
+            s["평가배점표"] = [
+                {
+                    "item":       it.get("item", "") if isinstance(it, dict) else str(it),
+                    "score":      it.get("score", "") if isinstance(it, dict) else "",
+                    "criteria":   it.get("criteria", "") if isinstance(it, dict) else "",
+                    "importance": it.get("importance", "") if isinstance(it, dict) else "",
+                }
+                for it in items
+                if it
+            ]
+        else:
+            s["평가항목"] = []
         s["핵심키워드"] = dna.evaluation_keywords or result.get("top_keywords", [])
 
     elif step_key == "narrative":
