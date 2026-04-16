@@ -80,6 +80,11 @@ def run(dna: ConceptDNA, file_path: str = None) -> dict:
         if isinstance(it, dict) and it.get("category", "") == "정량적"
     ]
 
+    # 배점표 전략 분석 추출
+    evaluation_strategy = result.get("evaluation_strategy", {})
+    if not isinstance(evaluation_strategy, dict):
+        evaluation_strategy = {}
+
     update_dna(dna, {
         "client_name":        basic.get("client_name") or dna.client_name,
         "project_name":       basic.get("project_name") or dna.project_name,
@@ -91,6 +96,7 @@ def run(dna: ConceptDNA, file_path: str = None) -> dict:
         "evaluation_criteria": evaluation_criteria,
         "top_criteria":       top_criteria,
         "quantitative_requirements": quantitative_requirements,
+        "evaluation_strategy": evaluation_strategy,
         "evaluation_keywords": result.get("top_keywords", []),
         "rfp_requirements":   result.get("core_tasks", []),
         "forbidden_notes":    result.get("forbidden_notes", []),
@@ -162,19 +168,28 @@ def rfp_quick_extract(rfp_text: str) -> dict:
       "항목명": "평가 항목명 그대로",
       "배점": 배점 숫자 (정수),
       "세부기준": "단계별 점수 기준 (예: 5건이상=5점, 없으면 빈 문자열)",
+      "전략적_의미": "이 항목에서 높은 점수를 받으려면 무엇을 어떻게 준비해야 하는지 (2문장)",
       "주의사항": "미제출시 최저점 등 특이사항 (없으면 빈 문자열)"
     }}
-  ]
+  ],
+  "evaluation_strategy": {{
+    "총점": 전체 배점 합계 숫자,
+    "핵심항목": ["배점 10점 이상 항목명 리스트"],
+    "정량항목_체크리스트": ["항목명: 준비해야 할 서류/실적 기준"],
+    "집중공략": "가장 점수 올리기 쉬운 항목과 공략법 (3문장)"
+  }}
 }}
 evaluation_criteria: 없으면 빈 배열 [].
-배점 높은 순으로 정렬."""
+배점 높은 순으로 정렬.
+evaluation_strategy: 없으면 {{"총점": 0, "핵심항목": [], "정량항목_체크리스트": [], "집중공략": ""}}."""
 
     _empty = {"client_name": "", "project_name": "", "budget": "",
               "deadline": "", "video_type": "", "quantity": 0, "duration": "",
-              "evaluation_criteria": []}
+              "evaluation_criteria": [],
+              "evaluation_strategy": {"총점": 0, "핵심항목": [], "정량항목_체크리스트": [], "집중공략": ""}}
 
     try:
-        result = claude_client.call_json(prompt, max_tokens=2000, _validate=False)
+        result = claude_client.call_json(prompt, max_tokens=2500, _validate=False)
     except Exception as e:
         # call_json 3단계 폴백 모두 실패 → 원시 응답에서 {} 블록 직접 추출 시도
         print(f"  [rfp_quick_extract] call_json 실패: {e}")
@@ -199,6 +214,8 @@ evaluation_criteria: 없으면 빈 배열 [].
             result["quantity"] = 0
     if "evaluation_criteria" not in result or not isinstance(result["evaluation_criteria"], list):
         result["evaluation_criteria"] = []
+    if "evaluation_strategy" not in result or not isinstance(result["evaluation_strategy"], dict):
+        result["evaluation_strategy"] = {"총점": 0, "핵심항목": [], "정량항목_체크리스트": [], "집중공략": ""}
     return result
 
 
@@ -500,11 +517,12 @@ def _format_evaluation_criteria(eval_items: list) -> str:
             continue
         name   = (it.get("item") or "").strip()
         score  = (it.get("score") or "").strip()
-        cat    = (it.get("category") or "").strip()
-        req    = (it.get("required") or "").strip()
-        crit   = (it.get("criteria") or "").strip()
-        detail = (it.get("detail_criteria") or "").strip()
-        warn   = (it.get("warning") or "").strip()
+        cat      = (it.get("category") or "").strip()
+        req      = (it.get("required") or "").strip()
+        crit     = (it.get("criteria") or "").strip()
+        detail   = (it.get("detail_criteria") or "").strip()
+        hint     = (it.get("strategic_hint") or "").strip()
+        warn     = (it.get("warning") or "").strip()
         if not name:
             continue
         parts = [f"• {name}"]
@@ -519,6 +537,8 @@ def _format_evaluation_criteria(eval_items: list) -> str:
         line = " ".join(parts)
         if detail:
             line += f"\n  └ 기준: {detail}"
+        if hint:
+            line += f"\n  └ 전략: {hint}"
         if warn:
             line += f"\n  └ ⚠️ {warn}"
         lines.append(line)
@@ -581,12 +601,20 @@ def _build_prompt(rfp_text: str, dna: ConceptDNA) -> str:
      "category": "정성적 / 정량적 / 가격 중 하나",
      "criteria": "평가 기준 설명 (없으면 빈 문자열)",
      "detail_criteria": "단계별 점수 기준 (예: 5건이상=5점, 3건이상=3점. 없으면 빈 문자열)",
+     "strategic_hint": "이 항목에서 높은 점수를 받으려면 제안서에 구체적으로 무엇을 어떻게 써야 하는지 (2~3문장)",
      "warning": "미제출시 최저점 등 특이사항 (없으면 빈 문자열)",
      "required": "필수/선택 (없으면 빈 문자열)",
      "importance": "배점 기준 중요도 — high(배점 상위 30%) / medium / low"
    }}
-   예) {{"item": "유사용역수행실적", "score": "5점", "category": "정량적", "criteria": "유사 용역 수행 실적 평가", "detail_criteria": "5건이상=5점, 3건이상=3점, 1건이상=1점", "warning": "미제출시 최저점", "required": "필수", "importance": "medium"}}
+   예) {{"item": "유사용역수행실적", "score": "5점", "category": "정량적", "criteria": "유사 용역 수행 실적 평가", "detail_criteria": "5건이상=5점, 3건이상=3점, 1건이상=1점", "strategic_hint": "유사 공공기관 영상 제작 실적 5건 이상을 실적증명서와 계약서로 제출. 3천만원 이상 계약 건을 우선 제시.", "warning": "미제출시 최저점", "required": "필수", "importance": "medium"}}
    배점이 없으면 score: "" 로 입력
+5. evaluation_strategy — 배점표 기반 전략 분석 (단일 객체)
+   {{
+     "총점": 전체 배점 합계 (정수),
+     "핵심항목": ["배점 10점 이상 항목명 리스트"],
+     "정량항목_체크리스트": ["각 정량 항목별 '항목명: 준비 서류/기준' 형식으로"],
+     "집중공략": "가장 점수 올리기 쉬운 항목과 구체적 공략법 (3~4문장)"
+   }}
 5. top_keywords — 발주처가 문서에서 강조하는 핵심 키워드 TOP 10 (단어 또는 짧은 구, 배열)
 6. forbidden_notes — 금지/주의 사항 목록 (배열, 없으면 빈 배열)
 7. agency_tone_hint — 기관 특성 요약 및 톤앤매너 힌트 (2~3문장)
@@ -604,10 +632,16 @@ def _build_prompt(rfp_text: str, dna: ConceptDNA) -> str:
   "evaluation_items": [
     {{
       "item": "...", "score": "...", "category": "정성적/정량적/가격",
-      "criteria": "...", "detail_criteria": "...", "warning": "...",
-      "required": "...", "importance": "high/medium/low"
+      "criteria": "...", "detail_criteria": "...", "strategic_hint": "...",
+      "warning": "...", "required": "...", "importance": "high/medium/low"
     }}
   ],
+  "evaluation_strategy": {{
+    "총점": 0,
+    "핵심항목": ["..."],
+    "정량항목_체크리스트": ["항목명: 준비 사항"],
+    "집중공략": "..."
+  }},
   "top_keywords": ["...", "..."],
   "forbidden_notes": ["...", "..."],
   "agency_tone_hint": "..."

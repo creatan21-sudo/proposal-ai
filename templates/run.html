@@ -580,6 +580,9 @@ function renderEvalTable(items) {
       if (it.detail_criteria) {
         html += `<div style="font-size:11px;color:#4b5563;margin-top:2px;">📋 ${esc(it.detail_criteria)}</div>`;
       }
+      if (it.strategic_hint) {
+        html += `<div style="font-size:11px;color:#047857;margin-top:2px;background:#ecfdf5;padding:2px 6px;border-radius:3px;border-left:2px solid #10b981;">💡 ${esc(it.strategic_hint)}</div>`;
+      }
       if (it.warning) {
         html += `<div style="font-size:11px;color:#dc2626;margin-top:2px;font-weight:600;">⚠️ ${esc(it.warning)}</div>`;
       }
@@ -612,6 +615,10 @@ function renderSummary(summary) {
       // 평가배점표는 테이블로
       if (key === '평가배점표') {
         html += `<div>${renderEvalTable(val)}</div>`;
+      // 정량평가 체크리스트는 체크 아이템으로
+      } else if (key === '정량평가 체크리스트') {
+        const items2 = val.map(v => `<li style="padding:3px 0;"><span style="color:#7c3aed;">✓</span> ${renderText(String(v))}</li>`).join('');
+        html += `<ul style="list-style:none;padding:0;margin:0;background:#f5f3ff;border-radius:6px;padding:8px 12px;">${items2}</ul>`;
       // 개선 포인트는 카드 형태로
       } else if (key === '개선 포인트') {
         html += `<div>${renderIssueCards(val)}</div>`;
@@ -624,7 +631,11 @@ function renderSummary(summary) {
       }
     } else {
       const raw = String(val);
-      html += `<div class="summary-val" data-field="${esc(key)}" data-raw="${esc(raw)}">${renderText(raw)}</div>`;
+      if (key === '집중공략') {
+        html += `<div style="background:#fefce8;border-left:3px solid #eab308;padding:8px 12px;border-radius:0 4px 4px 0;font-size:13px;">${renderText(raw)}</div>`;
+      } else {
+        html += `<div class="summary-val" data-field="${esc(key)}" data-raw="${esc(raw)}">${renderText(raw)}</div>`;
+      }
     }
     html += '</div>';
   }

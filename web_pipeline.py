@@ -394,6 +394,7 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
                     "category":       it.get("category", "") if isinstance(it, dict) else "",
                     "criteria":       it.get("criteria", "") if isinstance(it, dict) else "",
                     "detail_criteria": it.get("detail_criteria", "") if isinstance(it, dict) else "",
+                    "strategic_hint": it.get("strategic_hint", "") if isinstance(it, dict) else "",
                     "warning":        it.get("warning", "") if isinstance(it, dict) else "",
                     "importance":     it.get("importance", "") if isinstance(it, dict) else "",
                 }
@@ -402,6 +403,15 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
             ]
         else:
             s["평가항목"] = []
+        # 배점표 전략 분석
+        es = dna.evaluation_strategy or result.get("evaluation_strategy", {})
+        if isinstance(es, dict):
+            checklist = es.get("정량항목_체크리스트", [])
+            if checklist:
+                s["정량평가 체크리스트"] = [str(c) for c in checklist]
+            focus = es.get("집중공략", "")
+            if focus:
+                s["집중공략"] = focus
         s["핵심키워드"] = dna.evaluation_keywords or result.get("top_keywords", [])
 
     elif step_key == "narrative":
