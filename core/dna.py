@@ -24,6 +24,7 @@ class ConceptDNA:
     evaluation_items: list = field(default_factory=list)      # 평가항목 + 배점 (raw list)
     evaluation_criteria: str = ""                             # 평가 배점표 (프롬프트 주입용 포맷)
     top_criteria: list = field(default_factory=list)          # 배점 상위 3개 항목명 (전략 집중용)
+    quantitative_requirements: list = field(default_factory=list)  # 정량 평가 항목 (실적·인력·등급 등)
     evaluation_keywords: list = field(default_factory=list)   # 평가 핵심 키워드 top10
     rfp_requirements: list = field(default_factory=list)      # RFP 요구사항 목록
     forbidden_notes: list = field(default_factory=list)       # 금지/주의사항
@@ -168,6 +169,28 @@ def dna_to_context_string(dna: ConceptDNA) -> str:
         else:
             criteria_block += "위 배점표 기준으로 높은 점수 항목에 집중해서 작성하라."
         lines.append(criteria_block)
+    if dna.quantitative_requirements:
+        quant_lines = []
+        for it in dna.quantitative_requirements:
+            if not isinstance(it, dict):
+                continue
+            name   = it.get("item", "")
+            score  = it.get("score", "")
+            detail = it.get("detail_criteria", "")
+            warn   = it.get("warning", "")
+            line   = f"- {name}: {score}"
+            if detail:
+                line += f" — {detail}"
+            if warn:
+                line += f" ({warn})"
+            quant_lines.append(line)
+        if quant_lines:
+            lines.append(
+                "\n【정량 평가 필수 대응 — 미대응 시 감점·실격】\n"
+                + "\n".join(quant_lines)
+                + "\n위 정량 항목은 수치·실적·증빙 자료가 명확히 제시되어야 한다. "
+                "제출 기준 미달 시 최저점 처리."
+            )
     if dna.evaluation_keywords:
         lines.append(f"- 평가 키워드: {', '.join(dna.evaluation_keywords)}")
     if dna.core_tasks:

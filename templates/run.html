@@ -512,40 +512,91 @@ function renderIssueCards(items) {
   }).join('');
 }
 
-// ── 평가 배점표 테이블 렌더링
+// ── 평가 배점표 테이블 렌더링 (구분별 섹션 + 배점 바)
 function renderEvalTable(items) {
   if (!items || !items.length) return '<p style="color:#6b7280;font-size:13px;">평가배점표 없음</p>';
-  // 배점 내림차순 정렬
-  const sorted = [...items].sort((a, b) => {
-    const sa = parseInt((a.score || '').replace(/\D/g, '')) || 0;
-    const sb = parseInt((b.score || '').replace(/\D/g, '')) || 0;
-    return sb - sa;
-  });
-  const scores = sorted.map(it => parseInt((it.score || '').replace(/\D/g, '')) || 0);
-  const maxScore = scores[0] || 0;
-  // high importance 또는 배점 상위 30% 이상인 항목 강조
-  const rows = sorted.map(it => {
-    const scoreNum = parseInt((it.score || '').replace(/\D/g, '')) || 0;
-    const isHigh = it.importance === 'high' || (maxScore > 0 && scoreNum >= maxScore * 0.7);
-    const rowStyle = isHigh
-      ? 'background:#fef2f2;color:#b91c1c;font-weight:600;'
-      : 'background:#fff;';
-    return `<tr style="${rowStyle}">
-      <td style="padding:6px 10px;border:1px solid #e5e7eb;">${esc(it.item || '')}</td>
-      <td style="padding:6px 10px;border:1px solid #e5e7eb;text-align:center;white-space:nowrap;">${esc(it.score || '-')}</td>
-      <td style="padding:6px 10px;border:1px solid #e5e7eb;font-size:12px;color:inherit;">${esc(it.criteria || '')}</td>
-    </tr>`;
-  }).join('');
-  return `<table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:6px;">
-    <thead>
-      <tr style="background:#f3f4f6;">
-        <th style="padding:6px 10px;border:1px solid #e5e7eb;text-align:left;">항목명</th>
-        <th style="padding:6px 10px;border:1px solid #e5e7eb;text-align:center;width:70px;">배점</th>
-        <th style="padding:6px 10px;border:1px solid #e5e7eb;text-align:left;">평가기준</th>
-      </tr>
-    </thead>
-    <tbody>${rows}</tbody>
-  </table>`;
+
+  const CAT_ORDER = ['정성적', '정량적', '가격'];
+  const CAT_COLORS = { '정성적': '#2563eb', '정량적': '#7c3aed', '가격': '#059669' };
+  const CAT_BG     = { '정성적': '#eff6ff', '정량적': '#f5f3ff', '가격': '#ecfdf5' };
+
+  // 구분별 그룹화
+  const groups = {};
+  for (const it of items) {
+    const cat = it.category || '기타';
+    if (!groups[cat]) groups[cat] = [];
+    groups[cat].push(it);
+  }
+  // 각 그룹 내 배점 내림차순 정렬
+  for (const cat of Object.keys(groups)) {
+    groups[cat].sort((a, b) => {
+      const sa = parseInt((a.score || String(a.score || '')).replace(/\D/g, '')) || 0;
+      const sb = parseInt((b.score || String(b.score || '')).replace(/\D/g, '')) || 0;
+      return sb - sa;
+    });
+  }
+
+  // 전체 최대 배점 (바 너비 계산용)
+  const allScores = items.map(it => parseInt((it.score || String(it.score || '')).replace(/\D/g, '')) || 0);
+  const maxScore = Math.max(...allScores, 1);
+
+  const cats = CAT_ORDER.filter(c => groups[c]).concat(Object.keys(groups).filter(c => !CAT_ORDER.includes(c)));
+
+  let html = '<div style="border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;margin-top:6px;">';
+
+  for (const cat of cats) {
+    const catItems = groups[cat];
+    const catTotal = catItems.reduce((s, it) => s + (parseInt((it.score || String(it.score||'')).replace(/\D/g,''))||0), 0);
+    const color = CAT_COLORS[cat] || '#6b7280';
+    const bg    = CAT_BG[cat]    || '#f9fafb';
+
+    // 섹션 헤더
+    html += `<div style="background:${bg};padding:7px 12px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;">
+      <span style="font-weight:700;font-size:12px;color:${color};">${esc(cat)} 평가</span>
+      <span style="font-size:12px;font-weight:700;color:${color};">합계 ${catTotal}점</span>
+    </div>`;
+
+    for (const it of catItems) {
+      const scoreNum = parseInt((it.score || String(it.score||'')).replace(/\D/g,'')) || 0;
+      const barPct   = Math.round((scoreNum / maxScore) * 100);
+      const isHigh   = it.importance === 'high' || (maxScore > 0 && scoreNum >= maxScore * 0.7);
+      const rowBg    = isHigh ? '#fef2f2' : '#fff';
+      const nameColor = isHigh ? '#b91c1c' : '#111827';
+      const barColor  = isHigh ? '#dc2626' : color;
+
+      html += `<div style="background:${rowBg};border-bottom:1px solid #f3f4f6;padding:7px 12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+          <span style="font-size:13px;font-weight:${isHigh?'700':'400'};color:${nameColor};flex:1;">${esc(it.item || '')}</span>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;min-width:140px;">
+            <div style="width:80px;height:8px;background:#e5e7eb;border-radius:4px;overflow:hidden;">
+              <div style="width:${barPct}%;height:100%;background:${barColor};border-radius:4px;"></div>
+            </div>
+            <span style="font-size:13px;font-weight:700;color:${nameColor};white-space:nowrap;">${esc(String(it.score || '-'))}</span>
+          </div>
+        </div>`;
+      if (it.criteria) {
+        html += `<div style="font-size:11px;color:#6b7280;margin-top:2px;">${esc(it.criteria)}</div>`;
+      }
+      if (it.detail_criteria) {
+        html += `<div style="font-size:11px;color:#4b5563;margin-top:2px;">📋 ${esc(it.detail_criteria)}</div>`;
+      }
+      if (it.warning) {
+        html += `<div style="font-size:11px;color:#dc2626;margin-top:2px;font-weight:600;">⚠️ ${esc(it.warning)}</div>`;
+      }
+      html += `</div>`;
+    }
+  }
+
+  // 총점 푸터
+  const totalScore = items.reduce((s, it) => s + (parseInt((it.score||String(it.score||'')).replace(/\D/g,''))||0), 0);
+  if (totalScore > 0) {
+    html += `<div style="background:#f8fafc;padding:8px 12px;border-top:2px solid #e2e8f0;display:flex;justify-content:flex-end;">
+      <span style="font-size:13px;font-weight:700;color:#1e40af;">총점 ${totalScore}점</span>
+    </div>`;
+  }
+
+  html += '</div>';
+  return html;
 }
 
 // ── 요약 렌더링

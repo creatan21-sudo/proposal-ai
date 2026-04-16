@@ -389,10 +389,13 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
         if items:
             s["평가배점표"] = [
                 {
-                    "item":       it.get("item", "") if isinstance(it, dict) else str(it),
-                    "score":      it.get("score", "") if isinstance(it, dict) else "",
-                    "criteria":   it.get("criteria", "") if isinstance(it, dict) else "",
-                    "importance": it.get("importance", "") if isinstance(it, dict) else "",
+                    "item":           it.get("item", "") if isinstance(it, dict) else str(it),
+                    "score":          it.get("score", "") if isinstance(it, dict) else "",
+                    "category":       it.get("category", "") if isinstance(it, dict) else "",
+                    "criteria":       it.get("criteria", "") if isinstance(it, dict) else "",
+                    "detail_criteria": it.get("detail_criteria", "") if isinstance(it, dict) else "",
+                    "warning":        it.get("warning", "") if isinstance(it, dict) else "",
+                    "importance":     it.get("importance", "") if isinstance(it, dict) else "",
                 }
                 for it in items
                 if it
