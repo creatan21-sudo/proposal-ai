@@ -188,10 +188,11 @@ def init_db() -> None:
             );
 
             CREATE TABLE IF NOT EXISTS research_cache (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                created_at  TEXT    NOT NULL,
-                client_name TEXT    NOT NULL,
-                data_json   TEXT    NOT NULL DEFAULT '{}'
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at   TEXT    NOT NULL,
+                client_name  TEXT    NOT NULL,
+                project_name TEXT    NOT NULL DEFAULT '',
+                data_json    TEXT    NOT NULL DEFAULT '{}'
             );
         """)
         # ── 마이그레이션: 기존 DB에 누락된 컬럼 추가 ──
@@ -208,6 +209,7 @@ def init_db() -> None:
             "ALTER TABLE creative_results ADD COLUMN case_id INTEGER DEFAULT 0",
             "ALTER TABLE plan_results ADD COLUMN case_id INTEGER DEFAULT 0",
             "ALTER TABLE final_proposals ADD COLUMN case_id INTEGER DEFAULT 0",
+            "ALTER TABLE research_cache ADD COLUMN project_name TEXT NOT NULL DEFAULT ''",
         ]:
             try:
                 conn.execute(migration)
@@ -1312,24 +1314,35 @@ def get_winning_patterns(limit: int = 10) -> list:
 # 리서치 캐시 (7일 재활용)
 # ─────────────────────────────────────────────
 
-def get_research_cache(client_name: str) -> "dict | None":
-    """7일 이내 리서치 캐시 조회.
+def get_research_cache(client_name: str, project_name: str = "") -> "dict | None":
+    """7일 이내 리서치 캐시 조회. client_name + project_name 완전 일치.
 
     Args:
         client_name: 발주처명 (완전 일치)
+        project_name: 과업명 (완전 일치, 빈 문자열이면 client_name만 매칭)
 
     Returns:
         캐시된 리서치 결과 dict, 없으면 None
     """
     import json as _json
     with get_connection() as conn:
-        row = conn.execute(
-            """SELECT data_json FROM research_cache
-               WHERE client_name = ?
-                 AND datetime(created_at) >= datetime('now', '-7 days')
-               ORDER BY created_at DESC LIMIT 1""",
-            (client_name,),
-        ).fetchone()
+        if project_name:
+            row = conn.execute(
+                """SELECT data_json FROM research_cache
+                   WHERE client_name = ?
+                     AND project_name = ?
+                     AND datetime(created_at) >= datetime('now', '-7 days')
+                   ORDER BY created_at DESC LIMIT 1""",
+                (client_name, project_name),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                """SELECT data_json FROM research_cache
+                   WHERE client_name = ?
+                     AND datetime(created_at) >= datetime('now', '-7 days')
+                   ORDER BY created_at DESC LIMIT 1""",
+                (client_name,),
+            ).fetchone()
     if row:
         try:
             return _json.loads(dict(row)["data_json"])
@@ -1338,18 +1351,19 @@ def get_research_cache(client_name: str) -> "dict | None":
     return None
 
 
-def save_research_cache(client_name: str, data: dict) -> None:
+def save_research_cache(client_name: str, project_name: str, data: dict) -> None:
     """리서치 결과를 캐시에 저장.
 
     Args:
         client_name: 발주처명
+        project_name: 과업명
         data: 저장할 리서치 결과 dict
     """
     import json as _json
     with get_connection() as conn:
         conn.execute(
-            """INSERT INTO research_cache (created_at, client_name, data_json)
-               VALUES (?, ?, ?)""",
-            (datetime.now().isoformat(), client_name,
+            """INSERT INTO research_cache (created_at, client_name, project_name, data_json)
+               VALUES (?, ?, ?, ?)""",
+            (datetime.now().isoformat(), client_name, project_name,
              _json.dumps(data, ensure_ascii=False)),
         )

@@ -64,11 +64,11 @@ def run(dna: ConceptDNA) -> dict:
         타겟:   target_media_habits, target_content_preference
         트렌드: platform_patterns
     """
-    # ── 캐시 확인 (7일 이내 동일 발주처) ────────
+    # ── 캐시 확인 (7일 이내 동일 발주처+과업) ────────
     try:
-        cached = get_research_cache(dna.client_name)
+        cached = get_research_cache(dna.client_name, dna.project_name)
         if cached:
-            print(f"  [캐시] '{dna.client_name}' 리서치 캐시 재사용 (7일 이내)")
+            print(f"  [캐시] '{dna.client_name} / {dna.project_name}' 리서치 캐시 재사용 (7일 이내)")
             update_dna(dna, {"agency_characteristics": cached.get("agency_policy", "")})
             return cached
     except Exception as e:
@@ -140,7 +140,7 @@ def run(dna: ConceptDNA) -> dict:
 
     # ── 캐시 저장 ────────────────────────────────
     try:
-        save_research_cache(dna.client_name, result)
+        save_research_cache(dna.client_name, dna.project_name, result)
     except Exception as e:
         print(f"  [경고] 캐시 저장 실패 (계속 진행): {e}")
 
