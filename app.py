@@ -1641,8 +1641,11 @@ def ppt_start():
         return jsonify({"ok": False, "error": "권한 없음 — 다시 로그인 후 시도하세요"}), 403
 
     from output.pptx_builder import has_gamma_key
+    import os as _os
     force_pptx = bool(data.get("force_pptx", False))
-    use_gamma  = has_gamma_key() and not force_pptx
+    _gamma_key_set = bool(_os.environ.get("GAMMA_API_KEY", "").strip())
+    use_gamma  = _gamma_key_set and not force_pptx
+    print(f"[PPT/start] GAMMA_API_KEY: {'SET' if _gamma_key_set else 'NOT SET'} | force_pptx={force_pptx} | use_gamma={use_gamma}")
 
     job_id  = str(uuid.uuid4())
     case    = detail["case"]

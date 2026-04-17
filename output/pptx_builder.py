@@ -744,10 +744,9 @@ def has_gamma_key() -> bool:
 def generate_with_gamma(topic: str, pages: int) -> dict:
     """Gamma API로 프레젠테이션 생성.
 
-    사전 조건:
-        - Gamma Pro 플랜 가입 (gamma.app)
-        - Settings → API Keys → Generate 에서 키 발급
-        - Railway Variables에 GAMMA_API_KEY=발급받은키 설정
+    공식 문서: https://public-api.gamma.app/v1.0/generations
+    인증: X-API-KEY 헤더 (Bearer 아님)
+    응답: {"generationId": "..."} → polling으로 완료 대기
 
     Args:
         topic: 제안서 내용 요약 (Gamma에 전달할 주제 텍스트)
@@ -756,7 +755,7 @@ def generate_with_gamma(topic: str, pages: int) -> dict:
     Returns:
         {
             "url":      str,        # Gamma 프레젠테이션 웹 URL
-            "pptx_url": str | None, # PPTX 익스포트 URL (있을 경우)
+            "pptx_url": str | None, # 익스포트 URL (있을 경우)
         }
 
     Raises:
@@ -767,99 +766,109 @@ def generate_with_gamma(topic: str, pages: int) -> dict:
     import requests
 
     api_key = os.environ.get("GAMMA_API_KEY", "").strip()
+
+    # ── 진단 로그 ─────────────────────────────────
+    print(f"  [Gamma] GAMMA_API_KEY: {'SET (len=%d)' % len(api_key) if api_key else 'NOT SET'}")
+
     if not api_key:
         raise RuntimeError(
             "GAMMA_API_KEY 환경변수가 설정되지 않았습니다.\n"
-            "Gamma Pro 가입 후 Settings → API Keys에서 키를 발급받아 "
+            "Gamma 가입 후 Settings → API Keys에서 키를 발급받아 "
             "Railway Variables에 GAMMA_API_KEY=발급받은키 로 추가하세요."
         )
 
     num_cards = max(5, min(50, pages))
 
+    # ── 공식 헤더: X-API-KEY (Bearer 아님) ──────────
     headers = {
-        "Authorization": f"Bearer {api_key}",
-        "Content-Type":  "application/json",
+        "X-API-KEY":    api_key,
+        "Content-Type": "application/json",
     }
 
     # ── Step 1: 생성 요청 ─────────────────────────
-    # Gamma API v1.0/generations 엔드포인트 (공식 문서 기준)
-    print(f"  [Gamma] POST /v1.0/generations — numCards={num_cards}")
+    # 올바른 base URL: public-api.gamma.app (api.gamma.app 아님)
+    _BASE = "https://public-api.gamma.app"
+    print(f"  [Gamma] POST {_BASE}/v1.0/generations — numCards={num_cards}")
     resp = requests.post(
-        "https://api.gamma.app/v1.0/generations",
+        f"{_BASE}/v1.0/generations",
         json={
-            "inputText": topic[:8000],   # 제안서 내용
+            "inputText": topic[:5000],
             "textMode":  "generate",
             "format":    "presentation",
             "numCards":  num_cards,
-            "exportAs":  "pptx",         # PPTX 파일 직접 다운로드
+            "exportAs":  "pdf",      # pdf: 공식 문서 지원 확인된 포맷
         },
         headers=headers,
         timeout=60,
     )
 
+    print(f"  [Gamma] HTTP {resp.status_code} — {resp.text[:300]}")
+
     if resp.status_code == 401:
-        raise RuntimeError("Gamma API 인증 실패 — API 키를 확인하세요.")
+        raise RuntimeError("Gamma API 인증 실패 — GAMMA_API_KEY를 확인하세요.")
     if resp.status_code == 402:
-        raise RuntimeError("Gamma Pro 플랜이 필요합니다. gamma.app에서 업그레이드하세요.")
+        raise RuntimeError("Gamma 플랜 문제 — gamma.app에서 플랜을 확인하세요.")
     if not resp.ok:
         raise RuntimeError(
             f"Gamma API 오류 ({resp.status_code}): {resp.text[:400]}"
         )
 
     data = resp.json()
-    print(f"  [Gamma] 응답: status={data.get('status')!r}, keys={list(data.keys())}")
+    # 초기 응답은 generationId만 반환: {"generationId": "..."}
+    print(f"  [Gamma] 초기 응답 keys={list(data.keys())}")
 
-    # ── Step 2: 비동기 폴링 (status가 processing/pending이면 완료 대기) ──
     gen_id = data.get("generationId") or data.get("id")
-    status = data.get("status", "")
+    if not gen_id:
+        raise RuntimeError(
+            f"Gamma API가 generationId를 반환하지 않았습니다. 응답: {str(data)[:400]}"
+        )
 
-    if gen_id and status in ("processing", "pending", "queued", "running"):
-        print(f"  [Gamma] 비동기 생성 중 (id={gen_id}) — 완료 대기...")
-        for attempt in range(60):           # 최대 5분 (5s × 60)
-            time.sleep(5)
-            poll = requests.get(
-                f"https://api.gamma.app/v1.0/generations/{gen_id}",
-                headers=headers,
-                timeout=30,
+    # ── Step 2: 폴링 — 항상 실행 (초기 응답에 status 없음) ──
+    print(f"  [Gamma] 생성 대기 중 (generationId={gen_id})...")
+    for attempt in range(60):           # 최대 5분 (5s × 60)
+        time.sleep(5)
+        poll = requests.get(
+            f"{_BASE}/v1.0/generations/{gen_id}",
+            headers=headers,
+            timeout=30,
+        )
+        if not poll.ok:
+            print(f"  [Gamma] 폴링 오류 ({poll.status_code}: {poll.text[:100]}) — 재시도")
+            continue
+        poll_data = poll.json()
+        poll_status = poll_data.get("status", "")
+        print(f"  [Gamma] 폴링 {attempt+1}/60 — status={poll_status!r}, keys={list(poll_data.keys())}")
+        if poll_status == "completed":
+            data = poll_data
+            break
+        if poll_status in ("failed", "error", "cancelled"):
+            raise RuntimeError(
+                f"Gamma 생성 실패 (status={poll_status}): "
+                f"{poll_data.get('error') or str(poll_data)[:200]}"
             )
-            if not poll.ok:
-                print(f"  [Gamma] 폴링 오류 ({poll.status_code}) — 재시도")
-                continue
-            poll_data = poll.json()
-            poll_status = poll_data.get("status", "")
-            print(f"  [Gamma] 폴링 {attempt+1}/60 — status={poll_status!r}")
-            if poll_status == "completed":
-                data = poll_data
-                break
-            if poll_status in ("failed", "error", "cancelled"):
-                raise RuntimeError(
-                    f"Gamma 생성 실패 (status={poll_status}): "
-                    f"{poll_data.get('error') or str(poll_data)[:200]}"
-                )
-        else:
-            raise RuntimeError("Gamma 생성 시간 초과 (5분) — 나중에 다시 시도하세요.")
+    else:
+        raise RuntimeError("Gamma 생성 시간 초과 (5분) — 나중에 다시 시도하세요.")
 
     # ── Step 3: URL 추출 ──────────────────────────
     presentation_url = (
-        data.get("gammaUrl") or    # 공식 문서 필드명
+        data.get("gammaUrl") or
         data.get("url") or
         data.get("view_url") or
-        data.get("share_url") or
         ""
     )
-    pptx_url = (
-        data.get("exportUrl") or   # 공식 문서: exportAs 지정 시 exportUrl 반환
-        data.get("pptx_url") or
+    export_url = (
+        data.get("exportUrl") or
         data.get("export_url") or
         data.get("download_url") or
         None
     )
 
-    print(f"  [Gamma] 완료 — presentation_url={presentation_url[:80] if presentation_url else 'None'}")
-    print(f"  [Gamma] exportUrl={pptx_url[:80] if pptx_url else 'None'}")
-    if not presentation_url and not pptx_url:
+    print(f"  [Gamma] 완료 — gammaUrl={presentation_url[:80] if presentation_url else 'None'}")
+    print(f"  [Gamma] exportUrl={export_url[:80] if export_url else 'None'}")
+
+    if not presentation_url and not export_url:
         raise RuntimeError(
-            f"Gamma API 응답에 URL이 없습니다. 응답: {str(data)[:400]}"
+            f"Gamma API 응답에 URL이 없습니다. 전체 응답: {str(data)[:400]}"
         )
 
-    return {"url": presentation_url, "pptx_url": pptx_url}
+    return {"url": presentation_url, "pptx_url": export_url}
