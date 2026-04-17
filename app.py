@@ -1613,9 +1613,20 @@ def _ppt_push(job_id: str, event: dict):
             job["sse_event"].set()
 
 
+@app.route("/ppt/has_gamma")
+@login_required
+def ppt_has_gamma():
+    """GAMMA_API_KEY 설정 여부 반환 — UI 버튼 텍스트 결정에 사용."""
+    from output.pptx_builder import has_gamma_key
+    return jsonify({"has_gamma": has_gamma_key()})
+
+
 @app.route("/ppt/start", methods=["POST"])
 @login_required
 def ppt_start():
+    """PPT 생성 시작.
+    GAMMA_API_KEY 설정 시 Gamma API로 생성, 미설정 시 python-pptx로 생성(폴백).
+    """
     data    = request.get_json(force=True) or {}
     case_id = int(data.get("case_id", 0))
     pages   = max(10, min(200, int(data.get("pages", 50))))
@@ -1627,7 +1638,10 @@ def ppt_start():
     if not detail:
         return jsonify({"ok": False, "error": "케이스 없음"}), 404
     if detail["case"].get("user_id") != session["user_id"] and not session.get("is_admin"):
-        return jsonify({"ok": False}), 403
+        return jsonify({"ok": False, "error": "권한 없음 — 다시 로그인 후 시도하세요"}), 403
+
+    from output.pptx_builder import has_gamma_key
+    use_gamma = has_gamma_key()
 
     job_id  = str(uuid.uuid4())
     case    = detail["case"]
@@ -1646,47 +1660,146 @@ def ppt_start():
 
     def _worker():
         try:
-            def progress_cb(message, current, total):
-                _ppt_push(job_id, {
-                    "type":    "ppt_progress",
-                    "message": message,
-                    "current": current,
-                    "total":   total,
-                })
-
-            from agents import ppt_generator
-            pptx_bytes = ppt_generator.run(detail, pages, progress_cb)
-
-            with _ppt_jobs_lock:
-                job = _ppt_jobs.get(job_id)
-                if job:
-                    job["status"]     = "done"
-                    job["pptx_bytes"] = pptx_bytes
-
-            _ppt_push(job_id, {
-                "type":         "ppt_done",
-                "download_url": f"/ppt/download/{job_id}",
-            })
-
-            # 텔레그램 알림
-            chat_id = get_telegram_chat_id(user_id)
-            if chat_id:
-                try:
-                    send_telegram(chat_id,
-                        f"📊 <b>{case['project_name']}</b> PPT 생성 완료!\n"
-                        f"다운로드: /history/{case_id}")
-                except Exception:
-                    pass
-
+            if use_gamma:
+                _worker_gamma()
+            else:
+                _worker_pptx()
         except Exception as e:
+            import traceback as _tb
+            _tb.print_exc()
             _ppt_push(job_id, {"type": "ppt_error", "message": str(e)})
             with _ppt_jobs_lock:
                 job = _ppt_jobs.get(job_id)
                 if job:
                     job["status"] = "error"
 
+    def _worker_gamma():
+        """Gamma API로 PPT 생성."""
+        from output.pptx_builder import generate_with_gamma
+
+        _ppt_push(job_id, {"type": "ppt_progress",
+                            "message": "Gamma API 요청 전송 중...", "current": 1, "total": 4})
+
+        # 제안서 내용 → Gamma topic 문자열로 조합
+        topic = _build_gamma_topic(detail)
+
+        _ppt_push(job_id, {"type": "ppt_progress",
+                            "message": "Gamma AI 생성 중 (30~120초 소요)...", "current": 2, "total": 4})
+
+        result = generate_with_gamma(topic, pages)
+
+        _ppt_push(job_id, {"type": "ppt_progress",
+                            "message": "완료!", "current": 4, "total": 4})
+
+        with _ppt_jobs_lock:
+            job = _ppt_jobs.get(job_id)
+            if job:
+                job["status"] = "done"
+
+        _ppt_push(job_id, {
+            "type":     "gamma_done",
+            "url":      result.get("url", ""),
+            "pptx_url": result.get("pptx_url") or "",
+        })
+
+        chat_id = get_telegram_chat_id(user_id)
+        if chat_id:
+            try:
+                send_telegram(chat_id,
+                    f"📊 <b>{case['project_name']}</b> Gamma PPT 생성 완료!")
+            except Exception:
+                pass
+
+    def _worker_pptx():
+        """python-pptx로 PPT 생성 (폴백)."""
+        def progress_cb(message, current, total):
+            _ppt_push(job_id, {"type": "ppt_progress",
+                                "message": message, "current": current, "total": total})
+
+        from agents import ppt_generator
+        pptx_bytes = ppt_generator.run(detail, pages, progress_cb)
+
+        with _ppt_jobs_lock:
+            job = _ppt_jobs.get(job_id)
+            if job:
+                job["status"]     = "done"
+                job["pptx_bytes"] = pptx_bytes
+
+        _ppt_push(job_id, {
+            "type":         "ppt_done",
+            "download_url": f"/ppt/download/{job_id}",
+        })
+
+        chat_id = get_telegram_chat_id(user_id)
+        if chat_id:
+            try:
+                send_telegram(chat_id,
+                    f"📊 <b>{case['project_name']}</b> PPT 생성 완료!\n"
+                    f"다운로드: /history/{case_id}")
+            except Exception:
+                pass
+
     threading.Thread(target=_worker, daemon=True).start()
-    return jsonify({"ok": True, "job_id": job_id})
+    return jsonify({"ok": True, "job_id": job_id, "use_gamma": use_gamma})
+
+
+def _build_gamma_topic(detail: dict) -> str:
+    """케이스 상세 정보를 Gamma topic 문자열로 조합."""
+    case = detail.get("case", {})
+    parts = []
+
+    project = case.get("project_name", "")
+    client  = case.get("client_name", "")
+    if project:
+        parts.append(f"# {project}")
+    if client:
+        parts.append(f"발주처: {client}")
+
+    # 전략
+    s = detail.get("strategy") or {}
+    if s.get("core_problem"):
+        parts.append(f"\n## 핵심 문제\n{s['core_problem']}")
+    if s.get("crisis_statement"):
+        parts.append(f"## 현황 진단\n{s['crisis_statement']}")
+    if s.get("solution_direction"):
+        parts.append(f"## 해결 방향\n{s['solution_direction']}")
+    if s.get("expected_effects"):
+        ef = s["expected_effects"]
+        if isinstance(ef, list):
+            parts.append("## 기대 효과\n" + "\n".join(f"- {x}" for x in ef[:5]))
+
+    # 컨셉
+    c = detail.get("creative") or {}
+    if c.get("concept"):
+        parts.append(f"\n## 핵심 컨셉\n{c['concept']}")
+    if c.get("confirmed_slogan"):
+        parts.append(f"## 슬로건\n{c['confirmed_slogan']}")
+    if c.get("tone_description"):
+        parts.append(f"## 톤앤매너\n{c['tone_description']}")
+
+    # 실행계획
+    p = detail.get("plan") or {}
+    if p.get("production_schedule") and isinstance(p["production_schedule"], list):
+        parts.append("## 제작 일정\n" + "\n".join(str(x) for x in p["production_schedule"][:8]))
+    if p.get("team_composition") and isinstance(p["team_composition"], dict):
+        team = ", ".join(f"{k}: {v}" for k, v in list(p["team_composition"].items())[:6])
+        if team:
+            parts.append(f"## 투입 인력\n{team}")
+
+    # 대본
+    sc = detail.get("script") or {}
+    scripts = sc.get("scripts") or sc.get("script_outline") or []
+    if scripts and isinstance(scripts, list):
+        parts.append("## 대본 개요\n" + "\n".join(str(x)[:200] for x in scripts[:3]))
+
+    # 마케팅
+    m = detail.get("marketing") or {}
+    if m.get("youtube_strategy"):
+        parts.append(f"## 유통·마케팅 전략\n{str(m['youtube_strategy'])[:300]}")
+    if m.get("kpi_targets"):
+        parts.append(f"## KPI 목표\n{str(m['kpi_targets'])[:200]}")
+
+    return "\n\n".join(parts) if parts else f"{project} 제안서 PT 자료"
 
 
 @app.route("/ppt/stream/<job_id>")

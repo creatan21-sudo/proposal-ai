@@ -735,7 +735,13 @@ def _set_cell_text(
 # Gamma API 연동
 # ─────────────────────────────────────────────
 
-def generate_with_gamma(content: str, pages: int) -> dict:
+def has_gamma_key() -> bool:
+    """GAMMA_API_KEY 환경변수 설정 여부 반환."""
+    import os
+    return bool(os.environ.get("GAMMA_API_KEY", "").strip())
+
+
+def generate_with_gamma(topic: str, pages: int) -> dict:
     """Gamma API로 프레젠테이션 생성.
 
     사전 조건:
@@ -744,8 +750,8 @@ def generate_with_gamma(content: str, pages: int) -> dict:
         - Railway Variables에 GAMMA_API_KEY=발급받은키 설정
 
     Args:
-        content: 제안서 전체 텍스트 (마크다운 형식 권장)
-        pages:   목표 슬라이드 수 (1~50)
+        topic: 제안서 내용 요약 (Gamma에 전달할 주제 텍스트)
+        pages: 목표 슬라이드 수
 
     Returns:
         {
@@ -757,6 +763,7 @@ def generate_with_gamma(content: str, pages: int) -> dict:
         RuntimeError: API 키 미설정 또는 API 오류 시
     """
     import os
+    import time
     import requests
 
     api_key = os.environ.get("GAMMA_API_KEY", "").strip()
@@ -767,24 +774,25 @@ def generate_with_gamma(content: str, pages: int) -> dict:
             "Railway Variables에 GAMMA_API_KEY=발급받은키 로 추가하세요."
         )
 
-    num_slides = max(5, min(50, pages))
+    num_cards = max(5, min(50, pages))
 
     headers = {
         "Authorization": f"Bearer {api_key}",
-        "Content-Type": "application/json",
+        "Content-Type":  "application/json",
     }
 
-    # Gamma Generate API
-    # 문서: https://gamma.app/docs/api  (API 키 발급 후 확인 가능)
+    # ── Step 1: 생성 요청 ─────────────────────────
+    # Gamma API v1/generations 엔드포인트
+    print(f"  [Gamma] POST /v1/generations — num_cards={num_cards}")
     resp = requests.post(
-        "https://api.gamma.app/v1/generate",
+        "https://api.gamma.app/v1/generations",
         json={
-            "text":        content[:8000],   # Gamma API 입력 길이 제한
-            "num_cards":   num_slides,
-            "mode":        "presentation",
+            "topic":     topic[:8000],   # Gamma 입력 길이 제한
+            "num_cards": num_cards,
+            "language":  "ko",
         },
         headers=headers,
-        timeout=180,
+        timeout=60,
     )
 
     if resp.status_code == 401:
@@ -793,15 +801,47 @@ def generate_with_gamma(content: str, pages: int) -> dict:
         raise RuntimeError("Gamma Pro 플랜이 필요합니다. gamma.app에서 업그레이드하세요.")
     if not resp.ok:
         raise RuntimeError(
-            f"Gamma API 오류 ({resp.status_code}): {resp.text[:300]}"
+            f"Gamma API 오류 ({resp.status_code}): {resp.text[:400]}"
         )
 
     data = resp.json()
+    print(f"  [Gamma] 응답: status={data.get('status')!r}, keys={list(data.keys())}")
 
+    # ── Step 2: 비동기 폴링 (status가 processing/pending이면 완료 대기) ──
+    gen_id = data.get("id")
+    status = data.get("status", "")
+
+    if gen_id and status in ("processing", "pending", "queued", "running"):
+        print(f"  [Gamma] 비동기 생성 중 (id={gen_id}) — 완료 대기...")
+        for attempt in range(60):           # 최대 5분 (5s × 60)
+            time.sleep(5)
+            poll = requests.get(
+                f"https://api.gamma.app/v1/generations/{gen_id}",
+                headers=headers,
+                timeout=30,
+            )
+            if not poll.ok:
+                print(f"  [Gamma] 폴링 오류 ({poll.status_code}) — 재시도")
+                continue
+            poll_data = poll.json()
+            poll_status = poll_data.get("status", "")
+            print(f"  [Gamma] 폴링 {attempt+1}/60 — status={poll_status!r}")
+            if poll_status == "completed":
+                data = poll_data
+                break
+            if poll_status in ("failed", "error", "cancelled"):
+                raise RuntimeError(
+                    f"Gamma 생성 실패 (status={poll_status}): "
+                    f"{poll_data.get('error') or str(poll_data)[:200]}"
+                )
+        else:
+            raise RuntimeError("Gamma 생성 시간 초과 (5분) — 나중에 다시 시도하세요.")
+
+    # ── Step 3: URL 추출 ──────────────────────────
     presentation_url = (
         data.get("url") or
-        data.get("share_url") or
         data.get("view_url") or
+        data.get("share_url") or
         ""
     )
     pptx_url = (
@@ -813,7 +853,8 @@ def generate_with_gamma(content: str, pages: int) -> dict:
 
     if not presentation_url:
         raise RuntimeError(
-            f"Gamma API 응답에 URL이 없습니다. 응답: {str(data)[:300]}"
+            f"Gamma API 응답에 URL이 없습니다. 응답: {str(data)[:400]}"
         )
 
+    print(f"  [Gamma] 완료 — url={presentation_url[:80]}")
     return {"url": presentation_url, "pptx_url": pptx_url}
