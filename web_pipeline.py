@@ -36,6 +36,14 @@ _DOWNSTREAM_CREATIVE = ["plan", "script", "marketing", "final_proposal"]
 _PIPE_RETRY_MAX  = 3
 _PIPE_RETRY_WAIT = 120   # 2분
 
+# 비중요 스텝은 OverloadError 재시도 대기 시간을 단축
+_PIPE_RETRY_WAIT_NONCRITICAL = 30   # 30초
+
+# 스텝별 타임아웃 (초) — None이면 무제한
+_STEP_TIMEOUT: dict = {
+    "marketing": 110,   # 마케팅 4개 섹션 × 최대 80s 병렬 → 110s 상한
+}
+
 
 def run(dna: ConceptDNA, push_event, wait_confirm,
         rfp_file=None, concept=None,
@@ -180,6 +188,11 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
         # 장시간 스텝 킵얼라이브 (Railway 프록시 60s 타임아웃 방지)
         _ka_stop = _keepalive_start(push_event, step_key)
 
+        # 비중요 스텝은 재시도 대기 시간 단축
+        _retry_wait = _PIPE_RETRY_WAIT if critical else _PIPE_RETRY_WAIT_NONCRITICAL
+        # 스텝별 상한 타임아웃
+        _step_timeout = _STEP_TIMEOUT.get(step_key)
+
         for pipe_attempt in range(1, _PIPE_RETRY_MAX + 1):
             t0 = time.time()
             set_retry_callback(_api_retry_cb)
@@ -191,13 +204,18 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
                 elif step_key == "script":
                     result = agent_mod.run(dna, progress_fn=push_event, max_episodes=_max_ep)
                 elif step_key == "marketing":
-                    result = agent_mod.run(dna, progress_fn=push_event)
+                    # 스텝 타임아웃 적용: 별도 스레드에서 실행, timeout 초과 시 에러
+                    if _step_timeout:
+                        with _cf.ThreadPoolExecutor(max_workers=1) as _tex:
+                            _f = _tex.submit(agent_mod.run, dna, push_event)
+                            result = _f.result(timeout=_step_timeout)
+                    else:
+                        result = agent_mod.run(dna, progress_fn=push_event)
                 else:
                     result = agent_mod.run(dna)
                 elapsed = round(time.time() - t0, 1)
                 clear_retry_callback()
                 pipe_exc = None
-                # 스텝별 사전 지시는 한 번 사용 후 초기화
                 dna.step_instruction = ""
                 break   # 성공
 
@@ -211,24 +229,25 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
                         "name":         step_name,
                         "attempt":      pipe_attempt,
                         "max_attempts": _PIPE_RETRY_MAX,
-                        "wait_sec":     _PIPE_RETRY_WAIT,
+                        "wait_sec":     _retry_wait,
                     })
-                    time.sleep(_PIPE_RETRY_WAIT)
+                    time.sleep(_retry_wait)
                     push_event({"type": "step_start", "step": step_key, "name": step_name})
-                # else: 마지막 시도도 실패 → 루프 종료, pipe_exc 유지
 
             except (TimeoutError, _cf.TimeoutError) as e:
-                # 네트워크/API 타임아웃 — OverloadError와 동일하게 재시도
                 clear_retry_callback()
                 pipe_exc = e
-                if pipe_attempt < _PIPE_RETRY_MAX:
+                if pipe_attempt < _PIPE_RETRY_MAX and critical:
+                    # 비중요 스텝은 타임아웃 시 재시도 없이 즉시 포기
                     push_event({
                         "type": "log",
-                        "message": f"⏱ {step_name.strip()} 타임아웃 — {_PIPE_RETRY_WAIT}초 후 재시도 ({pipe_attempt}/{_PIPE_RETRY_MAX})",
+                        "message": f"⏱ {step_name.strip()} 타임아웃 — {_retry_wait}초 후 재시도 ({pipe_attempt}/{_PIPE_RETRY_MAX})",
                     })
-                    time.sleep(_PIPE_RETRY_WAIT)
+                    time.sleep(_retry_wait)
                     push_event({"type": "step_start", "step": step_key, "name": step_name})
-                # else: 마지막 시도도 실패 → pipe_exc 유지
+                else:
+                    print(f"  [{step_key}] 타임아웃 — 즉시 포기 (critical={critical})")
+                    break
 
             except Exception as e:
                 clear_retry_callback()
@@ -236,18 +255,17 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
                 exc_msg  = str(e)
                 print(f"  [{step_key}] 예외 발생 — {exc_type}: {exc_msg}")
                 traceback.print_exc()
-                # 메시지에 'timeout'이 포함된 예외도 재시도 처리
-                if 'timeout' in exc_msg.lower() and pipe_attempt < _PIPE_RETRY_MAX:
+                if 'timeout' in exc_msg.lower() and pipe_attempt < _PIPE_RETRY_MAX and critical:
                     pipe_exc = e
                     push_event({
                         "type": "log",
-                        "message": f"⏱ {step_name.strip()} 타임아웃 — {_PIPE_RETRY_WAIT}초 후 재시도 ({pipe_attempt}/{_PIPE_RETRY_MAX})",
+                        "message": f"⏱ {step_name.strip()} 타임아웃 — {_retry_wait}초 후 재시도 ({pipe_attempt}/{_PIPE_RETRY_MAX})",
                     })
-                    time.sleep(_PIPE_RETRY_WAIT)
+                    time.sleep(_retry_wait)
                     push_event({"type": "step_start", "step": step_key, "name": step_name})
                 else:
                     pipe_exc = e
-                    break   # 타임아웃 외 오류는 즉시 포기
+                    break
 
         _ka_stop.set()  # 킵얼라이브 스레드 종료
 
