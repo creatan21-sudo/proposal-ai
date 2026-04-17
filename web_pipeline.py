@@ -582,33 +582,6 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
     elif step_key == "script":
         scripts = dna.scripts or result.get("scripts", [])
         s["대본 수"] = f"{len(scripts)}편"
-        ep_lines = []
-        for i, sc in enumerate(scripts):
-            if not isinstance(sc, dict):
-                ep_lines.append(str(sc))
-                continue
-            ep_num  = sc.get('episode', sc.get('ep_num', i + 1))
-            title   = sc.get('title', '')
-            n_scene = len(sc.get('scenes', []))
-            hook    = sc.get('opening_hook', {})
-            hook_line = (hook.get('hook_line', '') if isinstance(hook, dict) else '') or ''
-            core_msg = sc.get('core_message', sc.get('key_message', ''))
-            line = f"## {ep_num}편 [{title}] — {n_scene}씬"
-            if core_msg:
-                line += f"\n핵심 메시지: {core_msg}"
-            if hook_line:
-                line += f"\n오프닝 훅: {hook_line}"
-            # 첫 번째 장면 미리보기
-            scenes = sc.get('scenes', [])
-            if scenes and isinstance(scenes[0], dict):
-                s1 = scenes[0]
-                s1_narr = s1.get('narration', s1.get('script', ''))
-                if s1_narr and isinstance(s1_narr, str):
-                    preview = s1_narr[:150].strip()
-                    if preview:
-                        line += f"\n1씬 나레이션: {preview}{'...' if len(s1_narr) > 150 else ''}"
-            ep_lines.append(line)
-        s["편별 대본 개요"] = ep_lines
         # 숏폼 여부
         if dna.has_shortform:
             s["포맷"] = "숏폼 (15/30/60초 버전)"
@@ -616,6 +589,71 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
             fmt = scripts[0].get("format", "")
             if fmt:
                 s["포맷"] = fmt
+
+        # 편별 대본 전체 내용 (청킹으로 전송)
+        for i, sc in enumerate(scripts):
+            if not isinstance(sc, dict):
+                continue
+            ep_num   = sc.get('episode', sc.get('ep_num', i + 1))
+            title    = sc.get('title', '')
+            scenes   = sc.get('scenes', [])
+            hook     = sc.get('opening_hook', {})
+            cta      = sc.get('closing_cta', {})
+            core_msg = sc.get('core_message', sc.get('key_message', ''))
+
+            lines = [f"## {ep_num}편 [{title}]"]
+            if core_msg:
+                lines.append(f"핵심 메시지: {core_msg}")
+
+            # 오프닝 훅
+            if isinstance(hook, dict) and hook:
+                hook_line = hook.get('hook_line', '')
+                hook_narr = hook.get('narration', hook.get('script', ''))
+                if hook_line:
+                    lines.append(f"\n### 오프닝 훅\n{hook_line}")
+                if hook_narr:
+                    lines.append(f"나레이션: {hook_narr}")
+
+            # 숏폼 버전 (15/30/60초)
+            versions = sc.get('versions', {})
+            if versions and isinstance(versions, dict):
+                for ver_key, ver in versions.items():
+                    if not isinstance(ver, dict):
+                        continue
+                    ver_narr = ver.get('narration', ver.get('script', ''))
+                    if ver_narr:
+                        lines.append(f"\n### {ver_key}\n{ver_narr}")
+            else:
+                # 롱폼 씬 전체
+                for si, scene in enumerate(scenes):
+                    if not isinstance(scene, dict):
+                        lines.append(str(scene))
+                        continue
+                    tc      = scene.get('timecode', scene.get('time', ''))
+                    narr    = scene.get('narration', scene.get('script', ''))
+                    dialogue = scene.get('dialogue', '')
+                    caption  = scene.get('caption', scene.get('subtitle', ''))
+                    lines.append(
+                        f"\n### S#{si+1}"
+                        + (f" [{tc}]" if tc else "")
+                    )
+                    if narr:
+                        lines.append(f"나레이션: {narr}")
+                    if dialogue:
+                        lines.append(f"대사: {dialogue}")
+                    if caption:
+                        lines.append(f"자막: {caption}")
+
+            # 클로징 CTA
+            if isinstance(cta, dict) and cta:
+                cta_text = cta.get('text', cta.get('narration', cta.get('message', '')))
+                if cta_text:
+                    lines.append(f"\n### 클로징 CTA\n{cta_text}")
+            elif isinstance(cta, str) and cta:
+                lines.append(f"\n### 클로징 CTA\n{cta}")
+
+            ep_key = f"{ep_num}편 대본 [{title}]"
+            s[ep_key] = "\n".join(lines)
 
     elif step_key == "marketing":
         # result 키: "platforms", "youtube_strategy"(텍스트), "sns_strategy"(텍스트),
@@ -753,5 +791,13 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
             formatted.append(line)
         if formatted:
             s["개선 포인트"] = formatted
+
+        # ── 예상 질의응답 ──────────────────────────
+        qa = result.get("qa_prep", [])
+        if qa and isinstance(qa, list):
+            s["예상 질의응답"] = [
+                f"[{q.get('category', '')}] {q.get('question', '')}\n→ {q.get('answer', '')}"
+                for q in qa if isinstance(q, dict)
+            ]
 
     return s

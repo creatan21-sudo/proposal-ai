@@ -55,20 +55,26 @@ _INTERZ_COMPETENCIES = [
 def run(dna: ConceptDNA, pipeline_results: dict = None, generate_ppt: bool = False) -> dict:
     """일관성 검수 및 최종 제안서 확정.
 
+    PASS 구조:
+        PASS 1 — 규칙 기반 검수 (API 호출 없음)
+        PASS 2 — 서사 완성도 심층 분석 (Claude)
+        PASS 3 — 회사소개 맞춤 재구성 (Claude, 항상)
+        PASS 4 — 예상 질의응답 5개 생성 (Claude, 항상)
+        PASS 5 — PT 원고 초안 생성 (Claude, generate_ppt=True 시만)
+
     Args:
         dna: STEP 0~6 결과가 모두 반영된 ConceptDNA
         pipeline_results: 각 에이전트 원본 출력물 (없으면 DNA에서 재구성)
-        generate_ppt: True면 PASS 4(PT원고·질의응답) 포함 실행.
-                      기본은 PASS 1·2·3만 실행 (PASS 3 = 회사소개 항상 포함).
+        generate_ppt: True면 PASS 5(PT원고) 추가 실행.
 
     Returns:
         {
             "consistency_score":   float,  # 0.0~1.0
             "evaluation_coverage": dict,   # 평가항목 커버리지
             "issues":              list,   # 발견된 문제·개선사항
-            "company_profile":     dict,   # 인터즈 맞춤 회사소개 (항상 포함)
-            "pt_script":           dict,   # PT 원고 초안 (generate_ppt=True 시만 채워짐)
-            "qa_prep":             list,   # 심사위원 예상 질의응답 (generate_ppt=True 시만)
+            "company_profile":     dict,   # 인터즈 맞춤 회사소개 (항상)
+            "qa_prep":             list,   # 심사위원 예상 질의응답 (항상)
+            "pt_script":           dict,   # PT 원고 초안 (generate_ppt=True 시만)
             "final_proposal":      dict,   # 최종 확정 제안서 구조
             "dna_snapshot":        dict,   # 최종 DNA 스냅샷
         }
@@ -105,22 +111,31 @@ def run(dna: ConceptDNA, pipeline_results: dict = None, generate_ppt: bool = Fal
         print(f"  [경고] PASS 3 실패 — 빈 값으로 대체: {type(e).__name__}: {e}")
         company_profile = {}
 
-    # ── PASS 4: PT 원고 + 심사위원 Q&A (PPT 모드 시만) ──
+    # ── PASS 4: 예상 질의응답 (항상 실행) ────────
+    print("  [PASS 4] 심사위원 예상 질의응답 생성...")
+    try:
+        qa_prep = _generate_qa_prep(dna, consistency, company_profile)
+        print(f"           질의응답 {len(qa_prep)}개 생성 완료")
+    except Exception as e:
+        print(f"  [경고] PASS 4 실패 — 빈 값으로 대체: {type(e).__name__}: {e}")
+        qa_prep = []
+
+    # ── PASS 5: PT 원고 (PPT 모드 시만) ──────────
     if generate_ppt or getattr(dna, "generate_ppt", False):
-        print("  [PASS 4] PT 원고 초안 및 예상 질의응답 생성 (PPT 모드)...")
+        print("  [PASS 5] PT 원고 초안 생성 (PPT 모드)...")
         try:
-            pt_qa = _generate_pt_and_qa(dna, consistency, company_profile)
+            pt_script = _generate_pt_script(dna, consistency, company_profile)
         except Exception as e:
-            print(f"  [경고] PASS 4 실패 — 빈 값으로 대체: {type(e).__name__}: {e}")
-            pt_qa = {"pt_script": {}, "qa_prep": []}
+            print(f"  [경고] PASS 5 실패 — 빈 값으로 대체: {type(e).__name__}: {e}")
+            pt_script = {}
     else:
-        print("  [PASS 4] 생략 (PPT 모드 아님 — generate_ppt=False)")
-        pt_qa = {"pt_script": {}, "qa_prep": []}
+        print("  [PASS 5] 생략 (PPT 모드 아님 — generate_ppt=False)")
+        pt_script = {}
 
     # ── FINAL: 최종 제안서 조립 ──────────────────
     print("  [FINAL] 최종 제안서 조립 및 저장...")
     try:
-        final_proposal = _assemble_final_proposal(dna, consistency, company_profile, pt_qa)
+        final_proposal = _assemble_final_proposal(dna, consistency, company_profile, qa_prep)
     except Exception as e:
         raise RuntimeError(f"FINAL (최종 제안서 조립) 실패: {type(e).__name__}: {e}") from e
     dna_snapshot   = _snapshot_dna(dna)
@@ -131,8 +146,8 @@ def run(dna: ConceptDNA, pipeline_results: dict = None, generate_ppt: bool = Fal
         "issues":              consistency.get("issues", []),
         "revised_sections":    consistency.get("revised_sections", {}),
         "company_profile":     company_profile,
-        "pt_script":           pt_qa.get("pt_script", {}),
-        "qa_prep":             pt_qa.get("qa_prep", []),
+        "qa_prep":             qa_prep,
+        "pt_script":           pt_script,
         "final_proposal":      final_proposal,
         "dna_snapshot":        dna_snapshot,
     }
@@ -546,12 +561,73 @@ def _build_company_profile_prompt(dna: ConceptDNA, selected: list) -> str:
 # PASS 4: PT 원고 + 심사위원 Q&A
 # ─────────────────────────────────────────────
 
+def _generate_qa_prep(
+    dna: ConceptDNA,
+    consistency: dict,
+    company_profile: dict,
+) -> list:
+    """심사위원 예상 질의응답 5개 생성 (항상 실행, Claude).
+
+    Returns:
+        qa_prep list (각 항목: category, question, answer, answer_strategy)
+    """
+    dna_ctx   = dna_to_context_string(dna)
+    headline  = company_profile.get("headline", "인터즈")
+    diff      = company_profile.get("differentiation", "")
+
+    prompt = f"""당신은 정부 입찰 PT 전문가입니다.
+아래 제안서 내용을 바탕으로 심사위원이 실제로 물어볼 날카로운 질문 5개와 모범 답변을 작성해주세요.
+
+[프로젝트 정보]
+{dna_ctx}
+
+[인터즈 차별화]
+{headline} / {diff}
+
+[Q&A 작성 기준]
+- 반드시 5개: 예산(1) / 일정(1) / 역량(1) / 창의성(1) / 효과측정(1)
+- 각 질문은 심사위원이 실제로 까다롭게 물어볼 날카로운 질문
+- answer는 최소 3문장: ① 핵심 답변(수치 포함) ② 보완 근거 ③ 대안/리스크 관리
+- answer_strategy는 발표자가 취해야 할 태도와 순서
+- "네, 좋은 질문입니다" 같은 전형적 패턴 금지
+
+반드시 아래 JSON으로만 출력하세요:
+{{
+  "qa_prep": [
+    {{
+      "category":        "예산",
+      "question":        "심사위원의 날카로운 질문",
+      "answer":          "① 핵심 답변 ② 근거 ③ 리스크 관리. 최소 3문장.",
+      "answer_strategy": "발표자 태도 및 답변 순서"
+    }},
+    {{"category": "일정", "question": "...", "answer": "...", "answer_strategy": "..."}},
+    {{"category": "역량", "question": "...", "answer": "...", "answer_strategy": "..."}},
+    {{"category": "창의성", "question": "...", "answer": "...", "answer_strategy": "..."}},
+    {{"category": "효과측정", "question": "...", "answer": "...", "answer_strategy": "..."}}
+  ]
+}}"""
+
+    result = claude_client.call_json(prompt, model=_OPUS_MODEL, max_tokens=1500)
+    return result.get("qa_prep", [])
+
+
+def _generate_pt_script(
+    dna: ConceptDNA,
+    consistency: dict,
+    company_profile: dict,
+) -> dict:
+    """PT 발표 원고 초안 생성 (PPT 모드 시만, Claude)."""
+    prompt = _build_pt_qa_prompt(dna, consistency, company_profile)
+    result = claude_client.call_json(prompt, model=_OPUS_MODEL, max_tokens=1000)
+    return result.get("pt_script", {})
+
+
 def _generate_pt_and_qa(
     dna: ConceptDNA,
     consistency: dict,
     company_profile: dict,
 ) -> dict:
-    """PT 발표 원고 초안 + 심사위원 예상 질의응답 5개 생성 (Claude)."""
+    """PT 발표 원고 초안 + 심사위원 예상 질의응답 5개 생성 (Claude). [레거시 — 미사용]"""
     prompt = _build_pt_qa_prompt(dna, consistency, company_profile)
     result = claude_client.call_json(prompt, model=_OPUS_MODEL, max_tokens=1000)
     result.setdefault("pt_script", {})
@@ -730,7 +806,7 @@ def _assemble_final_proposal(
     dna: ConceptDNA,
     consistency: dict,
     company_profile: dict,
-    pt_qa: dict,
+    qa_prep: list,
 ) -> dict:
     """모든 파트를 하나의 최종 제안서 구조로 조립.
 
@@ -809,15 +885,14 @@ def _assemble_final_proposal(
         {
             "section_id":  "08_qa",
             "title":       "예상 질의응답",
-            "content":     {"qa_list": pt_qa.get("qa_prep", [])},
+            "content":     {"qa_list": qa_prep},
         },
     ]
 
     return {
-        "sections":          sections,
+        "sections":           sections,
         "overall_assessment": consistency.get("overall_assessment", ""),
-        "strengths":         consistency.get("strengths", []),
-        "pt_script":         pt_qa.get("pt_script", {}),
+        "strengths":          consistency.get("strengths", []),
     }
 
 
