@@ -1421,7 +1421,7 @@ def get_credit_status() -> dict:
     if serpapi_key:
         try:
             url = f"https://serpapi.com/account.json?api_key={serpapi_key}"
-            req = _urllib_req.Request(url, headers={"User-Agent": "ProposalAI/1.0"})
+            req = _urllib_req.Request(url, headers={"User-Agent": "Prointerz/1.0"})
             with _urllib_req.urlopen(req, timeout=5) as resp:
                 data = json.loads(resp.read())
             used  = data.get("this_month_usage", 0)
@@ -1591,7 +1591,7 @@ def profile():
         # 저장 후 테스트 메시지 발송
         if chat_id:
             print(f"  [Profile] 테스트 메시지 전송 시도 → chat_id={chat_id}", flush=True)
-            ok = send_telegram(chat_id, f"✅ ProposalAI 텔레그램 알림이 연결되었습니다.\n계정: {session['username']}")
+            ok = send_telegram(chat_id, f"✅ Prointerz 텔레그램 알림이 연결되었습니다.\n계정: {session['username']}")
             print(f"  [Profile] send_telegram 결과: {ok}", flush=True)
             message = "저장 완료. 테스트 메시지를 전송했습니다." if ok else "저장 완료. 테스트 메시지 전송 실패 (토큰/Chat ID 확인)"
 

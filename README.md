@@ -1,4 +1,4 @@
-# Proposal AI
+# Prointerz
 
 AI 기반 제안서 자동 생성 웹 서비스.
 
@@ -54,4 +54,4 @@ Railway 대시보드 → **Volumes** → **Add Volume**
 
 - **Deployments** 탭에서 빌드 로그 확인
 - 제공된 URL로 접속 → `/login` 페이지 정상 표시 확인
-# proposal-ai
+# prointerz
