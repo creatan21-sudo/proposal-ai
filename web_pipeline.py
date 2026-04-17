@@ -33,21 +33,27 @@ _STEP_INDEX          = {k: i for i, (k, *_) in enumerate(_STEPS)}
 _DOWNSTREAM_CREATIVE = ["plan", "script", "marketing", "final_proposal"]
 
 # 파이프라인 레벨 재시도 (OverloadError 발생 시)
-_PIPE_RETRY_MAX  = 3
+_PIPE_RETRY_MAX  = 3     # OverloadError: 최대 3회 시도 (2회 재시도)
 _PIPE_RETRY_WAIT = 120   # 2분
+
+# 타임아웃 전용 최대 재시도 횟수 (OverloadError와 별도 관리)
+_TIMEOUT_RETRY_MAX = 2   # 타임아웃: 최대 2회 시도 (1회 재시도)
 
 # 비중요 스텝은 OverloadError 재시도 대기 시간을 단축
 _PIPE_RETRY_WAIT_NONCRITICAL = 30   # 30초
 
 # 스텝별 타임아웃 (초) — None이면 무제한
+# Claude API 응답은 max_tokens 크기에 따라 30~120s 소요되며,
+# call_json 내부 JSON 재시도·품질 재시도까지 합산하면 3배까지 늘어날 수 있음.
+# 300s = 5분: 어떤 스텝도 정상 동작 시 넘기지 않을 안전 상한값.
 _STEP_TIMEOUT: dict = {
-    "research":       300,   # Claude 10항목 분석 최대 ~200s + 여유분
-    "strategy":        60,
-    "creative":        60,
-    "plan":            60,
-    "script":          90,
-    "marketing":      120,   # 3개 섹션 병렬 → 120s 상한
-    "final_proposal":  90,
+    "research":       300,   # Claude 10항목 분석 ~200s + 여유분
+    "strategy":       300,   # call_json + validate 재시도 최대 ~180s
+    "creative":       300,
+    "plan":           300,
+    "script":         300,
+    "marketing":      300,   # 3개 섹션 병렬 (각 80s 상한) + 여유분
+    "final_proposal": 300,
 }
 
 
@@ -248,16 +254,22 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
             except (TimeoutError, _cf.TimeoutError) as e:
                 clear_retry_callback()
                 pipe_exc = e
-                if pipe_attempt < _PIPE_RETRY_MAX and critical:
-                    # 비중요 스텝은 타임아웃 시 재시도 없이 즉시 포기
+                elapsed = round(time.time() - t0, 1)
+                if pipe_attempt < _TIMEOUT_RETRY_MAX:
+                    # 타임아웃: 1회만 재시도 (critical 여부 무관)
                     push_event({
                         "type": "log",
-                        "message": f"⏱ {step_name.strip()} 타임아웃 — {_retry_wait}초 후 재시도 ({pipe_attempt}/{_PIPE_RETRY_MAX})",
+                        "message": (
+                            f"⏱ {step_name.strip()} {elapsed:.0f}s 타임아웃 — "
+                            f"재시도 중 ({pipe_attempt}/{_TIMEOUT_RETRY_MAX})"
+                        ),
                     })
-                    time.sleep(_retry_wait)
                     push_event({"type": "step_start", "step": step_key, "name": step_name})
+                    # 재시도 시 대기 없음 — 서버는 살아있으므로 바로 재시도
                 else:
-                    print(f"  [{step_key}] 타임아웃 — 즉시 포기 (critical={critical})")
+                    # 타임아웃 재시도 소진 → critical 여부 무관, 빈 결과로 계속 진행
+                    print(f"  [{step_key}] 타임아웃 {_TIMEOUT_RETRY_MAX}회 소진 — 빈 결과로 계속 진행")
+                    pipe_exc = e
                     break
 
             except Exception as e:
@@ -266,13 +278,13 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
                 exc_msg  = str(e)
                 print(f"  [{step_key}] 예외 발생 — {exc_type}: {exc_msg}")
                 traceback.print_exc()
-                if 'timeout' in exc_msg.lower() and pipe_attempt < _PIPE_RETRY_MAX and critical:
+                is_timeout_exc = 'timeout' in exc_msg.lower()
+                if is_timeout_exc and pipe_attempt < _TIMEOUT_RETRY_MAX:
                     pipe_exc = e
                     push_event({
                         "type": "log",
-                        "message": f"⏱ {step_name.strip()} 타임아웃 — {_retry_wait}초 후 재시도 ({pipe_attempt}/{_PIPE_RETRY_MAX})",
+                        "message": f"⏱ {step_name.strip()} 타임아웃 — 재시도 중 ({pipe_attempt}/{_TIMEOUT_RETRY_MAX})",
                     })
-                    time.sleep(_retry_wait)
                     push_event({"type": "step_start", "step": step_key, "name": step_name})
                 else:
                     pipe_exc = e
@@ -299,10 +311,18 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
                     notify_fn(f"❌ {dna.project_name} — {step_name.strip()} 오류\n[{exc_type}] {exc_msg[:200]}")
                 except Exception:
                     pass
-            if critical:
+            # 타임아웃 오류는 critical 여부 무관하게 계속 진행 (빈 결과 저장)
+            _is_timeout_failure = isinstance(pipe_exc, (TimeoutError, _cf.TimeoutError)) or \
+                                  'timeout' in exc_msg.lower()
+            if critical and not _is_timeout_failure:
                 push_event({"type": "pipeline_aborted", "step": step_key})
                 results["__aborted_at__"] = step_key
                 return results
+            if _is_timeout_failure and critical:
+                push_event({
+                    "type": "log",
+                    "message": f"⚠️ {step_name.strip()} 타임아웃 — 빈 결과로 다음 스텝 진행",
+                })
             results[step_key] = {}
             i += 1
             continue
