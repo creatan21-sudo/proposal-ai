@@ -5,9 +5,6 @@ import os
 from dotenv import load_dotenv
 load_dotenv(override=False)
 print(f"[startup] ANTHROPIC_API_KEY: {'SET' if os.environ.get('ANTHROPIC_API_KEY') else 'NOT SET'}", flush=True)
-_gamma_key_startup = os.environ.get("GAMMA_API_KEY") or os.getenv("GAMMA_API_KEY")
-print(f"[startup] GAMMA_API_KEY: {'SET' if _gamma_key_startup else 'NOT SET'}", flush=True)
-print(f"[startup] 환경변수 목록: {[k for k in os.environ.keys() if 'GAMMA' in k]}", flush=True)
 
 import dataclasses
 import datetime as _dt
@@ -1646,10 +1643,10 @@ def ppt_start():
         return jsonify({"ok": False, "error": "권한 없음 — 다시 로그인 후 시도하세요"}), 403
 
     force_pptx = bool(data.get("force_pptx", False))
-    gamma_key = os.environ.get("GAMMA_API_KEY") or os.getenv("GAMMA_API_KEY")
-    _gamma_key_set = bool(gamma_key and gamma_key.strip())
-    use_gamma  = _gamma_key_set and not force_pptx
-    print(f"[PPT/start] GAMMA_API_KEY: {'SET' if _gamma_key_set else 'NOT SET'} | force_pptx={force_pptx} | use_gamma={use_gamma}")
+    # 함수 실행 시점에 직접 읽기 (gunicorn worker fork 이후에도 정상 반영)
+    gamma_key = os.environ.get("GAMMA_API_KEY", "").strip()
+    print(f"[PPT] 실시간 GAMMA_API_KEY 확인: {'SET='+gamma_key[:10] if gamma_key else 'NOT SET'}")
+    use_gamma  = bool(gamma_key) and not force_pptx
 
     job_id  = str(uuid.uuid4())
     case    = detail["case"]
