@@ -41,7 +41,13 @@ _PIPE_RETRY_WAIT_NONCRITICAL = 30   # 30초
 
 # 스텝별 타임아웃 (초) — None이면 무제한
 _STEP_TIMEOUT: dict = {
-    "marketing": 110,   # 마케팅 4개 섹션 × 최대 80s 병렬 → 110s 상한
+    "research":       120,
+    "strategy":        60,
+    "creative":        60,
+    "plan":            60,
+    "script":          90,
+    "marketing":      120,   # 3개 섹션 병렬 → 120s 상한
+    "final_proposal":  90,
 }
 
 
@@ -197,22 +203,26 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
             t0 = time.time()
             set_retry_callback(_api_retry_cb)
             try:
+                # 에이전트별 호출 인자 구성
+                import functools
                 if step_key == "rfp_analysis":
-                    result = agent_mod.run(dna, file_path=rfp_file)
+                    _call = functools.partial(agent_mod.run, dna, file_path=rfp_file)
                 elif step_key == "final_proposal":
-                    result = agent_mod.run(dna, pipeline_results=results)
+                    _call = functools.partial(agent_mod.run, dna, pipeline_results=results, full_pass=False)
                 elif step_key == "script":
-                    result = agent_mod.run(dna, progress_fn=push_event, max_episodes=_max_ep)
+                    _call = functools.partial(agent_mod.run, dna, progress_fn=push_event, max_episodes=_max_ep)
                 elif step_key == "marketing":
-                    # 스텝 타임아웃 적용: 별도 스레드에서 실행, timeout 초과 시 에러
-                    if _step_timeout:
-                        with _cf.ThreadPoolExecutor(max_workers=1) as _tex:
-                            _f = _tex.submit(agent_mod.run, dna, push_event)
-                            result = _f.result(timeout=_step_timeout)
-                    else:
-                        result = agent_mod.run(dna, progress_fn=push_event)
+                    _call = functools.partial(agent_mod.run, dna, push_event)
                 else:
-                    result = agent_mod.run(dna)
+                    _call = functools.partial(agent_mod.run, dna)
+
+                # 스텝 타임아웃 적용 (설정된 경우 별도 스레드에서 실행)
+                if _step_timeout:
+                    with _cf.ThreadPoolExecutor(max_workers=1) as _tex:
+                        _f = _tex.submit(_call)
+                        result = _f.result(timeout=_step_timeout)
+                else:
+                    result = _call()
                 elapsed = round(time.time() - t0, 1)
                 clear_retry_callback()
                 pipe_exc = None

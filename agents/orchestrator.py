@@ -52,21 +52,23 @@ _INTERZ_COMPETENCIES = [
 # 진입점
 # ─────────────────────────────────────────────
 
-def run(dna: ConceptDNA, pipeline_results: dict = None) -> dict:
+def run(dna: ConceptDNA, pipeline_results: dict = None, full_pass: bool = False) -> dict:
     """일관성 검수 및 최종 제안서 확정.
 
     Args:
         dna: STEP 0~6 결과가 모두 반영된 ConceptDNA
         pipeline_results: 각 에이전트 원본 출력물 (없으면 DNA에서 재구성)
+        full_pass: True면 PASS 3(회사소개)·PASS 4(PT원고) 포함 실행.
+                   False(기본)면 PASS 1+2만 실행 → 속도 우선.
 
     Returns:
         {
             "consistency_score":   float,  # 0.0~1.0
             "evaluation_coverage": dict,   # 평가항목 커버리지
             "issues":              list,   # 발견된 문제·개선사항
-            "company_profile":     dict,   # 인터즈 맞춤 회사소개
-            "pt_script":           dict,   # PT 원고 초안
-            "qa_prep":             list,   # 심사위원 예상 질의응답 5개
+            "company_profile":     dict,   # 인터즈 맞춤 회사소개 (full_pass=True 시만 채워짐)
+            "pt_script":           dict,   # PT 원고 초안 (full_pass=True 시만 채워짐)
+            "qa_prep":             list,   # 심사위원 예상 질의응답 (full_pass=True 시만 채워짐)
             "final_proposal":      dict,   # 최종 확정 제안서 구조
             "dna_snapshot":        dict,   # 최종 DNA 스냅샷
         }
@@ -95,19 +97,24 @@ def run(dna: ConceptDNA, pipeline_results: dict = None) -> dict:
     except Exception as e:
         raise RuntimeError(f"PASS 2 (서사 완성도 심층 분석) 실패: {type(e).__name__}: {e}") from e
 
-    # ── PASS 3: 회사소개 맞춤 생성 ───────────────
-    print("  [PASS 3] 인터즈 회사소개 맞춤 재구성...")
-    try:
-        company_profile = _generate_company_profile(dna)
-    except Exception as e:
-        raise RuntimeError(f"PASS 3 (회사소개 맞춤 재구성) 실패: {type(e).__name__}: {e}") from e
+    # ── PASS 3: 회사소개 맞춤 생성 (full_pass 옵션) ──
+    if full_pass:
+        print("  [PASS 3] 인터즈 회사소개 맞춤 재구성...")
+        try:
+            company_profile = _generate_company_profile(dna)
+        except Exception as e:
+            raise RuntimeError(f"PASS 3 (회사소개 맞춤 재구성) 실패: {type(e).__name__}: {e}") from e
 
-    # ── PASS 4: PT 원고 + 심사위원 Q&A ───────────
-    print("  [PASS 4] PT 원고 초안 및 예상 질의응답 생성...")
-    try:
-        pt_qa = _generate_pt_and_qa(dna, consistency, company_profile)
-    except Exception as e:
-        raise RuntimeError(f"PASS 4 (PT 원고·예상 Q&A 생성) 실패: {type(e).__name__}: {e}") from e
+        # ── PASS 4: PT 원고 + 심사위원 Q&A ───────────
+        print("  [PASS 4] PT 원고 초안 및 예상 질의응답 생성...")
+        try:
+            pt_qa = _generate_pt_and_qa(dna, consistency, company_profile)
+        except Exception as e:
+            raise RuntimeError(f"PASS 4 (PT 원고·예상 Q&A 생성) 실패: {type(e).__name__}: {e}") from e
+    else:
+        print("  [PASS 3+4] 생략 (full_pass=False — 속도 우선)")
+        company_profile = {}
+        pt_qa = {"pt_script": {}, "qa_prep": []}
 
     # ── FINAL: 최종 제안서 조립 ──────────────────
     print("  [FINAL] 최종 제안서 조립 및 저장...")
@@ -272,7 +279,7 @@ def _calc_pre_score(pre_checks: dict) -> float:
 def _deep_consistency_check(dna: ConceptDNA, pre_checks: dict, winning_patterns: list = None) -> dict:
     """서사 완성도·톤 일관성·미흡 섹션 자동 보완 (Claude)."""
     prompt  = _build_consistency_prompt(dna, pre_checks, winning_patterns or [])
-    result  = claude_client.call_json(prompt, model=_OPUS_MODEL, max_tokens=4000)
+    result  = claude_client.call_json(prompt, model=_OPUS_MODEL, max_tokens=2000)
     result.setdefault("narrative_score", 0.7)
     result.setdefault("issues", [])
     result.setdefault("revised_sections", {})

@@ -97,22 +97,21 @@ def run(dna: ConceptDNA, progress_fn=None) -> dict:
     dna_ctx = _compact_dna_ctx(dna)
     script_summary = _summarize_scripts(dna)
 
-    print("  유튜브·SNS·인플루언서·KPI 전략 텍스트 병렬 생성 중...")
+    print("  유튜브·SNS·KPI 전략 텍스트 병렬 생성 중... (핵심 3개 섹션)")
     _progress(f"마케팅 전략 생성 중... ({', '.join(platforms[:3])})")
 
     youtube_text = sns_text = influencer_text = kpi_text = ""
 
     with _cf.ThreadPoolExecutor(max_workers=3) as ex:
-        f1 = ex.submit(_gen_youtube_strategy_text,   dna_ctx, platforms, edit_versions, script_summary)
-        f2 = ex.submit(_gen_sns_strategy_text,       dna_ctx, platforms)
-        f3 = ex.submit(_gen_influencer_strategy_text, dna_ctx, platforms)
-        f4 = ex.submit(_gen_kpi_targets_text,        dna_ctx, platforms, rfp_kpis, mkt_budget)
+        f1 = ex.submit(_gen_youtube_strategy_text, dna_ctx, platforms, edit_versions, script_summary)
+        f2 = ex.submit(_gen_sns_strategy_text,     dna_ctx, platforms)
+        f3 = ex.submit(_gen_kpi_targets_text,      dna_ctx, platforms, rfp_kpis, mkt_budget)
+        # 인플루언서 전략은 선택 실행 (기본 제외 — 속도 우선)
 
-        for label, future, setter in [
-            ("youtube_strategy",   f1, lambda v: None),
-            ("sns_strategy",       f2, lambda v: None),
-            ("influencer_strategy",f3, lambda v: None),
-            ("kpi_targets",        f4, lambda v: None),
+        for label, future in [
+            ("youtube_strategy", f1),
+            ("sns_strategy",     f2),
+            ("kpi_targets",      f3),
         ]:
             try:
                 val = future.result(timeout=_FUTURE_TIMEOUT)
@@ -120,8 +119,6 @@ def run(dna: ConceptDNA, progress_fn=None) -> dict:
                     youtube_text = val
                 elif label == "sns_strategy":
                     sns_text = val
-                elif label == "influencer_strategy":
-                    influencer_text = val
                 elif label == "kpi_targets":
                     kpi_text = val
                 _progress(f"{label} 완료")
