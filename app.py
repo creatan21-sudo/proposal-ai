@@ -1674,13 +1674,14 @@ def ppt_start():
                     job["status"] = "error"
 
     def _worker_gamma():
-        """Gamma API로 PPT 생성."""
+        """Gamma API로 PPT 생성 후 PPTX 파일 다운로드."""
+        import requests as _req
         from output.pptx_builder import generate_with_gamma
 
         _ppt_push(job_id, {"type": "ppt_progress",
                             "message": "Gamma API 요청 전송 중...", "current": 1, "total": 4})
 
-        # 제안서 내용 → Gamma topic 문자열로 조합
+        # 제안서 내용 → Gamma inputText 문자열로 조합
         topic = _build_gamma_topic(detail)
 
         _ppt_push(job_id, {"type": "ppt_progress",
@@ -1688,19 +1689,39 @@ def ppt_start():
 
         result = generate_with_gamma(topic, pages)
 
-        _ppt_push(job_id, {"type": "ppt_progress",
-                            "message": "완료!", "current": 4, "total": 4})
+        pptx_export_url = result.get("pptx_url")
 
-        with _ppt_jobs_lock:
-            job = _ppt_jobs.get(job_id)
-            if job:
-                job["status"] = "done"
+        if pptx_export_url:
+            # ── PPTX 파일 다운로드 → 서버에서 직접 제공 ──
+            _ppt_push(job_id, {"type": "ppt_progress",
+                                "message": "PPTX 파일 다운로드 중...", "current": 3, "total": 4})
 
-        _ppt_push(job_id, {
-            "type":     "gamma_done",
-            "url":      result.get("url", ""),
-            "pptx_url": result.get("pptx_url") or "",
-        })
+            dl_resp = _req.get(pptx_export_url, timeout=120)
+            dl_resp.raise_for_status()
+            pptx_bytes = dl_resp.content
+
+            with _ppt_jobs_lock:
+                job = _ppt_jobs.get(job_id)
+                if job:
+                    job["status"]     = "done"
+                    job["pptx_bytes"] = pptx_bytes
+
+            _ppt_push(job_id, {
+                "type":         "ppt_done",
+                "download_url": f"/ppt/download/{job_id}",
+            })
+
+        else:
+            # ── PPTX URL 없음 → Gamma 웹 URL 폴백 ──
+            with _ppt_jobs_lock:
+                job = _ppt_jobs.get(job_id)
+                if job:
+                    job["status"] = "done"
+
+            _ppt_push(job_id, {
+                "type": "gamma_done",
+                "url":  result.get("url", ""),
+            })
 
         chat_id = get_telegram_chat_id(user_id)
         if chat_id:

@@ -832,15 +832,13 @@ function _listenPpt(jobId, totalPages) {
         const a = document.createElement('a');
         a.href = ev.download_url; a.click();
       } else if (ev.type === 'gamma_done') {
+        // PPTX export URL 없을 때 폴백: Gamma 웹 URL 표시
         es.close();
         document.getElementById('ppt-progress').style.display = 'none';
         document.getElementById('ppt-gamma-done').style.display = '';
         const openLink = document.getElementById('gamma-open-url');
-        openLink.href = ev.url || '#';
-        if (ev.pptx_url) {
-          const dl = document.getElementById('gamma-pptx-url');
-          dl.href = ev.pptx_url;
-          dl.style.display = 'inline';
+        if (ev.url) {
+          openLink.href = ev.url;
         }
       } else if (ev.type === 'ppt_error') {
         es.close();

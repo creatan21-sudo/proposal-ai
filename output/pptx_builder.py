@@ -782,14 +782,16 @@ def generate_with_gamma(topic: str, pages: int) -> dict:
     }
 
     # ── Step 1: 생성 요청 ─────────────────────────
-    # Gamma API v1/generations 엔드포인트
-    print(f"  [Gamma] POST /v1/generations — num_cards={num_cards}")
+    # Gamma API v1.0/generations 엔드포인트 (공식 문서 기준)
+    print(f"  [Gamma] POST /v1.0/generations — numCards={num_cards}")
     resp = requests.post(
-        "https://api.gamma.app/v1/generations",
+        "https://api.gamma.app/v1.0/generations",
         json={
-            "topic":     topic[:8000],   # Gamma 입력 길이 제한
-            "num_cards": num_cards,
-            "language":  "ko",
+            "inputText": topic[:8000],   # 제안서 내용
+            "textMode":  "generate",
+            "format":    "presentation",
+            "numCards":  num_cards,
+            "exportAs":  "pptx",         # PPTX 파일 직접 다운로드
         },
         headers=headers,
         timeout=60,
@@ -808,7 +810,7 @@ def generate_with_gamma(topic: str, pages: int) -> dict:
     print(f"  [Gamma] 응답: status={data.get('status')!r}, keys={list(data.keys())}")
 
     # ── Step 2: 비동기 폴링 (status가 processing/pending이면 완료 대기) ──
-    gen_id = data.get("id")
+    gen_id = data.get("generationId") or data.get("id")
     status = data.get("status", "")
 
     if gen_id and status in ("processing", "pending", "queued", "running"):
@@ -816,7 +818,7 @@ def generate_with_gamma(topic: str, pages: int) -> dict:
         for attempt in range(60):           # 최대 5분 (5s × 60)
             time.sleep(5)
             poll = requests.get(
-                f"https://api.gamma.app/v1/generations/{gen_id}",
+                f"https://api.gamma.app/v1.0/generations/{gen_id}",
                 headers=headers,
                 timeout=30,
             )
@@ -839,22 +841,25 @@ def generate_with_gamma(topic: str, pages: int) -> dict:
 
     # ── Step 3: URL 추출 ──────────────────────────
     presentation_url = (
+        data.get("gammaUrl") or    # 공식 문서 필드명
         data.get("url") or
         data.get("view_url") or
         data.get("share_url") or
         ""
     )
     pptx_url = (
+        data.get("exportUrl") or   # 공식 문서: exportAs 지정 시 exportUrl 반환
         data.get("pptx_url") or
         data.get("export_url") or
         data.get("download_url") or
         None
     )
 
-    if not presentation_url:
+    print(f"  [Gamma] 완료 — presentation_url={presentation_url[:80] if presentation_url else 'None'}")
+    print(f"  [Gamma] exportUrl={pptx_url[:80] if pptx_url else 'None'}")
+    if not presentation_url and not pptx_url:
         raise RuntimeError(
             f"Gamma API 응답에 URL이 없습니다. 응답: {str(data)[:400]}"
         )
 
-    print(f"  [Gamma] 완료 — url={presentation_url[:80]}")
     return {"url": presentation_url, "pptx_url": pptx_url}
