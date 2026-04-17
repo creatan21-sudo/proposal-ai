@@ -41,7 +41,7 @@ _PIPE_RETRY_WAIT_NONCRITICAL = 30   # 30초
 
 # 스텝별 타임아웃 (초) — None이면 무제한
 _STEP_TIMEOUT: dict = {
-    "research":       120,
+    "research":       300,   # Claude 10항목 분석 최대 ~200s + 여유분
     "strategy":        60,
     "creative":        60,
     "plan":            60,

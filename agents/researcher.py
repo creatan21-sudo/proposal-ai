@@ -132,17 +132,29 @@ def run(dna: ConceptDNA) -> dict:
         "recent_issues": [],
     })
 
-    try:
-        save_research(dna.client_name, dna.project_name, result,
-                      case_id=getattr(dna, "case_id", 0) or 0)
-    except Exception as e:
-        print(f"  [경고] DB 저장 실패: {e}")
+    # ── DB 저장 (백그라운드 — 타임아웃에 영향 없음) ──
+    _data_size = len(json.dumps(result, ensure_ascii=False))
+    print(f"  저장 데이터 크기: {_data_size:,}자")
 
-    # ── 캐시 저장 ────────────────────────────────
-    try:
-        save_research_cache(dna.client_name, dna.project_name, result)
-    except Exception as e:
-        print(f"  [경고] 캐시 저장 실패 (계속 진행): {e}")
+    _client_name = dna.client_name
+    _project_name = dna.project_name
+    _case_id = getattr(dna, "case_id", 0) or 0
+    _result_snapshot = dict(result)  # 스레드에 전달할 사본
+
+    def _save_to_db():
+        try:
+            save_research(_client_name, _project_name, _result_snapshot, case_id=_case_id)
+            print(f"  [백그라운드] 리서치 DB 저장 완료")
+        except Exception as e:
+            print(f"  [백그라운드] DB 저장 실패 (파이프라인 영향 없음): {e}")
+        try:
+            save_research_cache(_client_name, _project_name, _result_snapshot)
+            print(f"  [백그라운드] 리서치 캐시 저장 완료")
+        except Exception as e:
+            print(f"  [백그라운드] 캐시 저장 실패 (계속 진행): {e}")
+
+    import threading
+    threading.Thread(target=_save_to_db, daemon=True).start()
 
     return result
 
