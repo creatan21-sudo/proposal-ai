@@ -1,10 +1,13 @@
 # agents/narrator.py
-# STEP 0.5: 전략 내러티브 생성
-# - RFP 분석 직후 실행, 리서치 전에 전략 프레임 설정
+# STEP 1.5: 전략 내러티브 생성
+# - 리서치 직후 실행, 전략 수립 전 방향 설정
 # - 20줄 내외 5섹션 내러티브 → 사용자 컨펌 or 재생성
 
 from core.dna import ConceptDNA, dna_to_context_string
 from core.claude_client import call
+
+_NARRATOR_MODEL     = "claude-sonnet-4-6"
+_NARRATOR_MAX_TOKENS = 2000
 
 
 def run(dna: ConceptDNA) -> dict:
@@ -67,9 +70,22 @@ def run(dna: ConceptDNA) -> dict:
 - 발주처명, 사업명, 영상 종류를 자연스럽게 녹여 쓸 것
 - 전체 분량 20줄 이상"""
 
-    raw = call(prompt)
-    sections = _parse_sections(raw)
+    try:
+        raw = call(prompt, model=_NARRATOR_MODEL, max_tokens=_NARRATOR_MAX_TOKENS)
+    except Exception as e:
+        # 오류를 그대로 re-raise 하되, context 정보 추가
+        raise RuntimeError(
+            f"내러티브 생성 실패 ({type(e).__name__}): {e}\n"
+            f"발주처={dna.client_name!r}, 과업={dna.project_name!r}"
+        ) from e
 
+    if not raw or not raw.strip():
+        raise RuntimeError(
+            f"내러티브 생성 결과가 비어있습니다. "
+            f"발주처={dna.client_name!r}, 과업={dna.project_name!r}"
+        )
+
+    sections = _parse_sections(raw)
     return {"narrative": raw, "sections": sections}
 
 

@@ -5,6 +5,7 @@
 import concurrent.futures as _cf
 import threading
 import time
+import traceback
 from core.dna import ConceptDNA
 from core.claude_client import set_retry_callback, clear_retry_callback, OverloadError
 from agents import (
@@ -231,8 +232,12 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
 
             except Exception as e:
                 clear_retry_callback()
+                exc_type = type(e).__name__
+                exc_msg  = str(e)
+                print(f"  [{step_key}] 예외 발생 — {exc_type}: {exc_msg}")
+                traceback.print_exc()
                 # 메시지에 'timeout'이 포함된 예외도 재시도 처리
-                if 'timeout' in str(e).lower() and pipe_attempt < _PIPE_RETRY_MAX:
+                if 'timeout' in exc_msg.lower() and pipe_attempt < _PIPE_RETRY_MAX:
                     pipe_exc = e
                     push_event({
                         "type": "log",
@@ -248,13 +253,21 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
 
         if pipe_exc is not None:
             elapsed = round(time.time() - t0, 1)
+            exc_type = type(pipe_exc).__name__
+            exc_msg  = str(pipe_exc)
+            # 서버 로그에 전체 traceback 출력
+            print(f"\n[step_error] {step_key} — {exc_type}: {exc_msg}")
+            traceback.print_exc()
             push_event({
-                "type": "step_error", "step": step_key,
-                "name": step_name, "message": str(pipe_exc), "elapsed": elapsed,
+                "type":    "step_error",
+                "step":    step_key,
+                "name":    step_name,
+                "message": f"[{exc_type}] {exc_msg}",
+                "elapsed": elapsed,
             })
             if notify_fn:
                 try:
-                    notify_fn(f"❌ {dna.project_name} — {step_name.strip()} 오류 발생\n{str(pipe_exc)[:200]}")
+                    notify_fn(f"❌ {dna.project_name} — {step_name.strip()} 오류\n[{exc_type}] {exc_msg[:200]}")
                 except Exception:
                     pass
             if critical:

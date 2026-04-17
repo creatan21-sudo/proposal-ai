@@ -10,6 +10,7 @@ import json
 import os
 import threading
 import time
+import traceback
 import urllib.request as _urllib_req
 import uuid
 from collections import deque
@@ -172,7 +173,9 @@ def _run_job(sid: str):
         _run_pipeline_sync(sid, sess)
     except Exception as e:
         # _run_pipeline_sync 내부에서 대부분 처리되지만 혹시 새는 예외 대비
-        _push(sid, {"type": "pipeline_error", "message": str(e)})
+        print(f"\n[_run_job 예외 누출] sid={sid} — {type(e).__name__}: {e}")
+        traceback.print_exc()
+        _push(sid, {"type": "pipeline_error", "message": f"[{type(e).__name__}] {e}"})
         with _sessions_lock:
             s = _sessions.get(sid)
             if s:
@@ -376,13 +379,14 @@ def _run_pipeline_sync(sid: str, sess: dict):
                     s["sse_event"].set()
             return
 
+        aborted_at = results.get("__aborted_at__")
+
         txt_path = None
-        if "__aborted_at__" not in results:
+        if not aborted_at:
             try:
                 txt_path = write_txt(dna, results)
             except Exception as e:
                 push({"type": "log", "message": f"TXT 생성 오류: {e}"})
-            # 파이프라인 완료 후 케이스 DNA/결과 업데이트
             try:
                 dna_json    = json.dumps(_dc.asdict(dna), ensure_ascii=False)
                 result_json = json.dumps(results.get("final_proposal", {}), ensure_ascii=False)
@@ -404,22 +408,41 @@ def _run_pipeline_sync(sid: str, sess: dict):
             except Exception as e:
                 push({"type": "log", "message": f"DB 업데이트 오류: {e}"})
 
-        # case_saved 먼저 → pipeline_done 나중 (PPT 버튼 활성화 타이밍 보장)
-        if saved_case_id:
-            push({"type": "case_saved", "case_id": saved_case_id})
-        push({"type": "pipeline_done"})
+            if saved_case_id:
+                push({"type": "case_saved", "case_id": saved_case_id})
+            push({"type": "pipeline_done"})
 
-        with _sessions_lock:
-            s = _sessions.get(sid)
-            if s:
-                s["status"]       = "done"
-                s["txt_path"]     = txt_path
-                s["results"]      = results
-                s["completed_at"] = time.time()
-                s["sse_event"].set()
+            with _sessions_lock:
+                s = _sessions.get(sid)
+                if s:
+                    s["status"]       = "done"
+                    s["txt_path"]     = txt_path
+                    s["results"]      = results
+                    s["completed_at"] = time.time()
+                    s["sse_event"].set()
+
+        else:
+            # 중요 스텝 실패로 파이프라인 중단 — pipeline_aborted는 이미 전송됨
+            # status를 "error"로 설정해 retry_pipeline이 재시도를 허용하도록 함
+            if saved_case_id:
+                try:
+                    dna_json = json.dumps(_dc.asdict(dna), ensure_ascii=False)
+                    update_case(saved_case_id, dna_json=dna_json)
+                except Exception:
+                    pass
+            with _sessions_lock:
+                s = _sessions.get(sid)
+                if s:
+                    s["status"]       = "error"
+                    s["results"]      = results
+                    s["completed_at"] = time.time()
+                    s["sse_event"].set()
+            print(f"  [파이프라인 중단] {dna.project_name} — {aborted_at} 단계")
 
     except Exception as e:
-        push({"type": "pipeline_error", "message": str(e)})
+        print(f"\n[pipeline_error] {dna.project_name if 'dna' in dir() else sid} — {type(e).__name__}: {e}")
+        traceback.print_exc()
+        push({"type": "pipeline_error", "message": f"[{type(e).__name__}] {e}"})
         with _sessions_lock:
             s = _sessions.get(sid)
             if s:
@@ -855,7 +878,7 @@ def retry_pipeline(sid):
     if not sess:
         return jsonify({"ok": False, "error": "세션 없음"}), 404
     if sess["user_id"] != session["user_id"] and not session.get("is_admin"):
-        return jsonify({"ok": False}), 403
+        return jsonify({"ok": False, "error": "권한 없음 — 다시 로그인 후 시도하세요"}), 403
     if sess["status"] not in ("error", "done"):
         return jsonify({"ok": False, "error": "재시도 불가 상태"}), 400
 
