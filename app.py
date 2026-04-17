@@ -2,7 +2,12 @@
 # Flask 웹 서비스 — 다중 사용자 + 작업 큐 지원
 
 import os
+from dotenv import load_dotenv
+load_dotenv(override=False)
 print(f"[startup] ANTHROPIC_API_KEY: {'SET' if os.environ.get('ANTHROPIC_API_KEY') else 'NOT SET'}", flush=True)
+_gamma_key_startup = os.environ.get("GAMMA_API_KEY") or os.getenv("GAMMA_API_KEY")
+print(f"[startup] GAMMA_API_KEY: {'SET' if _gamma_key_startup else 'NOT SET'}", flush=True)
+print(f"[startup] 환경변수 목록: {[k for k in os.environ.keys() if 'GAMMA' in k]}", flush=True)
 
 import dataclasses
 import datetime as _dt
@@ -1640,10 +1645,9 @@ def ppt_start():
     if detail["case"].get("user_id") != session["user_id"] and not session.get("is_admin"):
         return jsonify({"ok": False, "error": "권한 없음 — 다시 로그인 후 시도하세요"}), 403
 
-    from output.pptx_builder import has_gamma_key
-    import os as _os
     force_pptx = bool(data.get("force_pptx", False))
-    _gamma_key_set = bool(_os.environ.get("GAMMA_API_KEY", "").strip())
+    gamma_key = os.environ.get("GAMMA_API_KEY") or os.getenv("GAMMA_API_KEY")
+    _gamma_key_set = bool(gamma_key and gamma_key.strip())
     use_gamma  = _gamma_key_set and not force_pptx
     print(f"[PPT/start] GAMMA_API_KEY: {'SET' if _gamma_key_set else 'NOT SET'} | force_pptx={force_pptx} | use_gamma={use_gamma}")
 
