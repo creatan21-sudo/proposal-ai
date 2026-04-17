@@ -20,7 +20,7 @@ _STEPS = [
     ("strategy",          "STEP 2    전략 수립",        strategist,   True),
     ("creative",          "STEP 3    컨셉 개발",        creative,     True),
     ("plan",              "STEP 4    실행 기획",        planner,      True),
-    ("script",            "STEP 5    대본 제작",        scripter,     True),
+    ("script",            "STEP 5    대본 제작",        scripter,     False),
     ("marketing",         "STEP 6    마케팅 전략",      marketer,     False),
     ("final_proposal",    "STEP 7    최종 검수·완성",   orchestrator, True),
     ("improvement_report","STEP 7.5  개선 제안",        None,         False),
@@ -208,7 +208,8 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
                 if step_key == "rfp_analysis":
                     _call = functools.partial(agent_mod.run, dna, file_path=rfp_file)
                 elif step_key == "final_proposal":
-                    _call = functools.partial(agent_mod.run, dna, pipeline_results=results, full_pass=False)
+                    _call = functools.partial(agent_mod.run, dna, pipeline_results=results,
+                                              generate_ppt=getattr(dna, "generate_ppt", False))
                 elif step_key == "script":
                     _call = functools.partial(agent_mod.run, dna, progress_fn=push_event, max_episodes=_max_ep)
                 elif step_key == "marketing":

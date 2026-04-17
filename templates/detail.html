@@ -675,7 +675,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     <div id="ppt-setup">
       <h3 style="margin:0 0 6px;font-size:1.15rem;font-weight:700;color:#1e1b4b;">📊 PPT 작성</h3>
-      <p style="margin:0 0 22px;font-size:.85rem;color:#6b7280;">
+      <p style="margin:0 0 18px;font-size:.85rem;color:#6b7280;">
         제안서 내용을 바탕으로 PT 자료를 생성합니다.
       </p>
       <label style="display:block;font-size:.85rem;font-weight:600;color:#374151;margin-bottom:8px;">
@@ -689,10 +689,25 @@ document.addEventListener('DOMContentLoaded', function () {
         <strong id="ppt-pages-val" style="color:#4f46e5;font-size:.95rem;">50</strong>페이지
         <span>200페이지</span>
       </div>
+
+      <!-- Gamma 생성 버튼 -->
+      <button onclick="startGammaGeneration()"
+              style="margin-top:20px;width:100%;padding:13px;
+                     background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;
+                     border:none;border-radius:8px;font-size:1rem;font-weight:700;cursor:pointer;
+                     display:flex;align-items:center;justify-content:center;gap:8px;">
+        <span>✨</span> Gamma로 생성 <span style="font-size:.8rem;font-weight:400;opacity:.85;">(고품질 AI)</span>
+      </button>
+      <p style="margin:6px 0 0;font-size:.77rem;color:#9ca3af;text-align:center;">
+        Gamma Pro 플랜 + API 키 필요 · <a href="https://gamma.app" target="_blank" style="color:#7c3aed;">gamma.app</a>
+      </p>
+
+      <!-- 기본 생성 버튼 -->
       <button onclick="startPptGeneration()"
-              style="margin-top:24px;width:100%;padding:13px;background:#4f46e5;color:#fff;
-                     border:none;border-radius:8px;font-size:1rem;font-weight:700;cursor:pointer;">
-        PPT 생성하기
+              style="margin-top:14px;width:100%;padding:11px;background:#fff;color:#374151;
+                     border:1.5px solid #d1d5db;border-radius:8px;font-size:.9rem;
+                     font-weight:600;cursor:pointer;">
+        기본 생성 (로컬 PPTX)
       </button>
     </div>
 
@@ -716,6 +731,27 @@ document.addEventListener('DOMContentLoaded', function () {
                      border-radius:8px;font-size:.9rem;cursor:pointer;">닫기</button>
     </div>
 
+    <div id="ppt-gamma-done" style="display:none;text-align:center;padding:8px 0;">
+      <div style="font-size:2.8rem;margin-bottom:14px;">✨</div>
+      <p style="color:#7c3aed;font-weight:700;font-size:1.1rem;margin-bottom:6px;">Gamma 생성 완료!</p>
+      <p style="font-size:.85rem;color:#6b7280;margin-bottom:16px;">아래 버튼으로 프레젠테이션을 열거나 PPTX로 다운로드하세요.</p>
+      <a id="gamma-open-url" href="#" target="_blank"
+         style="display:inline-block;margin-bottom:10px;padding:11px 24px;
+                background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;
+                border-radius:8px;font-size:.9rem;font-weight:700;text-decoration:none;">
+        Gamma에서 열기 →
+      </a>
+      <br>
+      <a id="gamma-pptx-url" href="#" target="_blank"
+         style="display:none;margin-top:8px;font-size:.85rem;color:#4f46e5;">
+        PPTX 다운로드
+      </a>
+      <br>
+      <button onclick="closePptModal()"
+              style="margin-top:14px;padding:10px 28px;background:#6b7280;color:#fff;border:none;
+                     border-radius:8px;font-size:.9rem;cursor:pointer;">닫기</button>
+    </div>
+
     <div id="ppt-error" style="display:none;text-align:center;padding:8px 0;">
       <div style="font-size:2.2rem;margin-bottom:14px;">❌</div>
       <p id="ppt-error-msg" style="color:#dc2626;margin-bottom:20px;font-size:.9rem;"></p>
@@ -732,7 +768,7 @@ const _PPT_CASE_ID = {{ case_id }};
 function openPptModal() {
   const m = document.getElementById('ppt-modal');
   m.style.display = 'flex';
-  ['ppt-progress','ppt-done','ppt-error'].forEach(id =>
+  ['ppt-progress','ppt-done','ppt-gamma-done','ppt-error'].forEach(id =>
     document.getElementById(id).style.display = 'none');
   document.getElementById('ppt-setup').style.display = '';
 }
@@ -751,11 +787,28 @@ function startPptGeneration() {
   .then(r => r.json())
   .then(d => {
     if (!d.ok) throw new Error(d.error || '시작 실패');
-    _listenPpt(d.job_id, pages);
+    _listenPpt(d.job_id, pages, false);
   })
   .catch(err => _pptShowError(err.message));
 }
-function _listenPpt(jobId, totalPages) {
+function startGammaGeneration() {
+  const pages = Math.min(50, parseInt(document.getElementById('ppt-pages').value));
+  document.getElementById('ppt-setup').style.display    = 'none';
+  document.getElementById('ppt-progress').style.display = '';
+  document.getElementById('ppt-progress-msg').textContent = 'Gamma API 요청 중...';
+  fetch('/ppt/gamma/start', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({case_id: _PPT_CASE_ID, pages})
+  })
+  .then(r => r.json())
+  .then(d => {
+    if (!d.ok) throw new Error(d.error || '시작 실패');
+    _listenPpt(d.job_id, 3, true);
+  })
+  .catch(err => _pptShowError(err.message));
+}
+function _listenPpt(jobId, totalPages, isGamma) {
   const es = new EventSource(`/ppt/stream/${jobId}`);
   es.onmessage = function(e) {
     try {
@@ -773,6 +826,17 @@ function _listenPpt(jobId, totalPages) {
         document.getElementById('ppt-done').style.display = '';
         const a = document.createElement('a');
         a.href = ev.download_url; a.click();
+      } else if (ev.type === 'gamma_done') {
+        es.close();
+        document.getElementById('ppt-progress').style.display = 'none';
+        document.getElementById('ppt-gamma-done').style.display = '';
+        const openLink = document.getElementById('gamma-open-url');
+        openLink.href = ev.url || '#';
+        if (ev.pptx_url) {
+          const dl = document.getElementById('gamma-pptx-url');
+          dl.href = ev.pptx_url;
+          dl.style.display = 'inline';
+        }
       } else if (ev.type === 'ppt_error') {
         es.close();
         _pptShowError(ev.message);

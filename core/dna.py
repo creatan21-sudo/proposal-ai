@@ -82,6 +82,9 @@ class ConceptDNA:
     step_instruction: str = ""                                 # 스텝별 사전 지시 (confirm 시 주입, 스텝 실행 후 초기화)
     pages: int = 30                                            # 목표 제안서 페이지 수
 
+    # PPT 생성 옵션 (app.py에서 주입)
+    generate_ppt: bool = False                                 # True면 orchestrator PASS 4(PT원고) 포함
+
     # 케이스 추적용 (파이프라인 시작 전 app.py에서 주입)
     case_id: int = 0                                           # rfp_cases.id (결과 테이블 연결용)
 

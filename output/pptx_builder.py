@@ -729,3 +729,91 @@ def _set_cell_text(
     run.font.bold      = bold
     run.font.color.rgb = color or _C_TEXT
     run.font.name      = _FONT_KO
+
+
+# ─────────────────────────────────────────────
+# Gamma API 연동
+# ─────────────────────────────────────────────
+
+def generate_with_gamma(content: str, pages: int) -> dict:
+    """Gamma API로 프레젠테이션 생성.
+
+    사전 조건:
+        - Gamma Pro 플랜 가입 (gamma.app)
+        - Settings → API Keys → Generate 에서 키 발급
+        - Railway Variables에 GAMMA_API_KEY=발급받은키 설정
+
+    Args:
+        content: 제안서 전체 텍스트 (마크다운 형식 권장)
+        pages:   목표 슬라이드 수 (1~50)
+
+    Returns:
+        {
+            "url":      str,        # Gamma 프레젠테이션 웹 URL
+            "pptx_url": str | None, # PPTX 익스포트 URL (있을 경우)
+        }
+
+    Raises:
+        RuntimeError: API 키 미설정 또는 API 오류 시
+    """
+    import os
+    import requests
+
+    api_key = os.environ.get("GAMMA_API_KEY", "").strip()
+    if not api_key:
+        raise RuntimeError(
+            "GAMMA_API_KEY 환경변수가 설정되지 않았습니다.\n"
+            "Gamma Pro 가입 후 Settings → API Keys에서 키를 발급받아 "
+            "Railway Variables에 GAMMA_API_KEY=발급받은키 로 추가하세요."
+        )
+
+    num_slides = max(5, min(50, pages))
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    # Gamma Generate API
+    # 문서: https://gamma.app/docs/api  (API 키 발급 후 확인 가능)
+    resp = requests.post(
+        "https://api.gamma.app/v1/generate",
+        json={
+            "text":        content[:8000],   # Gamma API 입력 길이 제한
+            "num_cards":   num_slides,
+            "mode":        "presentation",
+        },
+        headers=headers,
+        timeout=180,
+    )
+
+    if resp.status_code == 401:
+        raise RuntimeError("Gamma API 인증 실패 — API 키를 확인하세요.")
+    if resp.status_code == 402:
+        raise RuntimeError("Gamma Pro 플랜이 필요합니다. gamma.app에서 업그레이드하세요.")
+    if not resp.ok:
+        raise RuntimeError(
+            f"Gamma API 오류 ({resp.status_code}): {resp.text[:300]}"
+        )
+
+    data = resp.json()
+
+    presentation_url = (
+        data.get("url") or
+        data.get("share_url") or
+        data.get("view_url") or
+        ""
+    )
+    pptx_url = (
+        data.get("pptx_url") or
+        data.get("export_url") or
+        data.get("download_url") or
+        None
+    )
+
+    if not presentation_url:
+        raise RuntimeError(
+            f"Gamma API 응답에 URL이 없습니다. 응답: {str(data)[:300]}"
+        )
+
+    return {"url": presentation_url, "pptx_url": pptx_url}

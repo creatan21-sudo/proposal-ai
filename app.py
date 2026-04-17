@@ -1741,6 +1741,110 @@ def ppt_download(job_id):
 
 
 # ─────────────────────────────────────────────
+# Gamma API PPT 생성
+# ─────────────────────────────────────────────
+
+@app.route("/ppt/gamma/start", methods=["POST"])
+@login_required
+def ppt_gamma_start():
+    """Gamma API를 통한 고품질 PPT 생성 시작."""
+    data    = request.get_json(force=True) or {}
+    case_id = int(data.get("case_id", 0))
+    pages   = max(5, min(50, int(data.get("pages", 20))))
+
+    if not case_id:
+        return jsonify({"ok": False, "error": "case_id 필요"}), 400
+
+    detail = get_case_detail(case_id)
+    if not detail:
+        return jsonify({"ok": False, "error": "케이스 없음"}), 404
+    if detail["case"].get("user_id") != session["user_id"] and not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "권한 없음 — 다시 로그인 후 시도하세요"}), 403
+
+    job_id  = str(uuid.uuid4())
+    user_id = session["user_id"]
+
+    with _ppt_jobs_lock:
+        _ppt_jobs[job_id] = {
+            "status":    "running",
+            "events":    [],
+            "pptx_bytes": None,
+            "filename":  None,
+            "sse_event": threading.Event(),
+            "user_id":   user_id,
+        }
+
+    def _worker():
+        try:
+            _ppt_push(job_id, {"type": "ppt_progress", "message": "Gamma API에 요청 전송 중...", "current": 0, "total": 3})
+
+            # 제안서 텍스트 조합
+            case = detail["case"]
+            parts = []
+            if case.get("project_name"):
+                parts.append(f"# {case['project_name']}\n발주처: {case.get('client_name', '')}")
+            if detail.get("strategy"):
+                s = detail["strategy"]
+                if s.get("core_problem"):
+                    parts.append(f"## 핵심 문제\n{s['core_problem']}")
+                if s.get("solution_direction"):
+                    parts.append(f"## 해결 방향\n{s['solution_direction']}")
+            if detail.get("creative"):
+                c = detail["creative"]
+                if c.get("concept"):
+                    parts.append(f"## 핵심 컨셉\n{c['concept']}")
+                if c.get("confirmed_slogan"):
+                    parts.append(f"## 슬로건\n{c['confirmed_slogan']}")
+            if detail.get("plan"):
+                p = detail["plan"]
+                if p.get("production_schedule"):
+                    sched = p["production_schedule"]
+                    if isinstance(sched, list):
+                        parts.append("## 제작 일정\n" + "\n".join(str(x) for x in sched[:10]))
+            if detail.get("script"):
+                sc = detail["script"]
+                scripts = sc.get("scripts") or sc.get("script_outline") or []
+                if scripts and isinstance(scripts, list):
+                    parts.append("## 대본 개요\n" + "\n".join(str(x)[:200] for x in scripts[:3]))
+            if detail.get("marketing"):
+                m = detail["marketing"]
+                if m.get("youtube_strategy"):
+                    parts.append(f"## 유통 전략\n{str(m['youtube_strategy'])[:300]}")
+
+            content = "\n\n".join(parts) if parts else f"{case.get('project_name', '')} 제안서"
+
+            _ppt_push(job_id, {"type": "ppt_progress", "message": "Gamma AI 생성 중 (30~60초 소요)...", "current": 1, "total": 3})
+
+            from output.pptx_builder import generate_with_gamma
+            result = generate_with_gamma(content, pages)
+
+            _ppt_push(job_id, {"type": "ppt_progress", "message": "완료!", "current": 3, "total": 3})
+
+            with _ppt_jobs_lock:
+                job = _ppt_jobs.get(job_id)
+                if job:
+                    job["status"] = "done"
+
+            _ppt_push(job_id, {
+                "type":         "gamma_done",
+                "url":          result.get("url", ""),
+                "pptx_url":     result.get("pptx_url") or "",
+            })
+
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            _ppt_push(job_id, {"type": "ppt_error", "message": str(e)})
+            with _ppt_jobs_lock:
+                job = _ppt_jobs.get(job_id)
+                if job:
+                    job["status"] = "error"
+
+    threading.Thread(target=_worker, daemon=True).start()
+    return jsonify({"ok": True, "job_id": job_id})
+
+
+# ─────────────────────────────────────────────
 # 큐 상태 API (폴링 폴백용)
 # ─────────────────────────────────────────────
 
