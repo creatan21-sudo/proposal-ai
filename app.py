@@ -45,6 +45,7 @@ from config import GAMMA_API_KEY
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "proposal-ai-web-secret-2024")
+app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB
 
 _IS_PRODUCTION = os.environ.get("FLASK_ENV", "production") == "production"
 _default_upload = "/tmp/uploads" if _IS_PRODUCTION else str(Path(__file__).parent / "uploads")
@@ -1636,48 +1637,78 @@ def _ppt_push(job_id: str, event: dict):
             job["sse_event"].set()
 
 
-# 템플릿 업로드 임시 저장소 (upload_id → bytes, 30분 TTL)
-_template_uploads: dict = {}
-_template_uploads_lock = threading.Lock()
+# 템플릿 업로드: /tmp/tmpl_uploads/ 에 파일 저장 (멀티워커 간 공유)
+_TMPL_UPLOAD_DIR = Path("/tmp/tmpl_uploads")
+_TMPL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+_TMPL_MAX_AGE = 1800   # 30분 TTL
+
+
+def _tmpl_upload_path(upload_id: str) -> Path:
+    return _TMPL_UPLOAD_DIR / upload_id
 
 
 def _cleanup_template_uploads():
-    """30분 이상 지난 업로드 정리."""
+    """30분 이상 지난 업로드 파일 정리."""
     now = time.time()
-    with _template_uploads_lock:
-        expired = [k for k, v in _template_uploads.items()
-                   if now - v.get("ts", 0) > 1800]
-        for k in expired:
-            del _template_uploads[k]
+    for meta_path in _TMPL_UPLOAD_DIR.glob("*.meta"):
+        try:
+            import json as _json
+            meta = _json.loads(meta_path.read_text())
+            if now - meta.get("ts", 0) > _TMPL_MAX_AGE:
+                data_path = _TMPL_UPLOAD_DIR / meta_path.stem
+                data_path.unlink(missing_ok=True)
+                meta_path.unlink(missing_ok=True)
+        except Exception:
+            pass
 
 
 @app.route("/ppt/upload_template", methods=["POST"])
 @login_required
 def ppt_upload_template():
-    """옵션 3: 참고 PPTX 파일 업로드 → upload_id 반환."""
+    """옵션 3: 참고 파일 업로드 → upload_id 반환.
+    프론트엔드 FormData 필드명: 'file' 또는 'template_file' 모두 허용.
+    """
+    import json as _json
     _ALLOWED_TMPL_EXT = {".pptx", ".pdf", ".hwp", ".hwpx"}
 
-    f = request.files.get("template_file")
+    # 필드명 'file' / 'template_file' 둘 다 허용
+    f = request.files.get("file") or request.files.get("template_file")
+    print(f"[Template Upload] files={list(request.files.keys())} f={f and f.filename!r}")
+
     if not f or not f.filename:
-        return jsonify({"ok": False, "error": "파일 없음"}), 400
+        return jsonify({"ok": False, "error": "파일이 전송되지 않았습니다. 다시 시도하세요."}), 400
+
     ext = Path(f.filename).suffix.lower()
     if ext not in _ALLOWED_TMPL_EXT:
-        return jsonify({"ok": False, "error": f"지원하지 않는 파일 형식입니다 (PPTX, PDF, HWP, HWPX만 가능)"}), 400
+        return jsonify({"ok": False,
+                        "error": f"지원하지 않는 파일 형식입니다 (PPTX, PDF, HWP, HWPX만 가능)"}), 400
 
     data = f.read()
-    if len(data) > 50 * 1024 * 1024:   # 50 MB 제한
-        return jsonify({"ok": False, "error": "파일 크기가 너무 큽니다 (50MB 이하)"}), 400
+    size_mb = len(data) / (1024 * 1024)
+    print(f"[Template Upload] filename={f.filename!r} ext={ext} size={size_mb:.1f}MB")
+
+    if len(data) > 100 * 1024 * 1024:   # 100 MB 제한
+        return jsonify({"ok": False, "error": "파일 크기가 너무 큽니다 (100MB 이하)"}), 400
 
     upload_id = str(uuid.uuid4())
     _cleanup_template_uploads()
-    with _template_uploads_lock:
-        _template_uploads[upload_id] = {
-            "bytes":    data,
+
+    # 파일 본체와 메타 정보를 /tmp에 저장
+    data_path = _tmpl_upload_path(upload_id)
+    meta_path = _TMPL_UPLOAD_DIR / f"{upload_id}.meta"
+    try:
+        data_path.write_bytes(data)
+        meta_path.write_text(_json.dumps({
             "ts":       time.time(),
             "user_id":  session["user_id"],
             "file_ext": ext,
-        }
-    print(f"[Template Upload] upload_id={upload_id} ext={ext} size={len(data)//1024}KB")
+            "filename": f.filename,
+        }))
+    except Exception as e:
+        print(f"[Template Upload] 파일 저장 실패: {e}")
+        return jsonify({"ok": False, "error": f"서버 파일 저장 오류: {e}"}), 500
+
+    print(f"[Template Upload] 저장 완료 → {data_path} ({size_mb:.1f}MB)")
     return jsonify({"ok": True, "upload_id": upload_id})
 
 
@@ -1846,17 +1877,34 @@ def ppt_start():
                 pass
 
     def _worker_template():
-        """참고 PPTX 스타일 적용 PPT 생성."""
+        """참고 파일 스타일 적용 PPT 생성."""
+        import json as _json
         upload_id = data.get("upload_id", "")
-        with _template_uploads_lock:
-            rec = _template_uploads.get(upload_id)
-        if not rec:
-            raise RuntimeError("템플릿 파일을 찾을 수 없습니다. 파일을 다시 업로드하세요.")
-        if rec.get("user_id") != user_id and not session.get("is_admin"):
+        print(f"[Template Worker] upload_id={upload_id!r}")
+
+        data_path = _tmpl_upload_path(upload_id)
+        meta_path = _TMPL_UPLOAD_DIR / f"{upload_id}.meta"
+
+        print(f"[Template Worker] data_path={data_path} exists={data_path.exists()}")
+        print(f"[Template Worker] meta_path={meta_path} exists={meta_path.exists()}")
+
+        if not data_path.exists() or not meta_path.exists():
+            raise RuntimeError(
+                f"템플릿 파일을 찾을 수 없습니다 (upload_id={upload_id}). "
+                "파일을 다시 업로드하세요."
+            )
+
+        try:
+            meta = _json.loads(meta_path.read_text())
+        except Exception as e:
+            raise RuntimeError(f"메타 파일 읽기 실패: {e}")
+
+        if meta.get("user_id") != user_id and not session.get("is_admin"):
             raise RuntimeError("파일 접근 권한 없음")
 
-        template_bytes = rec["bytes"]
-        file_ext       = rec.get("file_ext", ".pptx")
+        template_bytes = data_path.read_bytes()
+        file_ext       = meta.get("file_ext", ".pptx")
+        print(f"[Template Worker] 파일 로드 완료 ext={file_ext} size={len(template_bytes)//1024}KB")
 
         def progress_cb(msg, cur, tot):
             _ppt_push(job_id, {"type": "ppt_progress",
@@ -1877,9 +1925,12 @@ def ppt_start():
             "download_url": f"/ppt/download/{job_id}",
         })
 
-        # 사용한 업로드 정리
-        with _template_uploads_lock:
-            _template_uploads.pop(upload_id, None)
+        # 사용한 업로드 파일 정리
+        try:
+            _tmpl_upload_path(upload_id).unlink(missing_ok=True)
+            (_TMPL_UPLOAD_DIR / f"{upload_id}.meta").unlink(missing_ok=True)
+        except Exception:
+            pass
 
         chat_id = get_telegram_chat_id(user_id)
         if chat_id:
