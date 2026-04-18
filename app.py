@@ -356,6 +356,8 @@ def _run_pipeline_sync(sid: str, sess: dict):
             start_step_key=sess.get("retry_from"),
             prior_results=sess.get("results") or {},
             notify_fn=notify_fn,
+            auto_run=sess.get("auto_run", False),
+            selected_steps=sess.get("selected_steps"),
         )
 
         # 사용자가 직접 중지한 경우
@@ -558,6 +560,19 @@ def start():
     user_direction = request.form.get("user_direction", "").strip()
     reference_case_id = int(request.form.get("reference_case_id") or 0)
 
+    # 고급 설정: 스텝 선택 (체크되지 않은 경우 None → 전체 실행)
+    _all_steps = ["rfp_analysis","research","narrative","strategy",
+                  "creative","plan","script","marketing","final_proposal"]
+    selected_steps_raw = request.form.getlist("selected_steps")
+    selected_steps = set(selected_steps_raw) if selected_steps_raw else None
+
+    # 실행 모드
+    auto_run = (request.form.get("run_mode", "interactive") == "auto")
+
+    # 대본 사전 설정
+    script_preset_episodes   = int(request.form.get("script_preset_episodes") or 0)
+    script_preset_storyboard = request.form.get("script_preset_storyboard", "auto").strip() or "auto"
+
     if not client or not project:
         return redirect(url_for("index"))
 
@@ -604,6 +619,8 @@ def start():
         "user_direction":  user_direction,
     })
     dna.pages = pages
+    dna.script_preset_episodes   = script_preset_episodes
+    dna.script_preset_storyboard = script_preset_storyboard
     if ref_structure:
         dna.reference_structure = ref_structure
 
@@ -672,6 +689,8 @@ def start():
             "project":          project,
             "created_at":       datetime.now().isoformat(),
             "created_at_ts":    time.time(),   # 타임아웃 모니터용 타임스탬프
+            "auto_run":         auto_run,
+            "selected_steps":   selected_steps,
         }
 
     with _queue_lock:

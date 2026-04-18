@@ -82,6 +82,10 @@ class ConceptDNA:
     step_instruction: str = ""                                 # 스텝별 사전 지시 (confirm 시 주입, 스텝 실행 후 초기화)
     pages: int = 30                                            # 목표 제안서 페이지 수
 
+    # 대본 사전 설정 (index.html에서 미리 설정, 0/""이면 런타임 다이얼로그로 확인)
+    script_preset_episodes: int = 0        # 미리 설정된 작성 편수
+    script_preset_storyboard: str = ""     # "auto"|"none"|"cuts:N"
+
     # PPT 생성 옵션 (app.py에서 주입)
     generate_ppt: bool = False                                 # True면 orchestrator PASS 4(PT원고) 포함
 

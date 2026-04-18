@@ -57,10 +57,26 @@ _STEP_TIMEOUT: dict = {
 }
 
 
+def _apply_storyboard_instruction(dna: ConceptDNA, mode: str) -> None:
+    """스토리보드 모드를 step_instruction으로 주입 (스크립터 프롬프트에 반영)."""
+    if mode == "none":
+        dna.step_instruction = (
+            "스토리보드(씬 구성)는 작성하지 말고, 실제 런닝타임에 맞는 완성 대본(나레이션·대사·자막)만 작성하세요."
+        )
+    elif mode.startswith("cuts:"):
+        try:
+            n = int(mode.split(":")[1])
+            dna.step_instruction = f"씬(컷) 수를 편당 {n}개로 제한하세요. 컷 수를 지키되 각 씬은 충분한 분량으로 작성하세요."
+        except (ValueError, IndexError):
+            pass
+    # "auto": 기본값 — step_instruction 변경 없음
+
+
 def run(dna: ConceptDNA, push_event, wait_confirm,
         rfp_file=None, concept=None,
         start_step_key=None, prior_results=None,
-        notify_fn=None):
+        notify_fn=None, auto_run: bool = False,
+        selected_steps=None):
     """
     push_event(dict)          — SSE 이벤트 전송 (non-blocking)
     wait_confirm(step_key)→str — 사용자 입력 대기 (blocking)
@@ -89,6 +105,13 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
 
         # 이번 실행에서 이미 실행한 스텝은 무조건 스킵 (피드백 재실행 방지)
         if step_executed.get(step_key, 0) >= 1:
+            i += 1
+            continue
+
+        # selected_steps 필터: 선택되지 않은 스텝 건너뛰기
+        if selected_steps is not None and step_key not in selected_steps:
+            push_event({"type": "step_skipped", "step": step_key,
+                        "name": step_name + " (선택 제외)"})
             i += 1
             continue
 
@@ -176,24 +199,46 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
             i += 1
             continue
 
-        # script: 대본 생성 전 편수 확인
+        # script: 대본 생성 전 편수·스토리보드 설정
         if step_key == "script":
             ep_count = len(getattr(dna, "episodes", []) or []) or getattr(dna, "quantity", 3) or 3
-            push_event({
-                "type":          "episode_count_needed",
-                "step":          "script",
-                "default_count": min(ep_count, 3),
-                "max_count":     ep_count,
-            })
-            ep_input = wait_confirm("script_episode_count")
-            if ep_input == "__abort__":
-                push_event({"type": "pipeline_aborted", "step": step_key})
-                results["__aborted_at__"] = step_key
-                return results
-            try:
-                _max_ep = max(1, int(str(ep_input).strip()))
-            except (ValueError, TypeError):
+            preset_ep = getattr(dna, "script_preset_episodes", 0)
+            preset_sb = getattr(dna, "script_preset_storyboard", "")
+
+            if auto_run and preset_ep:
+                # 자동 실행 + 사전 설정 편수 사용
+                _max_ep = max(1, min(preset_ep, ep_count))
+                if preset_sb:
+                    _apply_storyboard_instruction(dna, preset_sb)
+                push_event({"type": "log",
+                            "message": f"✓ 대본: {_max_ep}편 / 스토리보드: {preset_sb or 'auto'} 자동 설정"})
+            elif auto_run:
+                # 자동 실행 + 사전 설정 없음 → 기본값
                 _max_ep = min(ep_count, 3)
+                push_event({"type": "log",
+                            "message": f"✓ 대본: {_max_ep}편 (기본) 자동 진행"})
+            else:
+                # 인터랙티브: 다이얼로그 표시
+                push_event({
+                    "type":          "episode_count_needed",
+                    "step":          "script",
+                    "default_count": min(preset_ep or ep_count, 3),
+                    "max_count":     ep_count,
+                    "preset_storyboard": preset_sb or "auto",
+                })
+                ep_input = wait_confirm("script_episode_count")
+                if ep_input == "__abort__":
+                    push_event({"type": "pipeline_aborted", "step": step_key})
+                    results["__aborted_at__"] = step_key
+                    return results
+                # 새 형식: "N|storyboard_mode"  (레거시: 숫자만)
+                ep_parts = str(ep_input).strip().split("|")
+                try:
+                    _max_ep = max(1, int(ep_parts[0]))
+                except (ValueError, TypeError):
+                    _max_ep = min(ep_count, 3)
+                if len(ep_parts) > 1:
+                    _apply_storyboard_instruction(dna, ep_parts[1])
         else:
             _max_ep = 0  # 제한 없음 (scripter 기본값)
 
@@ -341,22 +386,25 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
             except Exception:
                 pass
 
-        # ── 컨펌 요청
-        push_event({
-            "type":        "confirm_needed",
-            "step":        step_key,
-            "name":        step_name,
-            "is_creative": (step_key == "creative" and not concept),
-            "slogans": [
-                {
-                    "text":      s.get("text", str(s)) if isinstance(s, dict) else str(s),
-                    "rationale": (s.get("rationale", "")[:120] if isinstance(s, dict) else ""),
-                }
-                for s in (dna.slogans or [])
-            ] if step_key == "creative" else [],
-        })
-
-        user_input = wait_confirm(step_key)
+        # ── 컨펌 요청 (자동 실행 모드에서는 생략)
+        if auto_run:
+            user_input = "y"
+            push_event({"type": "log", "message": f"✓ {step_name.strip()} 자동 완료"})
+        else:
+            push_event({
+                "type":        "confirm_needed",
+                "step":        step_key,
+                "name":        step_name,
+                "is_creative": (step_key == "creative" and not concept),
+                "slogans": [
+                    {
+                        "text":      s.get("text", str(s)) if isinstance(s, dict) else str(s),
+                        "rationale": (s.get("rationale", "")[:120] if isinstance(s, dict) else ""),
+                    }
+                    for s in (dna.slogans or [])
+                ] if step_key == "creative" else [],
+            })
+            user_input = wait_confirm(step_key)
 
         if user_input == "__abort__":
             push_event({"type": "pipeline_aborted", "step": step_key})

@@ -661,21 +661,34 @@ function showConfirm(ev) {
 
   // 스킵 체인 모드: 이 스텝 실행 여부 선택
   if (ev.is_pre_run) {
-    title.textContent = `${ev.name} — 실행하시겠습니까?`;
+    title.innerHTML = `${esc(ev.name)} — 실행하시겠습니까?`;
     body.innerHTML = `
       <p class="confirm-hint">이 스텝을 실행하거나 건너뜁니다.</p>
       <div class="confirm-row">
         <button class="btn btn-primary" onclick="confirmContinue()">실행 →</button>
-        <button class="btn btn-skip" onclick="confirmSkip()" title="이 스텝을 건너뜁니다">건너뛰기 →</button>
+        <button class="btn btn-skip" onclick="confirmSkip()">건너뛰기 →</button>
       </div>`;
     panel.classList.add('visible');
     panel.scrollIntoView({ behavior: 'smooth', block: 'end' });
     return;
   }
 
-  title.textContent = `${ev.name} — 확인`;
+  // 현재 스텝 정보
+  const stepInfo = STEPS.find(s => s.key === ev.step);
+  const stepNum  = stepInfo ? stepInfo.num : '';
+  const stepLabel = stepInfo ? stepInfo.label : (ev.name || '').trim();
+
+  // 다음 스텝 정보
+  const stepIdx  = stepInfo ? STEPS.indexOf(stepInfo) : -1;
+  const nextStep = (stepIdx >= 0 && stepIdx + 1 < STEPS.length) ? STEPS[stepIdx + 1] : null;
+  const nextNum  = nextStep ? nextStep.num : '';
+  const nextLabel = nextStep ? nextStep.label : '';
+
+  title.innerHTML = `✏️ <strong>STEP ${stepNum} ${esc(stepLabel)}</strong> 수정하기 <span style="font-weight:400;color:#9ca3af;">(선택)</span>`;
 
   let html = '';
+
+  // 슬로건 그리드 (creative 스텝)
   if (ev.is_creative && ev.slogans && ev.slogans.length) {
     html += '<div class="slogans-grid">';
     ev.slogans.forEach((s, i) => {
@@ -685,56 +698,180 @@ function showConfirm(ev) {
       </button>`;
     });
     html += '</div>';
-    html += '<p class="confirm-hint">슬로건을 선택하거나, 수정 방향을 입력 후 계속 진행하세요.</p>';
-  } else {
-    html += '<p class="confirm-hint">수정이 필요하면 내용을 입력하세요. 비워두면 그대로 진행합니다.</p>';
+    html += '<p class="confirm-hint" style="margin-top:8px;">슬로건을 선택하거나, 아래에 수정 방향을 입력 후 재실행하세요.</p>';
   }
-  html += `<div class="confirm-row">
-    <input type="text" id="confirm-input"
-           placeholder="수정 지시 (없으면 비워두고 계속 진행)"
-           onkeydown="if(event.key==='Enter')confirmContinue()">
-    <button class="btn btn-primary" onclick="confirmContinue()">계속 진행 →</button>
-    <button class="btn btn-skip" onclick="confirmSkip()" title="이 스텝을 건너뜁니다">스킵 →</button>
-  </div>
-  <div style="margin-top:10px;">
-    <label style="font-size:12px;color:#6b7280;font-weight:600;display:block;margin-bottom:4px;">
-      다음 스텝 실행 전 특별 지시 <span style="font-weight:400;">(선택 — 다음 스텝 프롬프트에 주입됩니다)</span>
-    </label>
+
+  // 상단 수정 입력창
+  html += `
+  <div style="margin-top:${ev.is_creative ? 10 : 0}px;">
+    <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">
+      결과가 마음에 들지 않으면 수정 요청을 입력하세요. 이 스텝을 다시 실행합니다.
+    </div>
+    <div class="confirm-row" style="flex-wrap:wrap;gap:6px;">
+      <input type="text" id="confirm-input" style="flex:1;min-width:180px;"
+             placeholder="예) 컨셉이 너무 평범해요. 더 임팩트 있게 다시 써주세요."
+             oninput="updateConfirmBtn()"
+             onkeydown="if(event.key==='Enter')confirmContinue()">
+      <button id="btn-confirm-continue" class="btn btn-primary" onclick="confirmContinue()">다음 단계로 진행 →</button>
+      <button class="btn btn-skip" onclick="confirmSkip()">이 단계 스킵</button>
+    </div>
+  </div>`;
+
+  // 하단 다음 스텝 지시 입력창
+  if (nextStep) {
+    html += `
+  <div style="margin-top:14px;">
+    <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:4px;">
+      💡 다음 단계 <strong>STEP ${nextNum} ${esc(nextLabel)}</strong> 사전 지시
+      <span style="font-weight:400;color:#9ca3af;">(선택)</span>
+    </div>
+    <div style="font-size:11px;color:#6b7280;margin-bottom:6px;">
+      다음 스텝에서 특별히 강조할 내용을 미리 입력하세요.
+    </div>
     <textarea id="step-instruction-input" rows="2"
               style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:6px;
                      padding:8px 10px;font-size:13px;color:#374151;resize:vertical;"
-              placeholder="예) 20대 청년층에 초점을 맞춰주세요 / 사례 중심으로 작성해주세요"></textarea>
+              placeholder="예) 20대 타겟을 강하게 의식해서 트렌디하게 작성해주세요."></textarea>
   </div>`;
+  }
 
   body.innerHTML = html;
   panel.classList.add('visible');
   panel.scrollIntoView({ behavior: 'smooth', block: 'end' });
   setTimeout(() => document.getElementById('confirm-input')?.focus(), 100);
 }
+
+function updateConfirmBtn() {
+  const val = (document.getElementById('confirm-input')?.value || '').trim();
+  const btn = document.getElementById('btn-confirm-continue');
+  if (btn) btn.textContent = val ? '수정 후 재실행 ↺' : '다음 단계로 진행 →';
+}
 function hideConfirm() {
   document.getElementById('confirm-panel').classList.remove('visible');
   document.getElementById('confirm-body').innerHTML = '';
 }
+let _scriptEpSelected = 3;  // 선택된 편수 추적
+
 function showEpisodeCountDialog(ev) {
   const panel = document.getElementById('confirm-panel');
   const title = document.getElementById('confirm-title');
   const body  = document.getElementById('confirm-body');
   const def = ev.default_count || 3;
   const max = ev.max_count || 5;
-  title.textContent = 'STEP 5 대본 제작 — 편수 선택';
-  let html = `<p class="confirm-hint">기획된 총 ${max}편 중 생성할 편수를 선택하세요. (기본: ${def}편)</p>`;
-  html += '<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:4px;">';
+  const presetSb = ev.preset_storyboard || 'auto';
+  _scriptEpSelected = def;
+
+  title.innerHTML = '대본 옵션 설정';
+
+  // 질문 1: 편수
+  let html = `
+  <div style="margin-bottom:14px;">
+    <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;">
+      총 ${max}편 중 몇 편을 작성할까요?
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;" id="ep-btn-row">`;
   for (let n = 1; n <= max; n++) {
-    const style = n === def
-      ? 'background:#2563eb;color:#fff;border-color:#2563eb;'
-      : '';
-    html += `<button class="btn btn-secondary" style="min-width:54px;${style}"
-             onclick="hideConfirm();sendConfirm('${n}')">${n}편</button>`;
+    const active = n === def ? 'background:#2563eb;color:#fff;border-color:#2563eb;' : '';
+    html += `<button class="btn btn-secondary" style="min-width:54px;${active}"
+             onclick="selectEpCount(${n}, this)">${n}편</button>`;
   }
-  html += '</div>';
+  html += `</div>
+  </div>`;
+
+  // 질문 2: 스토리보드
+  const sbAuto   = presetSb === 'auto'   ? 'checked' : '';
+  const sbNone   = presetSb === 'none'   ? 'checked' : '';
+  const sbCustom = presetSb.startsWith('cuts:') ? 'checked' : '';
+  const initCuts = sbCustom ? (parseInt(presetSb.split(':')[1]) || 10) : 10;
+
+  html += `
+  <div style="margin-bottom:14px;">
+    <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;">
+      스토리보드 컷 수를 선택하세요:
+    </div>
+    <div style="display:flex;flex-direction:column;gap:8px;font-size:13px;color:#374151;">
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="radio" name="sb-mode" value="auto" ${sbAuto || (!sbNone && !sbCustom ? 'checked' : '')}>
+        자동 (런닝타임 기준 자동 산정)
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="radio" name="sb-mode" value="none" ${sbNone}>
+        대본만 작성 (스토리보드 없음) — 실제 런닝타임 분량 대본 작성
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="radio" name="sb-mode" value="custom" ${sbCustom}
+               onchange="document.getElementById('ep-cuts-input').disabled=false;">
+        편당 컷 수 직접 입력:
+        <input type="number" id="ep-cuts-input" min="1" max="30" value="${initCuts}"
+               ${sbCustom ? '' : 'disabled'}
+               style="width:52px;padding:2px 6px;border:1px solid #d1d5db;border-radius:4px;"
+               oninput="updateCutsWarning()">
+        컷/편 <span style="color:#9ca3af;font-size:11px;">(최대 30컷)</span>
+      </label>
+    </div>
+    <div id="ep-cuts-warning"
+         style="display:none;margin-top:6px;font-size:12px;color:#dc2626;font-weight:500;">
+      ⚠️ 너무 방대한 작업입니다. 편수를 줄이거나 컷 수를 줄여주세요. (권장: 편수 × 컷수 ≤ 50)
+    </div>
+  </div>`;
+
+  // radio change → cuts input enable/disable
+  html += `
+  <div class="confirm-row" style="margin-top:4px;">
+    <button class="btn btn-primary" onclick="submitScriptOptions()">대본 생성 시작 →</button>
+    <button class="btn btn-skip" onclick="hideConfirm();sendConfirm('__abort__')">취소</button>
+  </div>`;
+
   body.innerHTML = html;
+
+  // radio 이벤트 등록
+  body.querySelectorAll('input[name="sb-mode"]').forEach(r => {
+    r.addEventListener('change', () => {
+      const inp = document.getElementById('ep-cuts-input');
+      if (inp) inp.disabled = (r.value !== 'custom');
+      updateCutsWarning();
+    });
+  });
+
   panel.classList.add('visible');
   panel.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function selectEpCount(n, btn) {
+  _scriptEpSelected = n;
+  document.querySelectorAll('#ep-btn-row button').forEach(b => {
+    b.style.background = ''; b.style.color = ''; b.style.borderColor = '';
+  });
+  btn.style.background = '#2563eb'; btn.style.color = '#fff'; btn.style.borderColor = '#2563eb';
+  updateCutsWarning();
+}
+
+function updateCutsWarning() {
+  const warn = document.getElementById('ep-cuts-warning');
+  if (!warn) return;
+  const sel = document.querySelector('input[name="sb-mode"]:checked');
+  if (sel?.value === 'custom') {
+    const cuts = parseInt(document.getElementById('ep-cuts-input')?.value) || 10;
+    warn.style.display = (_scriptEpSelected * cuts > 50) ? '' : 'none';
+  } else {
+    warn.style.display = 'none';
+  }
+}
+
+function submitScriptOptions() {
+  const sel   = document.querySelector('input[name="sb-mode"]:checked');
+  const mode  = sel ? sel.value : 'auto';
+  let sbMode  = mode;
+  if (mode === 'custom') {
+    const cuts = Math.min(30, Math.max(1, parseInt(document.getElementById('ep-cuts-input')?.value) || 10));
+    if (_scriptEpSelected * cuts > 50) {
+      updateCutsWarning();
+      return;
+    }
+    sbMode = `cuts:${cuts}`;
+  }
+  hideConfirm();
+  sendConfirm(`${_scriptEpSelected}|${sbMode}`);
 }
 function confirmContinue() {
   const val         = (document.getElementById('confirm-input')?.value || '').trim();
@@ -974,6 +1111,21 @@ function esc(str) {
                      border-radius:8px;font-size:.9rem;cursor:pointer;">닫기</button>
     </div>
 
+    <!-- Gamma 완료 화면 (PPTX URL 없을 때 폴백) -->
+    <div id="ppt-gamma-done" style="display:none;text-align:center;padding:8px 0;">
+      <div style="font-size:2.8rem;margin-bottom:14px;">🎨</div>
+      <p style="color:#059669;font-weight:700;font-size:1.1rem;margin-bottom:6px;">Gamma PPT 생성 완료!</p>
+      <p style="font-size:.85rem;color:#6b7280;margin-bottom:16px;">아래 링크에서 편집 후 다운로드하세요.</p>
+      <a id="run-gamma-open-url" href="#" target="_blank"
+         style="display:inline-block;padding:10px 22px;background:#7c3aed;color:#fff;
+                border-radius:8px;font-size:.9rem;font-weight:600;text-decoration:none;margin-bottom:12px;">
+        Gamma에서 열기 →
+      </a><br>
+      <button onclick="closePptModal()"
+              style="padding:8px 22px;background:#6b7280;color:#fff;border:none;
+                     border-radius:8px;font-size:.9rem;cursor:pointer;margin-top:8px;">닫기</button>
+    </div>
+
     <!-- 오류 화면 -->
     <div id="ppt-error" style="display:none;text-align:center;padding:8px 0;">
       <div style="font-size:2.2rem;margin-bottom:14px;">❌</div>
@@ -989,7 +1141,7 @@ function esc(str) {
 function openPptModal() {
   const m = document.getElementById('ppt-modal');
   m.style.display = 'flex';
-  ['ppt-progress','ppt-done','ppt-error'].forEach(id =>
+  ['ppt-progress','ppt-done','ppt-gamma-done','ppt-error'].forEach(id =>
     document.getElementById(id).style.display = 'none');
   document.getElementById('ppt-setup').style.display = '';
 }
@@ -1002,6 +1154,7 @@ function startPptGeneration() {
   if (!caseId) { alert('케이스 ID를 찾을 수 없습니다. 잠시 후 다시 시도하세요.'); return; }
   document.getElementById('ppt-setup').style.display    = 'none';
   document.getElementById('ppt-progress').style.display = '';
+  document.getElementById('ppt-progress-msg').textContent = 'PPT 생성 준비 중...';
   fetch('/ppt/start', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -1010,10 +1163,66 @@ function startPptGeneration() {
   .then(r => r.json())
   .then(d => {
     if (!d.ok) throw new Error(d.error || '시작 실패');
-    _listenPpt(d.job_id, pages);
+    if (d.use_gamma) {
+      document.getElementById('ppt-progress-msg').textContent = 'Gamma PPT 생성 중... (예상 1~3분)';
+      _pollPpt(d.job_id);
+    } else {
+      _listenPpt(d.job_id, pages);
+    }
   })
   .catch(err => _pptShowError(err.message));
 }
+
+// ── Gamma 전용: 5초 폴링 ─────────────────────────────
+function _pollPpt(jobId) {
+  let fakeProgress = 0;
+  const progBar = document.getElementById('ppt-progress-bar');
+  const progPct = document.getElementById('ppt-progress-pct');
+  const progMsg = document.getElementById('ppt-progress-msg');
+  progBar.style.width = '0%';
+  const fakeTimer = setInterval(() => {
+    if (fakeProgress < 90) {
+      fakeProgress += Math.random() * 3;
+      const p = Math.min(fakeProgress, 90);
+      progBar.style.width = p + '%';
+      progPct.textContent = Math.round(p) + '%';
+    }
+  }, 2000);
+
+  function poll() {
+    fetch(`/ppt/status/${jobId}`)
+      .then(r => r.json())
+      .then(d => {
+        if (!d.ok) { clearInterval(fakeTimer); _pptShowError(d.error || '오류'); return; }
+        if (d.progress_msg) progMsg.textContent = d.progress_msg;
+        if (d.status === 'done') {
+          clearInterval(fakeTimer);
+          progBar.style.width = '100%'; progPct.textContent = '100%';
+          document.getElementById('ppt-progress').style.display = 'none';
+          if (d.download_url) {
+            document.getElementById('ppt-done').style.display = '';
+            const a = document.createElement('a'); a.href = d.download_url; a.click();
+            showToast('📊 PPT 다운로드 완료', 'complete');
+          } else if (d.gamma_url) {
+            document.getElementById('ppt-gamma-done').style.display = '';
+            const link = document.getElementById('run-gamma-open-url');
+            if (link) link.href = d.gamma_url;
+          } else {
+            document.getElementById('ppt-done').style.display = '';
+          }
+        } else if (d.status === 'error') {
+          clearInterval(fakeTimer);
+          _pptShowError(d.error || '생성 중 오류가 발생했습니다.');
+        } else {
+          setTimeout(poll, 5000);
+        }
+      })
+      .catch(() => { setTimeout(poll, 5000); });
+  }
+  poll();
+}
+
+// ── python-pptx 전용: SSE 스트리밍 ──────────────────
 function _listenPpt(jobId, totalPages) {
   const es = new EventSource(`/ppt/stream/${jobId}`);
   es.onmessage = function(e) {
@@ -1041,6 +1250,7 @@ function _listenPpt(jobId, totalPages) {
   };
   es.onerror = function() { es.close(); _pptShowError('연결 오류가 발생했습니다.'); };
 }
+
 function _pptShowError(msg) {
   document.getElementById('ppt-progress').style.display = 'none';
   document.getElementById('ppt-error').style.display    = '';

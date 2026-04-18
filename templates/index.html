@@ -147,12 +147,181 @@
         </div>
       </div>
 
-      <div style="margin-top:24px; text-align:right;">
+      <!-- 고급 설정 -->
+      <div style="margin-top:20px;border-top:1px solid #e5e7eb;padding-top:16px;">
+        <button type="button" onclick="toggleAdvanced()"
+                style="background:none;border:none;cursor:pointer;font-size:.85rem;
+                       color:#6b7280;font-weight:600;display:flex;align-items:center;gap:6px;padding:0;">
+          <span id="adv-arrow">▶</span> 고급 설정
+        </button>
+        <div id="advanced-panel" style="display:none;margin-top:14px;">
+
+          <!-- 스텝 선택 -->
+          <div style="margin-bottom:16px;">
+            <div style="font-size:.85rem;font-weight:600;color:#374151;margin-bottom:8px;">
+              포함할 스텝을 선택하세요:
+              <button type="button" onclick="setAllSteps(true)"
+                      style="margin-left:8px;font-size:.75rem;color:#2563eb;background:none;border:none;cursor:pointer;">전체 선택</button>
+              <button type="button" onclick="setAllSteps(false)"
+                      style="font-size:.75rem;color:#6b7280;background:none;border:none;cursor:pointer;">전체 해제</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+              {% set step_defs = [
+                ('rfp_analysis',   'STEP 0: RFP 분석'),
+                ('research',       'STEP 1: 리서치'),
+                ('narrative',      'STEP 1.5: 내러티브'),
+                ('strategy',       'STEP 2: 전략'),
+                ('creative',       'STEP 3: 컨셉'),
+                ('plan',           'STEP 4: 기획'),
+                ('script',         'STEP 5: 대본'),
+                ('marketing',      'STEP 6: 마케팅'),
+                ('final_proposal', 'STEP 7: 최종검수'),
+              ] %}
+              {% for key, label in step_defs %}
+              <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;color:#374151;cursor:pointer;">
+                <input type="checkbox" name="selected_steps" value="{{ key }}"
+                       class="step-chk" checked
+                       {% if key == 'script' %}onchange="toggleScriptOptions(this.checked)"{% endif %}>
+                {{ label }}
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+
+          <!-- 대본 옵션 -->
+          <div id="script-options" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:16px;">
+            <div style="font-size:.85rem;font-weight:600;color:#374151;margin-bottom:10px;">대본 작성 방식:</div>
+            <div style="display:flex;flex-direction:column;gap:8px;font-size:.82rem;color:#374151;">
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="radio" name="script_preset_storyboard" value="auto" checked>
+                스토리보드 자동 (런닝타임 기준 컷 수 자동 산정)
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="radio" name="script_preset_storyboard" value="none">
+                대본만 작성 (스토리보드 없음) — 실제 런닝타임 분량 대본 작성
+              </label>
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+                <input type="radio" name="script_preset_storyboard" value="custom"
+                       onchange="toggleCustomCuts(true)">
+                편당 컷 수 직접 입력:
+                <input type="number" name="_script_cuts_input" id="script-cuts-input"
+                       min="1" max="30" value="10"
+                       style="width:52px;padding:2px 6px;border:1px solid #d1d5db;border-radius:4px;"
+                       disabled oninput="onCutsInput()">
+                컷/편
+              </label>
+            </div>
+            <div style="margin-top:10px;display:flex;align-items:center;gap:10px;font-size:.82rem;color:#374151;">
+              <label>작성할 편 수:</label>
+              <input type="number" name="script_preset_episodes" id="script-preset-ep"
+                     min="1" max="10" value="0"
+                     style="width:52px;padding:2px 6px;border:1px solid #d1d5db;border-radius:4px;"
+                     placeholder="전체">
+              <span style="color:#6b7280;">/ 전체 N편 (0=런타임 확인)</span>
+            </div>
+            <input type="hidden" name="script_preset_storyboard" id="script-storyboard-hidden" value="auto">
+            <div id="cuts-over-warning"
+                 style="display:none;margin-top:8px;font-size:.8rem;color:#dc2626;font-weight:500;">
+              ⚠️ 너무 방대한 작업입니다. 편수를 줄이거나 컷 수를 줄여주세요. (권장: 편수 × 컷수 ≤ 50)
+            </div>
+          </div>
+
+          <!-- 실행 모드 -->
+          <div style="margin-bottom:8px;">
+            <div style="font-size:.85rem;font-weight:600;color:#374151;margin-bottom:8px;">실행 모드:</div>
+            <div style="display:flex;flex-direction:column;gap:8px;font-size:.82rem;color:#374151;">
+              <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
+                <input type="radio" name="run_mode" value="interactive" checked style="margin-top:2px;">
+                <div>
+                  <strong>인터랙티브</strong> — 각 스텝 완료 후 결과 확인 및 수정 가능
+                </div>
+              </label>
+              <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
+                <input type="radio" name="run_mode" value="auto" style="margin-top:2px;">
+                <div>
+                  <strong>자동 실행</strong> — 선택한 스텝 전부 자동으로 완료까지 진행
+                  <div style="color:#6b7280;font-size:.78rem;">각 스텝 완료 시 ✅ 표시, 전체 완료 후 알림</div>
+                </div>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:20px; text-align:right;">
         <button type="submit" class="btn btn-primary btn-lg">
           제안서 생성 시작 →
         </button>
       </div>
     </form>
+
+    <script>
+    function toggleAdvanced() {
+      const p = document.getElementById('advanced-panel');
+      const a = document.getElementById('adv-arrow');
+      const open = p.style.display === 'none';
+      p.style.display = open ? 'block' : 'none';
+      a.textContent   = open ? '▼' : '▶';
+    }
+    function setAllSteps(checked) {
+      document.querySelectorAll('.step-chk').forEach(c => { c.checked = checked; });
+      toggleScriptOptions(checked ? document.querySelector('.step-chk[value="script"]').checked : false);
+    }
+    function toggleScriptOptions(show) {
+      document.getElementById('script-options').style.display = show ? '' : 'none';
+    }
+    function toggleCustomCuts(enable) {
+      const inp = document.getElementById('script-cuts-input');
+      if (inp) inp.disabled = !enable;
+      // 모든 radio에 onchange 추가
+      document.querySelectorAll('input[name="script_preset_storyboard"]').forEach(r => {
+        if (r.value !== 'custom') r.addEventListener('change', () => {
+          inp.disabled = true;
+          updateStoryboardHidden();
+          checkCutsWarning();
+        });
+      });
+      updateStoryboardHidden();
+      checkCutsWarning();
+    }
+    function onCutsInput() {
+      updateStoryboardHidden();
+      checkCutsWarning();
+    }
+    function updateStoryboardHidden() {
+      const sel = document.querySelector('input[name="script_preset_storyboard"]:checked');
+      const hidden = document.getElementById('script-storyboard-hidden');
+      if (!sel || !hidden) return;
+      if (sel.value === 'custom') {
+        const cuts = parseInt(document.getElementById('script-cuts-input')?.value) || 10;
+        hidden.value = `cuts:${cuts}`;
+      } else {
+        hidden.value = sel.value;
+      }
+    }
+    function checkCutsWarning() {
+      const ep = parseInt(document.getElementById('script-preset-ep')?.value) || 0;
+      const sel = document.querySelector('input[name="script_preset_storyboard"]:checked');
+      const warn = document.getElementById('cuts-over-warning');
+      if (!warn) return;
+      if (sel?.value === 'custom' && ep > 0) {
+        const cuts = parseInt(document.getElementById('script-cuts-input')?.value) || 10;
+        warn.style.display = (ep * cuts > 50) ? '' : 'none';
+      } else {
+        warn.style.display = 'none';
+      }
+    }
+    // radio change 이벤트 일괄 등록
+    document.querySelectorAll('input[name="script_preset_storyboard"]').forEach(r => {
+      r.addEventListener('change', () => {
+        const inp = document.getElementById('script-cuts-input');
+        if (inp) inp.disabled = (r.value !== 'custom');
+        updateStoryboardHidden();
+        checkCutsWarning();
+      });
+    });
+    document.getElementById('script-preset-ep')?.addEventListener('input', checkCutsWarning);
+    </script>
   </div>
 
   <!-- 팁 -->
