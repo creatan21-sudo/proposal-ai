@@ -958,79 +958,370 @@ def _tmpl_box(slide, left_cm, top_cm, w_cm, h_cm, text, font, size_pt,
     return tx
 
 
-def _build_template_slides(detail: dict) -> list:
-    """detail dict → 슬라이드 데이터 목록."""
-    case = detail.get("case", {})
+def _build_template_slides(detail: dict, target_pages: int = 20) -> list:
+    """detail dict → 슬라이드 데이터 목록 (15~30장 목표).
+
+    detail 구조: {"case": {...}, "steps": {"strategy": {...}, "creative": {...}, ...}}
+    """
+    case  = detail.get("case", {})
+    steps = detail.get("steps", {})
+
+    # steps가 없는 경우 detail 자체를 steps로 폴백 (레거시 호환)
+    if not steps:
+        steps = detail
+
+    def _s(key): return steps.get(key) or {}
+    def _sv(key, *fields):
+        d = _s(key)
+        for f in fields:
+            v = d.get(f)
+            if v:
+                return str(v)
+        return ""
+
     slides = []
 
-    # 표지
+    # ── 1. 표지 ──────────────────────────────────────────────
     slides.append({
-        "type": "cover",
+        "type":  "cover",
         "title": case.get("project_name", "제안서"),
         "sub":   case.get("client_name", ""),
         "date":  datetime.now().strftime("%Y년 %m월"),
     })
 
-    # 전략
-    s = detail.get("strategy") or {}
-    s_items = []
-    for k, f in [("핵심 문제", "core_problem"), ("현황 진단", "crisis_statement"),
-                 ("해결 방향", "solution_direction")]:
-        if s.get(f):
-            s_items.append((k, str(s[f])[:250]))
-    if s_items:
-        slides.append({"type": "section", "title": "전략", "items": s_items})
+    # ── 2. 목차 ──────────────────────────────────────────────
+    toc_sections = []
+    if _s("rfp_analysis"):
+        toc_sections.append("공모 개요 분석")
+    if _s("research"):
+        toc_sections.append("리서치 & 현황 분석")
+    if _s("strategy"):
+        toc_sections.append("전략 방향 수립")
+    if _s("creative"):
+        toc_sections.append("핵심 컨셉 & 슬로건")
+    if _s("plan"):
+        toc_sections.append("편별 실행 기획")
+    if _s("script"):
+        toc_sections.append("대본 & 장면 구성")
+    if _s("marketing"):
+        toc_sections.append("마케팅 & 유통 전략")
+    if _s("final_proposal"):
+        toc_sections.append("예상 Q&A")
+    toc_sections.append("감사합니다")
 
-    # 기대 효과
-    efx = s.get("expected_effects") or []
-    if isinstance(efx, list) and efx:
-        slides.append({
-            "type":  "bullets",
-            "title": "기대 효과",
-            "items": [str(e)[:150] for e in efx[:6]],
-        })
+    slides.append({
+        "type":  "toc",
+        "title": "목차",
+        "items": toc_sections,
+    })
 
-    # 컨셉
-    c = detail.get("creative") or {}
-    c_items = []
-    for k, f in [("핵심 컨셉", "concept"), ("슬로건", "confirmed_slogan"),
-                 ("톤앤매너", "tone_description")]:
-        if c.get(f):
-            c_items.append((k, str(c[f])[:250]))
-    if c_items:
-        slides.append({"type": "section", "title": "컨셉", "items": c_items})
+    # ── 3. 공모 개요 분석 ────────────────────────────────────
+    rfp = _s("rfp_analysis")
+    if rfp:
+        items = []
+        for label, field in [
+            ("사업 목적", "purpose"), ("사업 개요", "summary"), ("예산 규모", "budget"),
+            ("핵심 요구 사항", "key_requirements"), ("금지 사항", "forbidden_notes"),
+        ]:
+            v = rfp.get(field)
+            if v:
+                text = ", ".join(str(x) for x in v) if isinstance(v, list) else str(v)
+                items.append((label, text[:300]))
 
-    # 편별 기획
-    plan = detail.get("plan") or {}
-    eps = plan.get("episodes") or []
-    if isinstance(eps, list) and eps:
-        ep_items = []
-        for ep in eps[:6]:
-            if isinstance(ep, dict):
+        eval_items = rfp.get("evaluation_items") or []
+        if eval_items:
+            eval_text = "\n".join(
+                f"• {e.get('item', str(e))} ({e.get('score', '')}점)"
+                if isinstance(e, dict) else f"• {e}"
+                for e in eval_items[:8]
+            )
+            items.append(("평가 배점표", eval_text[:400]))
+
+        _append_section_chunks(slides, "공모 개요 분석", items, max_per_slide=3)
+
+    # ── 4. 리서치 & 현황 분석 ────────────────────────────────
+    res = _s("research")
+    if res:
+        items = []
+        for label, field in [
+            ("시장 현황", "market_overview"), ("경쟁 분석", "competitor_analysis"),
+            ("최근 이슈", "recent_issues"), ("유사 사례", "similar_cases"),
+            ("타깃 인사이트", "target_insight"), ("핵심 기회", "key_opportunity"),
+        ]:
+            v = res.get(field)
+            if v:
+                if isinstance(v, list):
+                    text = "\n".join(f"• {str(x)[:150]}" for x in v[:5])
+                else:
+                    text = str(v)[:400]
+                items.append((label, text))
+
+        if items:
+            _append_section_chunks(slides, "리서치 & 현황 분석", items, max_per_slide=2)
+
+    # ── 5. 전략 방향 ─────────────────────────────────────────
+    strat = _s("strategy")
+    if strat:
+        items = []
+        for label, field in [
+            ("핵심 문제 정의", "core_problem"),
+            ("위기 제시", "crisis_statement"),
+            ("현황 진단", "current_situation"),
+            ("해결 방향", "solution_direction"),
+            ("전략 요약", "strategy_summary"),
+        ]:
+            v = strat.get(field)
+            if v:
+                items.append((label, str(v)[:350]))
+
+        efx = strat.get("expected_effects") or []
+        if isinstance(efx, list) and efx:
+            items.append(("기대 효과", "\n".join(
+                f"• {str(e)[:120]}" for e in efx[:6]
+            )))
+
+        persu = strat.get("persuasion_structure") or []
+        if isinstance(persu, list) and persu:
+            items.append(("설득 구조", "\n".join(
+                f"• {str(p)[:120]}" for p in persu[:5]
+            )))
+
+        _append_section_chunks(slides, "전략 방향 수립", items, max_per_slide=2)
+
+    # ── 6. 핵심 컨셉 & 슬로건 ───────────────────────────────
+    cre = _s("creative")
+    if cre:
+        # 컨셉 메인 슬라이드
+        items = []
+        for label, field in [
+            ("핵심 컨셉", "concept"),
+            ("컨셉 설명", "concept_description"),
+            ("대표 슬로건", "confirmed_slogan"),
+            ("톤앤매너", "tone_description"),
+            ("비주얼 방향", "visual_direction"),
+        ]:
+            v = cre.get(field)
+            if v:
+                items.append((label, str(v)[:350]))
+        _append_section_chunks(slides, "핵심 컨셉 & 슬로건", items, max_per_slide=2)
+
+        # 슬로건 후보 슬라이드 (있을 경우)
+        slogans = cre.get("slogans") or []
+        if slogans:
+            sl_items = []
+            for i, s in enumerate(slogans[:6]):
+                if isinstance(s, dict):
+                    text = s.get("text", s.get("slogan", str(s)))
+                    rationale = s.get("rationale", s.get("reason", ""))
+                    sl_items.append((f"슬로건 {i+1}: {text}", str(rationale)[:200]))
+                else:
+                    sl_items.append((f"슬로건 {i+1}", str(s)[:200]))
+            if sl_items:
+                slides.append({"type": "section", "title": "슬로건 후보", "items": sl_items})
+
+        # 감성 키워드
+        kws = cre.get("tone_keywords") or []
+        if kws:
+            slides.append({
+                "type": "keywords",
+                "title": "감성 키워드 & 톤앤매너",
+                "keywords": [str(k) for k in kws[:12]],
+            })
+
+    # ── 7. 편별 실행 기획 ────────────────────────────────────
+    plan = _s("plan")
+    if plan:
+        eps = plan.get("episodes") or []
+        if isinstance(eps, list) and eps:
+            # 편 목록 개요 슬라이드
+            ep_overview = []
+            for ep in eps[:8]:
+                if isinstance(ep, dict):
+                    num   = ep.get("episode_number", ep.get("ep_num", ""))
+                    title = ep.get("title", "")
+                    msg   = ep.get("core_message", ep.get("key_message", ep.get("message", "")))
+                    ep_overview.append((f"{num}편. {title}".strip(". "), str(msg)[:200]))
+            if ep_overview:
+                slides.append({"type": "section", "title": "편별 실행 기획 개요", "items": ep_overview})
+
+            # 편당 상세 슬라이드 (최대 6편)
+            for ep in eps[:6]:
+                if not isinstance(ep, dict):
+                    continue
                 num   = ep.get("episode_number", ep.get("ep_num", ""))
                 title = ep.get("title", "")
-                msg   = ep.get("core_message", ep.get("key_message", ""))[:120]
-                ep_items.append((f"{num}편. {title}".strip(". "), msg))
-        if ep_items:
-            slides.append({"type": "section", "title": "편별 기획", "items": ep_items})
+                items = []
+                for label, field in [
+                    ("핵심 메시지", "core_message"), ("key_message", "key_message"),
+                    ("주요 장면", "key_scene"), ("제작 방향", "production_direction"),
+                    ("타깃 반응", "target_response"),
+                ]:
+                    v = ep.get(field)
+                    if v:
+                        items.append((label, str(v)[:300]))
+                        break  # 핵심 메시지는 하나만
+                for label, field in [
+                    ("주요 장면", "key_scene"), ("제작 방향", "production_direction"),
+                    ("타깃 반응", "target_response"), ("예산", "budget"),
+                ]:
+                    v = ep.get(field)
+                    if v:
+                        items.append((label, str(v)[:300]))
+                if items:
+                    slides.append({
+                        "type": "section",
+                        "title": f"{num}편. {title}".strip(". "),
+                        "items": items,
+                    })
 
-    # 마케팅
-    m = detail.get("marketing") or {}
-    m_items = []
-    for k, f in [("유튜브 전략", "youtube_strategy"), ("KPI 목표", "kpi_targets")]:
-        v = m.get(f)
-        if v:
-            m_items.append((k, str(v)[:200] if not isinstance(v, str) else v[:200]))
-    if m_items:
-        slides.append({"type": "section", "title": "마케팅 전략", "items": m_items})
+        # 제작 일정
+        schedule = plan.get("production_schedule") or []
+        if isinstance(schedule, list) and schedule:
+            sch_items = []
+            for phase in schedule[:8]:
+                if isinstance(phase, dict):
+                    ph = phase.get("phase", phase.get("stage", phase.get("step", "")))
+                    pd = phase.get("period", phase.get("duration", ""))
+                    task = phase.get("tasks", phase.get("work", phase.get("description", "")))
+                    sch_items.append((f"{ph}  [{pd}]".strip("  []"), str(task)[:200]))
+                else:
+                    sch_items.append(("단계", str(phase)[:200]))
+            if sch_items:
+                slides.append({"type": "section", "title": "제작 일정", "items": sch_items})
 
-    # 마무리
+        # 예산 계획
+        budget = plan.get("budget_plan") or {}
+        if isinstance(budget, dict) and budget:
+            budget_items_raw = budget.get("items", budget.get("breakdown", []))
+            if isinstance(budget_items_raw, list) and budget_items_raw:
+                b_items = []
+                for item in budget_items_raw[:8]:
+                    if isinstance(item, dict):
+                        cat = item.get("category", item.get("name", ""))
+                        amt = item.get("amount", "")
+                        note = item.get("note", "")
+                        b_items.append((str(cat), f"{amt}  {note}".strip()))
+                if b_items:
+                    slides.append({"type": "section", "title": "예산 계획", "items": b_items})
+
+    # ── 8. 대본 개요 ─────────────────────────────────────────
+    scripts = steps.get("script") or []
+    if isinstance(scripts, list) and scripts:
+        for sc_row in scripts[:3]:
+            ep_num = sc_row.get("episode_number", "")
+            script_data = sc_row.get("script") or {}
+            scenes = script_data.get("scenes", [])
+            ep_title = script_data.get("title", sc_row.get("title", ""))
+
+            if scenes:
+                sc_items = []
+                for sc in scenes[:6]:
+                    if isinstance(sc, dict):
+                        scene_no = sc.get("scene_no", sc.get("num", ""))
+                        loc = sc.get("location", sc.get("place", sc.get("setting", "")))
+                        narr = sc.get("narration", sc.get("dialogue", sc.get("script", "")))
+                        sc_items.append((
+                            f"씬 {scene_no}  {loc}".strip(),
+                            str(narr)[:250],
+                        ))
+                if sc_items:
+                    label = f"{ep_num}편 대본 구성"
+                    if ep_title:
+                        label += f" — {ep_title}"
+                    slides.append({"type": "section", "title": label, "items": sc_items})
+            else:
+                # scenes 없으면 full_script 일부라도
+                full = script_data.get("full_script", sc_row.get("full_text", ""))
+                if full:
+                    slides.append({
+                        "type": "section",
+                        "title": f"{ep_num}편 대본",
+                        "items": [("대본", str(full)[:500])],
+                    })
+
+    # ── 9. 마케팅 & 유통 전략 ───────────────────────────────
+    mkt = _s("marketing")
+    if mkt:
+        m_items = []
+        for label, field in [
+            ("유튜브 전략", "youtube_strategy"),
+            ("SNS 전략", "sns_strategy"),
+            ("인플루언서 전략", "influencer_strategy"),
+            ("배포 플랫폼", "platforms"),
+            ("KPI 목표", "kpi"),
+            ("마케팅 예산", "marketing_budget"),
+        ]:
+            v = mkt.get(field)
+            if v:
+                if isinstance(v, list):
+                    text = "\n".join(f"• {str(x)[:120]}" for x in v[:5])
+                elif isinstance(v, dict):
+                    text = "\n".join(f"• {k}: {str(val)[:80]}"
+                                     for k, val in list(v.items())[:5])
+                else:
+                    text = str(v)[:400]
+                m_items.append((label, text))
+
+        _append_section_chunks(slides, "마케팅 & 유통 전략", m_items, max_per_slide=2)
+
+    # ── 10. 예상 Q&A ─────────────────────────────────────────
+    final = _s("final_proposal")
+    if final:
+        qa_prep = final.get("qa_prep") or []
+        if isinstance(qa_prep, list) and qa_prep:
+            qa_items = []
+            for qa in qa_prep[:8]:
+                if isinstance(qa, dict):
+                    q = qa.get("question", qa.get("q", ""))
+                    a = qa.get("answer", qa.get("a", ""))
+                    if q:
+                        qa_items.append((f"Q. {q[:120]}", str(a)[:300]))
+            if qa_items:
+                _append_section_chunks(slides, "예상 Q&A", qa_items, max_per_slide=3)
+
+        # 회사 소개
+        company = final.get("company_profile") or {}
+        if isinstance(company, dict) and company:
+            c_items = []
+            for label, field in [
+                ("회사 소개", "intro"),
+                ("주요 실적", "achievements"),
+                ("핵심 인력", "key_personnel"),
+            ]:
+                v = company.get(field)
+                if v:
+                    if isinstance(v, list):
+                        text = "\n".join(f"• {str(x)[:120]}" for x in v[:5])
+                    else:
+                        text = str(v)[:350]
+                    c_items.append((label, text))
+            if c_items:
+                slides.append({"type": "section", "title": "회사 소개", "items": c_items})
+
+    # ── 11. 종료 ─────────────────────────────────────────────
     slides.append({
-        "type": "end",
+        "type":  "end",
         "title": "감사합니다",
         "sub":   case.get("client_name", ""),
     })
+
+    print(f"  [Template] 슬라이드 {len(slides)}장 구성 (target={target_pages})")
     return slides
+
+
+def _append_section_chunks(slides: list, title: str, items: list,
+                             max_per_slide: int = 3):
+    """items를 max_per_slide 단위로 나눠 여러 슬라이드로 분할."""
+    if not items:
+        return
+    for i in range(0, len(items), max_per_slide):
+        chunk = items[i:i + max_per_slide]
+        suffix = f" ({i // max_per_slide + 1})" if len(items) > max_per_slide else ""
+        slides.append({
+            "type":  "section",
+            "title": title + suffix,
+            "items": chunk,
+        })
 
 
 def generate_from_template(detail: dict, template_bytes: bytes,
@@ -1074,7 +1365,7 @@ def generate_from_template(detail: dict, template_bytes: bytes,
           f"font={sty['tf']}/{sty['bf']}")
 
     _prog("슬라이드 내용 구성 중...", 2, 5)
-    slides_data = _build_template_slides(detail)
+    slides_data = _build_template_slides(detail, target_pages=pages)
 
     _prog("PPT 파일 생성 중...", 3, 5)
     prs = Presentation()
@@ -1082,70 +1373,111 @@ def generate_from_template(detail: dict, template_bytes: bytes,
     prs.slide_height = _SLIDE_H
     blank = prs.slide_layouts[6]
 
-    SW = _SLIDE_W.cm   # 슬라이드 너비(cm)
+    SW = _SLIDE_W.cm
     SH = _SLIDE_H.cm
 
-    for sdata in slides_data:
+    def _hdr_bar(sl, title):
+        """상단 헤더 바 + 제목 텍스트."""
+        h = sl.shapes.add_shape(1, Cm(0), Cm(0), Cm(SW), Cm(2.4))
+        h.fill.solid(); h.fill.fore_color.rgb = _t_rgb(sty["hd"])
+        h.line.fill.background()
+        _tmpl_box(sl, 1.5, 0.4, SW - 3, 1.7, title,
+                  sty["tf"], max(sty["ts"], 14), bold=True, color=sty["ht"])
+
+    for idx, sdata in enumerate(slides_data):
         sl = prs.slides.add_slide(blank)
         st = sdata["type"]
         _template_bg(sl, sty["bg"])
 
         if st == "cover":
-            # 상단 색상 바
-            hdr = sl.shapes.add_shape(1, Cm(0), Cm(0), Cm(SW), Cm(7))
+            # 상단 2/5 색상 블록
+            hdr = sl.shapes.add_shape(1, Cm(0), Cm(0), Cm(SW), Cm(SH * 0.55))
             hdr.fill.solid(); hdr.fill.fore_color.rgb = _t_rgb(sty["hd"])
             hdr.line.fill.background()
-            # 제목
-            _tmpl_box(sl, 2.5, 1.5, SW - 5, 4, sdata["title"],
-                      sty["tf"], min(sty["ts"] + 6, 36), bold=True, color=sty["ht"])
-            # 발주처
-            _tmpl_box(sl, 2.5, 7.5, SW - 5, 2, sdata["sub"],
-                      sty["bf"], sty["bs"] + 2, color=sty["bd"])
-            # 날짜
-            _tmpl_box(sl, 2.5, 9.5, SW - 5, 1.5, sdata["date"],
-                      sty["bf"], sty["bs"], color=sty["bd"])
+            _tmpl_box(sl, 2.0, 1.2, SW - 4, SH * 0.35,
+                      sdata["title"], sty["tf"],
+                      min(sty["ts"] + 8, 38), bold=True, color=sty["ht"], wrap=True)
+            _tmpl_box(sl, 2.0, SH * 0.55 + 0.6, SW - 4, 1.6,
+                      sdata["sub"], sty["bf"], sty["bs"] + 3, color=sty["bd"])
+            _tmpl_box(sl, 2.0, SH * 0.55 + 2.4, SW - 4, 1.2,
+                      sdata["date"], sty["bf"], sty["bs"], color=sty["bd"])
+
+        elif st == "toc":
+            _hdr_bar(sl, sdata["title"])
+            items = sdata.get("items", [])
+            n = max(len(items), 1)
+            row_h = (SH - 3.0) / n
+            y = 2.8
+            for i, sec in enumerate(items):
+                num_box = sl.shapes.add_shape(1, Cm(1.5), Cm(y), Cm(1.0), Cm(row_h * 0.7))
+                num_box.fill.solid(); num_box.fill.fore_color.rgb = _t_rgb(sty["ac"])
+                num_box.line.fill.background()
+                _tmpl_box(sl, 1.5, y, Cm(1.0).cm, row_h * 0.7, str(i + 1).zfill(2),
+                          sty["bf"], sty["bs"], bold=True, color=sty["ht"], align=PP_ALIGN.CENTER)
+                _tmpl_box(sl, 3.2, y + 0.05, SW - 5, row_h * 0.7,
+                          sec, sty["bf"], sty["bs"] + 1, color=sty["bd"])
+                y += row_h
 
         elif st == "end":
             _template_bg(sl, sty["hd"])
-            _tmpl_box(sl, 0, SH / 2 - 2.5, SW, 4, sdata["title"],
-                      sty["tf"], 36, bold=True, color=sty["ht"], align=PP_ALIGN.CENTER)
+            _tmpl_box(sl, 0, SH / 2 - 3, SW, 4.5,
+                      sdata["title"], sty["tf"], 40,
+                      bold=True, color=sty["ht"], align=PP_ALIGN.CENTER)
             if sdata.get("sub"):
-                _tmpl_box(sl, 0, SH / 2 + 1.5, SW, 2, sdata["sub"],
-                          sty["bf"], sty["bs"] + 2, color=sty["ht"], align=PP_ALIGN.CENTER)
+                _tmpl_box(sl, 0, SH / 2 + 1.8, SW, 2,
+                          sdata["sub"], sty["bf"], sty["bs"] + 3,
+                          color=sty["ht"], align=PP_ALIGN.CENTER)
 
         elif st == "section":
-            # 헤더 바
-            hdr = sl.shapes.add_shape(1, Cm(0), Cm(0), Cm(SW), Cm(2.2))
-            hdr.fill.solid(); hdr.fill.fore_color.rgb = _t_rgb(sty["hd"])
-            hdr.line.fill.background()
-            _tmpl_box(sl, 1.5, 0.35, SW - 3, 1.6, sdata["title"],
-                      sty["tf"], sty["ts"], bold=True, color=sty["ht"])
-            # 항목
+            _hdr_bar(sl, sdata["title"])
             items = sdata.get("items", [])
             n = max(len(items), 1)
-            row_h = (SH - 2.8) / n
-            y = 2.6
+            avail_h = SH - 3.0
+            row_h = avail_h / n
+            y = 2.8
             for label, content in items:
-                _tmpl_box(sl, 1.5, y, SW - 3, 0.9, label,
-                          sty["bf"], sty["bs"], bold=True, color=sty["ac"])
-                _tmpl_box(sl, 1.5, y + 0.9, SW - 3, max(row_h - 1.0, 1.2),
+                label_h = 0.85
+                content_h = max(row_h - label_h - 0.2, 1.0)
+                # 라벨 (강조색 배경)
+                lb = sl.shapes.add_shape(1, Cm(1.5), Cm(y), Cm(SW - 3), Cm(label_h))
+                lb.fill.solid(); lb.fill.fore_color.rgb = _t_rgb(sty["ac"])
+                lb.line.fill.background()
+                _tmpl_box(sl, 1.6, y + 0.07, SW - 3.2, label_h - 0.14,
+                          label, sty["bf"], sty["bs"],
+                          bold=True, color=sty["ht"])
+                # 내용
+                _tmpl_box(sl, 1.5, y + label_h + 0.1, SW - 3, content_h,
                           content, sty["bf"], sty["bs"], color=sty["bd"], wrap=True)
                 y += row_h
 
         elif st == "bullets":
-            hdr = sl.shapes.add_shape(1, Cm(0), Cm(0), Cm(SW), Cm(2.2))
-            hdr.fill.solid(); hdr.fill.fore_color.rgb = _t_rgb(sty["hd"])
-            hdr.line.fill.background()
-            _tmpl_box(sl, 1.5, 0.35, SW - 3, 1.6, sdata["title"],
-                      sty["tf"], sty["ts"], bold=True, color=sty["ht"])
+            _hdr_bar(sl, sdata["title"])
             items = sdata.get("items", [])
             n = max(len(items), 1)
-            row_h = (SH - 2.8) / n
-            y = 2.6
+            row_h = (SH - 3.0) / n
+            y = 2.8
             for item in items:
-                _tmpl_box(sl, 1.5, y, SW - 3, row_h, f"• {item}",
-                          sty["bf"], sty["bs"], color=sty["bd"], wrap=True)
+                _tmpl_box(sl, 1.5, y, SW - 3, row_h,
+                          f"• {item}", sty["bf"], sty["bs"],
+                          color=sty["bd"], wrap=True)
                 y += row_h
+
+        elif st == "keywords":
+            _hdr_bar(sl, sdata["title"])
+            keywords = sdata.get("keywords", [])
+            cols = 4
+            kw_w = (SW - 3.0) / cols
+            for i, kw in enumerate(keywords[:12]):
+                col = i % cols
+                row = i // cols
+                kx = 1.5 + col * kw_w
+                ky = 3.0 + row * 2.2
+                box = sl.shapes.add_shape(1, Cm(kx), Cm(ky), Cm(kw_w - 0.3), Cm(1.7))
+                box.fill.solid(); box.fill.fore_color.rgb = _t_rgb(sty["hd"])
+                box.line.fill.background()
+                _tmpl_box(sl, kx, ky, kw_w - 0.3, 1.7,
+                          str(kw), sty["bf"], sty["bs"] + 1,
+                          color=sty["ht"], align=PP_ALIGN.CENTER)
 
     _prog("파일 저장 중...", 4, 5)
     buf = _io.BytesIO()

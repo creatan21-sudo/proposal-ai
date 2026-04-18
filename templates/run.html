@@ -1262,8 +1262,8 @@ function selectPptOpt(opt) {
       el.style.background  = '';
     }
   });
-  document.getElementById('ppt-pages-wrap').style.display = (opt === 'template') ? 'none' : '';
-  document.getElementById('ppt-tmpl-wrap').style.display  = (opt === 'template') ? ''     : 'none';
+  document.getElementById('ppt-pages-wrap').style.display = '';   // 항상 표시
+  document.getElementById('ppt-tmpl-wrap').style.display  = (opt === 'template') ? '' : 'none';
   _updateGoBtn();
 }
 
@@ -1322,7 +1322,7 @@ function openPptModal() {
     el.style.background  = '';
   });
   document.getElementById('ppt-pages-wrap').style.display = '';
-  document.getElementById('ppt-tmpl-wrap').style.display  = 'none';
+  document.getElementById('ppt-tmpl-wrap').style.display  = 'none';   // template 아닌 경우 초기화
   document.getElementById('ppt-tmpl-label').innerHTML =
     '클릭하거나 파일을 드래그하세요<br><span style="font-size:.75rem;color:#9ca3af;">PPTX · PDF · HWP · HWPX (최대 50MB)</span>';
   document.getElementById('ppt-tmpl-status').style.display = 'none';
