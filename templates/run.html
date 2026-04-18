@@ -1057,37 +1057,123 @@ function esc(str) {
 <!-- ── PPT 생성 모달 ── -->
 <div id="ppt-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);
      z-index:10000;align-items:center;justify-content:center;">
-  <div style="background:#fff;border-radius:16px;padding:32px 28px;width:420px;
-              max-width:92vw;position:relative;box-shadow:0 20px 60px rgba(0,0,0,0.25);">
+  <div style="background:#fff;border-radius:16px;padding:28px 24px;width:520px;
+              max-width:94vw;max-height:90vh;overflow-y:auto;position:relative;
+              box-shadow:0 20px 60px rgba(0,0,0,0.25);">
     <button onclick="closePptModal()"
             style="position:absolute;top:14px;right:16px;background:none;border:none;
                    font-size:1.3rem;color:#9ca3af;cursor:pointer;line-height:1;">✕</button>
 
-    <!-- 설정 화면 -->
+    <!-- ── 옵션 선택 화면 ── -->
     <div id="ppt-setup">
-      <h3 style="margin:0 0 6px;font-size:1.15rem;font-weight:700;color:#1e1b4b;">📊 PPT 작성</h3>
-      <p style="margin:0 0 22px;font-size:.85rem;color:#6b7280;">
-        제안서 내용을 바탕으로 PT 자료를 생성합니다.
-      </p>
-      <label style="display:block;font-size:.85rem;font-weight:600;color:#374151;margin-bottom:8px;">
-        페이지 수
-      </label>
-      <input type="range" id="ppt-pages" min="10" max="200" value="50"
-             oninput="document.getElementById('ppt-pages-val').textContent=this.value"
-             style="width:100%;accent-color:#4f46e5;">
-      <div style="display:flex;justify-content:space-between;font-size:.8rem;color:#9ca3af;margin-top:4px;">
-        <span>10페이지</span>
-        <strong id="ppt-pages-val" style="color:#4f46e5;font-size:.95rem;">50</strong>페이지
-        <span>200페이지</span>
+      <h3 style="margin:0 0 4px;font-size:1.15rem;font-weight:700;color:#1e1b4b;">📊 PPT 생성 방식 선택</h3>
+      <p style="margin:0 0 18px;font-size:.82rem;color:#6b7280;">원하는 생성 방식을 선택하세요.</p>
+
+      <!-- 옵션 카드 3개 -->
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:18px;">
+
+        <!-- 옵션 1: 페이지 구성만 생성 -->
+        <div id="ppt-card-basic" onclick="selectPptOpt('basic')"
+             style="border:2px solid #e5e7eb;border-radius:10px;padding:14px 16px;cursor:pointer;
+                    transition:border-color .15s,background .15s;">
+          <div style="display:flex;align-items:flex-start;gap:12px;">
+            <span style="font-size:1.6rem;line-height:1;">📄</span>
+            <div style="flex:1;">
+              <div style="font-size:.95rem;font-weight:700;color:#1f2937;margin-bottom:3px;">
+                페이지 구성만 생성
+                <span style="font-size:.75rem;font-weight:500;color:#6b7280;margin-left:6px;">~30초</span>
+              </div>
+              <div style="font-size:.8rem;color:#6b7280;line-height:1.5;">
+                python-pptx로 텍스트 기반 슬라이드를 빠르게 생성합니다. 직접 편집 가능한 .pptx 파일로 저장됩니다.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 옵션 2: Gamma 고급 생성 -->
+        <div id="ppt-card-gamma" onclick="_pptHasGamma && selectPptOpt('gamma')"
+             style="border:2px solid #e5e7eb;border-radius:10px;padding:14px 16px;
+                    transition:border-color .15s,background .15s;">
+          <div style="display:flex;align-items:flex-start;gap:12px;">
+            <span style="font-size:1.6rem;line-height:1;">✨</span>
+            <div style="flex:1;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px;">
+                <span style="font-size:.95rem;font-weight:700;color:#1f2937;">Gamma 고급 생성</span>
+                <span style="font-size:.75rem;font-weight:500;color:#6b7280;">~1~3분</span>
+                <span id="ppt-gamma-badge" style="display:none;font-size:.7rem;font-weight:600;
+                      padding:2px 7px;border-radius:99px;background:#fef3c7;color:#d97706;">API 키 없음</span>
+              </div>
+              <div style="font-size:.8rem;color:#6b7280;line-height:1.5;">
+                Gamma AI로 전문 디자인 PT를 생성합니다. API 키가 필요하며 디자인 퀄리티가 높습니다.
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 옵션 3: 유사 디자인 구현 -->
+        <div id="ppt-card-template" onclick="selectPptOpt('template')"
+             style="border:2px solid #e5e7eb;border-radius:10px;padding:14px 16px;cursor:pointer;
+                    transition:border-color .15s,background .15s;">
+          <div style="display:flex;align-items:flex-start;gap:12px;">
+            <span style="font-size:1.6rem;line-height:1;">🎨</span>
+            <div style="flex:1;">
+              <div style="font-size:.95rem;font-weight:700;color:#1f2937;margin-bottom:3px;">
+                유사 디자인 구현
+                <span style="font-size:.75rem;font-weight:500;color:#6b7280;margin-left:6px;">~1분</span>
+              </div>
+              <div style="font-size:.8rem;color:#6b7280;line-height:1.5;">
+                기존 PPTX 파일을 업로드하면 색상·폰트·레이아웃 스타일을 추출해 유사하게 재현합니다.
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <button onclick="startPptGeneration()"
-              style="margin-top:24px;width:100%;padding:13px;background:#4f46e5;color:#fff;
-                     border:none;border-radius:8px;font-size:1rem;font-weight:700;cursor:pointer;">
-        PPT 생성하기
+
+      <!-- 페이지 수 슬라이더 (basic / gamma에서만 표시) -->
+      <div id="ppt-pages-wrap" style="margin-bottom:16px;">
+        <label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:6px;">페이지 수</label>
+        <input type="range" id="ppt-pages" min="10" max="200" value="50"
+               oninput="document.getElementById('ppt-pages-val').textContent=this.value"
+               style="width:100%;accent-color:#4f46e5;">
+        <div style="display:flex;justify-content:space-between;font-size:.78rem;color:#9ca3af;margin-top:3px;">
+          <span>10</span>
+          <strong id="ppt-pages-val" style="color:#4f46e5;">50</strong>페이지
+          <span>200</span>
+        </div>
+      </div>
+
+      <!-- 템플릿 업로드 영역 (template에서만 표시) -->
+      <div id="ppt-tmpl-wrap" style="display:none;margin-bottom:16px;">
+        <label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:6px;">
+          참고 PPTX 파일 업로드
+        </label>
+        <div id="ppt-tmpl-drop"
+             onclick="document.getElementById('ppt-tmpl-input').click()"
+             ondragover="event.preventDefault()"
+             ondrop="event.preventDefault();onTmplFile(event.dataTransfer.files[0])"
+             style="border:2px dashed #d1d5db;border-radius:8px;padding:24px;text-align:center;
+                    cursor:pointer;background:#f9fafb;transition:border-color .15s;">
+          <div style="font-size:1.6rem;margin-bottom:6px;">📂</div>
+          <div id="ppt-tmpl-label" style="font-size:.83rem;color:#6b7280;">
+            클릭하거나 파일을 드래그하세요<br>
+            <span style="font-size:.75rem;color:#9ca3af;">.pptx 파일 (최대 50MB)</span>
+          </div>
+        </div>
+        <input type="file" id="ppt-tmpl-input" accept=".pptx" style="display:none"
+               onchange="onTmplFile(this.files[0])">
+        <div id="ppt-tmpl-status" style="font-size:.78rem;color:#059669;margin-top:6px;display:none;"></div>
+      </div>
+
+      <!-- 생성하기 버튼 -->
+      <button id="ppt-go-btn" onclick="startPptGeneration()" disabled
+              style="width:100%;padding:13px;background:#d1d5db;color:#9ca3af;
+                     border:none;border-radius:8px;font-size:1rem;font-weight:700;
+                     cursor:not-allowed;transition:background .2s,color .2s;">
+        생성 방식을 선택하세요
       </button>
     </div>
 
-    <!-- 진행 화면 -->
+    <!-- ── 진행 중 ── -->
     <div id="ppt-progress" style="display:none;text-align:center;padding:8px 0;">
       <div style="font-size:2.2rem;margin-bottom:14px;">⏳</div>
       <div id="ppt-progress-msg" style="font-size:.95rem;color:#374151;margin-bottom:14px;font-weight:500;">
@@ -1097,11 +1183,10 @@ function esc(str) {
         <div id="ppt-progress-bar"
              style="background:#4f46e5;height:100%;width:0%;transition:width .4s ease;"></div>
       </div>
-      <div id="ppt-progress-pct"
-           style="font-size:.8rem;color:#9ca3af;margin-top:6px;">0%</div>
+      <div id="ppt-progress-pct" style="font-size:.8rem;color:#9ca3af;margin-top:6px;">0%</div>
     </div>
 
-    <!-- 완료 화면 -->
+    <!-- ── 완료 (PPTX 다운로드) ── -->
     <div id="ppt-done" style="display:none;text-align:center;padding:8px 0;">
       <div style="font-size:2.8rem;margin-bottom:14px;">📊</div>
       <p style="color:#059669;font-weight:700;font-size:1.1rem;margin-bottom:6px;">PPT 생성 완료!</p>
@@ -1111,22 +1196,25 @@ function esc(str) {
                      border-radius:8px;font-size:.9rem;cursor:pointer;">닫기</button>
     </div>
 
-    <!-- Gamma 완료 화면 (PPTX URL 없을 때 폴백) -->
+    <!-- ── Gamma 완료 (웹 링크 폴백) ── -->
     <div id="ppt-gamma-done" style="display:none;text-align:center;padding:8px 0;">
-      <div style="font-size:2.8rem;margin-bottom:14px;">🎨</div>
-      <p style="color:#059669;font-weight:700;font-size:1.1rem;margin-bottom:6px;">Gamma PPT 생성 완료!</p>
-      <p style="font-size:.85rem;color:#6b7280;margin-bottom:16px;">아래 링크에서 편집 후 다운로드하세요.</p>
+      <div style="font-size:2.8rem;margin-bottom:14px;">⚠️</div>
+      <p style="color:#d97706;font-weight:700;font-size:1.1rem;margin-bottom:6px;">PPTX 변환 불가</p>
+      <p style="font-size:.85rem;color:#6b7280;margin-bottom:16px;">
+        Gamma가 PPTX 내보내기를 지원하지 않습니다.<br>아래 링크에서 직접 다운로드하세요.
+      </p>
       <a id="run-gamma-open-url" href="#" target="_blank"
-         style="display:inline-block;padding:10px 22px;background:#7c3aed;color:#fff;
-                border-radius:8px;font-size:.9rem;font-weight:600;text-decoration:none;margin-bottom:12px;">
+         style="display:inline-block;margin-bottom:10px;padding:11px 24px;
+                background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;
+                border-radius:8px;font-size:.9rem;font-weight:700;text-decoration:none;">
         Gamma에서 열기 →
-      </a><br>
+      </a>
       <button onclick="closePptModal()"
-              style="padding:8px 22px;background:#6b7280;color:#fff;border:none;
-                     border-radius:8px;font-size:.9rem;cursor:pointer;margin-top:8px;">닫기</button>
+              style="display:block;margin:14px auto 0;padding:10px 28px;background:#6b7280;
+                     color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer;">닫기</button>
     </div>
 
-    <!-- 오류 화면 -->
+    <!-- ── 오류 ── -->
     <div id="ppt-error" style="display:none;text-align:center;padding:8px 0;">
       <div style="font-size:2.2rem;margin-bottom:14px;">❌</div>
       <p id="ppt-error-msg" style="color:#dc2626;margin-bottom:20px;font-size:.9rem;"></p>
@@ -1138,42 +1226,140 @@ function esc(str) {
 </div>
 
 <script>
+let _pptHasGamma = false;
+let _pptOpt = '';
+let _pptUploadId = '';
+
+// Gamma 키 확인
+fetch('/ppt/has_gamma')
+  .then(r => r.json())
+  .then(d => {
+    _pptHasGamma = !!d.has_gamma;
+    const card  = document.getElementById('ppt-card-gamma');
+    const badge = document.getElementById('ppt-gamma-badge');
+    if (_pptHasGamma) {
+      card.style.cursor = 'pointer';
+    } else {
+      card.style.opacity = '0.55';
+      card.style.cursor  = 'not-allowed';
+      badge.style.display = '';
+    }
+  })
+  .catch(() => {});
+
+function selectPptOpt(opt) {
+  _pptOpt = opt;
+  ['basic','gamma','template'].forEach(o => {
+    const el = document.getElementById('ppt-card-' + o);
+    if (o === opt) {
+      el.style.borderColor = '#4f46e5';
+      el.style.background  = '#eef2ff';
+    } else {
+      el.style.borderColor = '#e5e7eb';
+      el.style.background  = '';
+    }
+  });
+  document.getElementById('ppt-pages-wrap').style.display = (opt === 'template') ? 'none' : '';
+  document.getElementById('ppt-tmpl-wrap').style.display  = (opt === 'template') ? ''     : 'none';
+  _updateGoBtn();
+}
+
+function _updateGoBtn() {
+  const btn   = document.getElementById('ppt-go-btn');
+  const ready = _pptOpt && (_pptOpt !== 'template' || _pptUploadId);
+  if (ready) {
+    btn.disabled = false;
+    btn.style.background = 'linear-gradient(135deg,#4f46e5,#7c3aed)';
+    btn.style.color      = '#fff';
+    btn.style.cursor     = 'pointer';
+    const labels = {basic:'페이지 구성 생성하기', gamma:'✨ Gamma로 생성하기', template:'🎨 유사 디자인으로 생성하기'};
+    btn.textContent = labels[_pptOpt] || '생성하기';
+  } else {
+    btn.disabled = true;
+    btn.style.background = '#d1d5db';
+    btn.style.color      = '#9ca3af';
+    btn.style.cursor     = 'not-allowed';
+    btn.textContent = _pptOpt === 'template' ? 'PPTX 파일을 먼저 업로드하세요' : '생성 방식을 선택하세요';
+  }
+}
+
+function onTmplFile(file) {
+  if (!file) return;
+  if (file.size > 50 * 1024 * 1024) { alert('파일 크기가 50MB를 초과합니다.'); return; }
+  const label  = document.getElementById('ppt-tmpl-label');
+  const status = document.getElementById('ppt-tmpl-status');
+  label.textContent = '업로드 중...';
+  status.style.display = 'none';
+  const fd = new FormData();
+  fd.append('file', file);
+  fetch('/ppt/upload_template', {method:'POST', body: fd})
+    .then(r => r.json())
+    .then(d => {
+      if (!d.ok) throw new Error(d.error || '업로드 실패');
+      _pptUploadId = d.upload_id;
+      label.textContent = '✓ ' + file.name;
+      status.textContent = '업로드 완료';
+      status.style.display = '';
+      _updateGoBtn();
+    })
+    .catch(err => { label.textContent = '업로드 실패: ' + err.message; });
+}
+
 function openPptModal() {
+  _pptOpt = '';
+  _pptUploadId = '';
   const m = document.getElementById('ppt-modal');
   m.style.display = 'flex';
   ['ppt-progress','ppt-done','ppt-gamma-done','ppt-error'].forEach(id =>
     document.getElementById(id).style.display = 'none');
   document.getElementById('ppt-setup').style.display = '';
+  ['basic','gamma','template'].forEach(o => {
+    const el = document.getElementById('ppt-card-' + o);
+    el.style.borderColor = '#e5e7eb';
+    el.style.background  = '';
+  });
+  document.getElementById('ppt-pages-wrap').style.display = '';
+  document.getElementById('ppt-tmpl-wrap').style.display  = 'none';
+  document.getElementById('ppt-tmpl-label').innerHTML =
+    '클릭하거나 파일을 드래그하세요<br><span style="font-size:.75rem;color:#9ca3af;">.pptx 파일 (최대 50MB)</span>';
+  document.getElementById('ppt-tmpl-status').style.display = 'none';
+  _updateGoBtn();
 }
+
 function closePptModal() {
   document.getElementById('ppt-modal').style.display = 'none';
 }
+
 function startPptGeneration() {
-  const pages  = parseInt(document.getElementById('ppt-pages').value);
+  const pages  = parseInt(document.getElementById('ppt-pages').value) || 50;
   const caseId = window._pptCaseId;
   if (!caseId) { alert('케이스 ID를 찾을 수 없습니다. 잠시 후 다시 시도하세요.'); return; }
   document.getElementById('ppt-setup').style.display    = 'none';
   document.getElementById('ppt-progress').style.display = '';
-  document.getElementById('ppt-progress-msg').textContent = 'PPT 생성 준비 중...';
+  const msgs = {basic:'PPT 생성 중...', gamma:'Gamma PPT 생성 중... (예상 1~3분)', template:'템플릿 스타일 분석 중...'};
+  document.getElementById('ppt-progress-msg').textContent = msgs[_pptOpt] || '준비 중...';
+
+  const body = {case_id: caseId, pages, mode: _pptOpt};
+  if (_pptOpt === 'template') body.upload_id = _pptUploadId;
+
   fetch('/ppt/start', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({case_id: caseId, pages})
+    body: JSON.stringify(body)
   })
   .then(r => r.json())
   .then(d => {
     if (!d.ok) throw new Error(d.error || '시작 실패');
-    if (d.use_gamma) {
-      document.getElementById('ppt-progress-msg').textContent = 'Gamma PPT 생성 중... (예상 1~3분)';
-      _pollPpt(d.job_id);
-    } else {
+    if (_pptOpt === 'basic') {
       _listenPpt(d.job_id, pages);
+    } else {
+      _pollPpt(d.job_id);
     }
   })
   .catch(err => _pptShowError(err.message));
 }
 
-// ── Gamma 전용: 5초 폴링 ─────────────────────────────
+// ── 폴링 (Gamma / template) ──────────────────────────
 function _pollPpt(jobId) {
   let fakeProgress = 0;
   const progBar = document.getElementById('ppt-progress-bar');
@@ -1222,7 +1408,7 @@ function _pollPpt(jobId) {
   poll();
 }
 
-// ── python-pptx 전용: SSE 스트리밍 ──────────────────
+// ── SSE 스트리밍 (basic) ────────────────────────────
 function _listenPpt(jobId, totalPages) {
   const es = new EventSource(`/ppt/stream/${jobId}`);
   es.onmessage = function(e) {
