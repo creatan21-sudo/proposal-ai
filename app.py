@@ -1861,6 +1861,43 @@ def ppt_stream(job_id):
     )
 
 
+@app.route("/ppt/status/<job_id>")
+@login_required
+def ppt_status(job_id):
+    """폴링용 — SSE 대신 사용. Gamma 생성처럼 장시간 작업에 활용."""
+    with _ppt_jobs_lock:
+        job = _ppt_jobs.get(job_id)
+    if not job:
+        return jsonify({"ok": False, "error": "job not found"}), 404
+    if job["user_id"] != session["user_id"] and not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+
+    status = job["status"]
+    resp   = {"ok": True, "status": status}
+
+    if status == "done" and job.get("pptx_bytes"):
+        resp["download_url"] = f"/ppt/download/{job_id}"
+
+    # events에서 gamma_done / ppt_done / ppt_error 추출
+    for ev in job["events"]:
+        t = ev.get("type")
+        if t == "gamma_done":
+            resp["gamma_url"]      = ev.get("url", "")
+            resp["gamma_pptx_url"] = ev.get("pptx_url", "")
+        elif t == "ppt_done" and "download_url" not in resp:
+            resp["download_url"] = ev.get("download_url", f"/ppt/download/{job_id}")
+        elif t == "ppt_error":
+            resp["error"] = ev.get("message", "알 수 없는 오류")
+
+    # 최신 progress 메시지
+    for ev in reversed(job["events"]):
+        if ev.get("type") == "ppt_progress":
+            resp["progress_msg"] = ev.get("message", "")
+            break
+
+    return jsonify(resp)
+
+
 @app.route("/ppt/download/<job_id>")
 @login_required
 def ppt_download(job_id):

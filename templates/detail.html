@@ -799,7 +799,7 @@ function startPptGeneration(useGamma) {
   document.getElementById('ppt-setup').style.display    = 'none';
   document.getElementById('ppt-progress').style.display = '';
   document.getElementById('ppt-progress-msg').textContent =
-    useGamma ? 'Gamma로 PPT 생성 중...' : 'PPT 생성 준비 중...';
+    useGamma ? 'Gamma PPT 생성 중... (예상 1~3분)' : 'PPT 생성 준비 중...';
   fetch('/ppt/start', {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -808,10 +808,81 @@ function startPptGeneration(useGamma) {
   .then(r => r.json())
   .then(d => {
     if (!d.ok) throw new Error(d.error || '시작 실패');
-    _listenPpt(d.job_id, pages);
+    if (useGamma) {
+      _pollPpt(d.job_id);   // Gamma: 폴링 (SSE 연결 끊김 방지)
+    } else {
+      _listenPpt(d.job_id, pages);  // python-pptx: SSE 스트리밍
+    }
   })
   .catch(err => _pptShowError(err.message));
 }
+
+// ── Gamma 전용: 5초 폴링 ─────────────────────────────
+let _pollTimer = null;
+function _pollPpt(jobId) {
+  // 진행바 애니메이션 (완료 전까지 95%까지 서서히 증가)
+  let fakeProgress = 0;
+  const progBar = document.getElementById('ppt-progress-bar');
+  const progPct = document.getElementById('ppt-progress-pct');
+  const progMsg = document.getElementById('ppt-progress-msg');
+  progBar.style.width = '0%';
+
+  function doFakeProgress() {
+    if (fakeProgress < 90) {
+      fakeProgress += Math.random() * 3;
+      const p = Math.min(fakeProgress, 90);
+      progBar.style.width = p + '%';
+      progPct.textContent = Math.round(p) + '%';
+    }
+  }
+  const fakeTimer = setInterval(doFakeProgress, 2000);
+
+  function poll() {
+    fetch(`/ppt/status/${jobId}`)
+      .then(r => r.json())
+      .then(d => {
+        if (!d.ok) { clearInterval(fakeTimer); _pptShowError(d.error || '오류'); return; }
+
+        if (d.progress_msg) {
+          progMsg.textContent = d.progress_msg;
+        }
+
+        if (d.status === 'done') {
+          clearInterval(fakeTimer);
+          progBar.style.width = '100%';
+          progPct.textContent = '100%';
+          document.getElementById('ppt-progress').style.display = 'none';
+
+          if (d.download_url) {
+            // PPTX 직접 다운로드
+            document.getElementById('ppt-done').style.display = '';
+            const a = document.createElement('a');
+            a.href = d.download_url; a.click();
+          } else if (d.gamma_url) {
+            // Gamma 웹 URL 폴백
+            document.getElementById('ppt-gamma-done').style.display = '';
+            const openLink = document.getElementById('gamma-open-url');
+            if (d.gamma_url) openLink.href = d.gamma_url;
+          } else {
+            document.getElementById('ppt-done').style.display = '';
+          }
+        } else if (d.status === 'error') {
+          clearInterval(fakeTimer);
+          _pptShowError(d.error || '생성 중 오류가 발생했습니다.');
+        } else {
+          // 아직 진행 중 — 5초 후 재폴링
+          _pollTimer = setTimeout(poll, 5000);
+        }
+      })
+      .catch(() => {
+        // 일시적 네트워크 오류는 재시도
+        _pollTimer = setTimeout(poll, 5000);
+      });
+  }
+  poll();
+}
+
+// ── python-pptx 전용: SSE 스트리밍 ──────────────────
 function _listenPpt(jobId, totalPages) {
   const es = new EventSource(`/ppt/stream/${jobId}`);
   es.onmessage = function(e) {
@@ -830,15 +901,6 @@ function _listenPpt(jobId, totalPages) {
         document.getElementById('ppt-done').style.display = '';
         const a = document.createElement('a');
         a.href = ev.download_url; a.click();
-      } else if (ev.type === 'gamma_done') {
-        // PPTX export URL 없을 때 폴백: Gamma 웹 URL 표시
-        es.close();
-        document.getElementById('ppt-progress').style.display = 'none';
-        document.getElementById('ppt-gamma-done').style.display = '';
-        const openLink = document.getElementById('gamma-open-url');
-        if (ev.url) {
-          openLink.href = ev.url;
-        }
       } else if (ev.type === 'ppt_error') {
         es.close();
         _pptShowError(ev.message);
@@ -847,6 +909,7 @@ function _listenPpt(jobId, totalPages) {
   };
   es.onerror = function() { es.close(); _pptShowError('연결 오류가 발생했습니다.'); };
 }
+
 function _pptShowError(msg) {
   document.getElementById('ppt-progress').style.display = 'none';
   document.getElementById('ppt-error').style.display    = '';
