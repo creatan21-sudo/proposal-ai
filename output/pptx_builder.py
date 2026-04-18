@@ -732,6 +732,430 @@ def _set_cell_text(
 
 
 # ─────────────────────────────────────────────
+# 템플릿 기반 PPT 생성
+# ─────────────────────────────────────────────
+
+def _default_style() -> dict:
+    """기본 디자인 토큰."""
+    return {
+        "bg":  (255, 255, 255),
+        "hd":  (30,  30,  30),
+        "ht":  (255, 255, 255),
+        "bd":  (30,  30,  30),
+        "ac":  (79,  70,  229),
+        "tf":  "맑은 고딕",
+        "bf":  "맑은 고딕",
+        "ts":  24,
+        "bs":  13,
+    }
+
+
+def _extract_style_from_pdf(pdf_bytes: bytes) -> dict:
+    """PDF 파일에서 디자인 토큰 추출 (pdfplumber 사용)."""
+    sty = _default_style()
+    try:
+        import pdfplumber
+        import io as _io
+
+        with pdfplumber.open(_io.BytesIO(pdf_bytes)) as pdf:
+            for page in pdf.pages[:3]:
+                chars = page.chars or []
+                for char in chars[:1000]:
+                    size = float(char.get("size") or 0)
+                    fontname = char.get("fontname") or ""
+                    color = char.get("non_stroking_color")
+
+                    # 폰트명 정리 (PDF 내부 임베드 접두어 제거: ABCDEF+FontName)
+                    clean_font = re.sub(r'^[A-Z]{6}\+', '', fontname).strip()
+                    if clean_font:
+                        if size >= 14:
+                            sty["tf"] = clean_font
+                            sty["ts"] = max(16, min(40, int(size)))
+                        elif 8 <= size < 14:
+                            sty["bf"] = clean_font
+                            sty["bs"] = max(9, min(18, int(size)))
+
+                    # 텍스트 색상 추출
+                    if color is not None:
+                        try:
+                            if isinstance(color, (int, float)):
+                                # 단일 값 = 그레이스케일 (0.0=검정, 1.0=흰색)
+                                v = int((1.0 - float(color)) * 255)
+                                c = (v, v, v)
+                            elif isinstance(color, (list, tuple)) and len(color) == 3:
+                                # RGB: 0~1 범위 또는 0~255 범위
+                                def _norm(x):
+                                    x = float(x)
+                                    return int(x * 255) if x <= 1.0 else int(x)
+                                c = (_norm(color[0]), _norm(color[1]), _norm(color[2]))
+                            else:
+                                c = None
+
+                            if c:
+                                r, g, b = c
+                                is_white = r > 240 and g > 240 and b > 240
+                                is_black = r < 30 and g < 30 and b < 30
+                                if not is_white:
+                                    if size >= 14 and not is_black:
+                                        sty["hd"] = c
+                                        sty["ac"] = c
+                                        brightness = 0.299 * r + 0.587 * g + 0.114 * b
+                                        sty["ht"] = (255, 255, 255) if brightness < 140 else (0, 0, 0)
+                                    elif not is_black:
+                                        sty["bd"] = c
+                        except Exception:
+                            pass
+    except ImportError:
+        print("  [PDF style] pdfplumber 미설치 — 기본 스타일 사용")
+    except Exception as e:
+        print(f"  [PDF style] 추출 실패: {e}")
+    return sty
+
+
+def _extract_style_from_hwp(hwp_bytes: bytes, is_hwpx: bool = False) -> dict:
+    """HWP/HWPX 파일에서 디자인 토큰 추출."""
+    sty = _default_style()
+    if not is_hwpx:
+        # 바이너리 HWP는 파싱 복잡 — 기본 스타일 반환
+        print("  [HWP style] 바이너리 HWP는 스타일 추출 미지원 — 기본 스타일 사용")
+        return sty
+    try:
+        import zipfile
+        import io as _io
+        import xml.etree.ElementTree as ET
+
+        with zipfile.ZipFile(_io.BytesIO(hwp_bytes)) as zf:
+            names = zf.namelist()
+            # HWPX 구조: Contents/header.xml에 스타일 있음
+            style_candidates = [n for n in names
+                                 if any(k in n.lower() for k in ('header', 'styles', 'fontsset', 'charpr'))]
+            for fname in style_candidates[:4]:
+                try:
+                    xml_bytes = zf.read(fname)
+                    root = ET.fromstring(xml_bytes)
+                    # 폰트 정보 탐색
+                    for el in root.iter():
+                        tag = el.tag.split('}')[-1] if '}' in el.tag else el.tag
+                        if tag in ('fontRef', 'font', 'face'):
+                            name = el.get('name') or el.get('val') or ''
+                            if name and len(name) > 1:
+                                sty['tf'] = name
+                                sty['bf'] = name
+                                break
+                        # 색상 정보 탐색
+                        if tag in ('charPr', 'textColor', 'color'):
+                            color_str = el.get('color') or el.get('val') or ''
+                            if color_str and len(color_str) >= 6:
+                                try:
+                                    hex_c = color_str.lstrip('#')[-6:]
+                                    r = int(hex_c[0:2], 16)
+                                    g = int(hex_c[2:4], 16)
+                                    b = int(hex_c[4:6], 16)
+                                    is_white = r > 240 and g > 240 and b > 240
+                                    is_black = r < 30 and g < 30 and b < 30
+                                    if not is_white and not is_black:
+                                        sty['ac'] = (r, g, b)
+                                        sty['hd'] = (r, g, b)
+                                        brightness = 0.299 * r + 0.587 * g + 0.114 * b
+                                        sty['ht'] = (255, 255, 255) if brightness < 140 else (0, 0, 0)
+                                except ValueError:
+                                    pass
+                except Exception:
+                    continue
+    except Exception as e:
+        print(f"  [HWPX style] 추출 실패: {e}")
+    return sty
+
+
+def _extract_template_style(tmpl_prs) -> dict:
+    """PPTX 파일에서 디자인 토큰(색상·폰트) 추출."""
+    sty = _default_style()
+
+    def _safe_rgb(rgb_obj):
+        try:
+            return (rgb_obj[0], rgb_obj[1], rgb_obj[2])
+        except Exception:
+            return None
+
+    for slide in (tmpl_prs.slides or [])[:3]:
+        # 배경색
+        try:
+            fill = slide.background.fill
+            if fill.type is not None:
+                c = _safe_rgb(fill.fore_color.rgb)
+                if c:
+                    sty["bg"] = c
+        except Exception:
+            pass
+
+        for shape in slide.shapes:
+            # 도형 채움색 → 헤더 후보
+            try:
+                if hasattr(shape, "fill") and shape.fill.type == 1:
+                    c = _safe_rgb(shape.fill.fore_color.rgb)
+                    if c:
+                        r, g, b = c
+                        is_white = r > 230 and g > 230 and b > 230
+                        is_gray  = abs(r - g) < 20 and abs(g - b) < 20
+                        if not is_white and not is_gray:
+                            sty["hd"] = c
+                            sty["ac"] = c
+                            brightness = 0.299 * r + 0.587 * g + 0.114 * b
+                            sty["ht"] = (255, 255, 255) if brightness < 140 else (0, 0, 0)
+            except Exception:
+                pass
+
+            # 텍스트 폰트/색상
+            if not shape.has_text_frame:
+                continue
+            for para in shape.text_frame.paragraphs:
+                for run in para.runs:
+                    try:
+                        fn   = run.font.name
+                        sz   = run.font.size.pt if run.font.size else None
+                        clr  = _safe_rgb(run.font.color.rgb)
+                        if fn and sz:
+                            if sz >= 18:
+                                sty["tf"] = fn
+                                sty["ts"] = int(sz)
+                                if clr:
+                                    sty["bd"] = clr  # 제목색 → 본문 기본도 갱신
+                            elif sz >= 9:
+                                sty["bf"] = fn
+                                sty["bs"] = int(sz)
+                                if clr:
+                                    sty["bd"] = clr
+                    except Exception:
+                        pass
+
+    return sty
+
+
+def _t_rgb(sty_tuple) -> RGBColor:
+    return RGBColor(*sty_tuple)
+
+
+def _template_bg(slide, color_tuple):
+    bg = slide.background
+    fill = bg.fill
+    fill.solid()
+    fill.fore_color.rgb = _t_rgb(color_tuple)
+
+
+def _tmpl_box(slide, left_cm, top_cm, w_cm, h_cm, text, font, size_pt,
+              bold=False, color=(0, 0, 0), align=PP_ALIGN.LEFT, wrap=True):
+    tx = slide.shapes.add_textbox(Cm(left_cm), Cm(top_cm), Cm(w_cm), Cm(h_cm))
+    tf = tx.text_frame
+    tf.word_wrap = wrap
+    p = tf.paragraphs[0]
+    p.alignment = align
+    run = p.add_run()
+    run.text = str(text)
+    run.font.name = font
+    run.font.size = Pt(size_pt)
+    run.font.bold = bold
+    run.font.color.rgb = _t_rgb(color)
+    return tx
+
+
+def _build_template_slides(detail: dict) -> list:
+    """detail dict → 슬라이드 데이터 목록."""
+    case = detail.get("case", {})
+    slides = []
+
+    # 표지
+    slides.append({
+        "type": "cover",
+        "title": case.get("project_name", "제안서"),
+        "sub":   case.get("client_name", ""),
+        "date":  datetime.now().strftime("%Y년 %m월"),
+    })
+
+    # 전략
+    s = detail.get("strategy") or {}
+    s_items = []
+    for k, f in [("핵심 문제", "core_problem"), ("현황 진단", "crisis_statement"),
+                 ("해결 방향", "solution_direction")]:
+        if s.get(f):
+            s_items.append((k, str(s[f])[:250]))
+    if s_items:
+        slides.append({"type": "section", "title": "전략", "items": s_items})
+
+    # 기대 효과
+    efx = s.get("expected_effects") or []
+    if isinstance(efx, list) and efx:
+        slides.append({
+            "type":  "bullets",
+            "title": "기대 효과",
+            "items": [str(e)[:150] for e in efx[:6]],
+        })
+
+    # 컨셉
+    c = detail.get("creative") or {}
+    c_items = []
+    for k, f in [("핵심 컨셉", "concept"), ("슬로건", "confirmed_slogan"),
+                 ("톤앤매너", "tone_description")]:
+        if c.get(f):
+            c_items.append((k, str(c[f])[:250]))
+    if c_items:
+        slides.append({"type": "section", "title": "컨셉", "items": c_items})
+
+    # 편별 기획
+    plan = detail.get("plan") or {}
+    eps = plan.get("episodes") or []
+    if isinstance(eps, list) and eps:
+        ep_items = []
+        for ep in eps[:6]:
+            if isinstance(ep, dict):
+                num   = ep.get("episode_number", ep.get("ep_num", ""))
+                title = ep.get("title", "")
+                msg   = ep.get("core_message", ep.get("key_message", ""))[:120]
+                ep_items.append((f"{num}편. {title}".strip(". "), msg))
+        if ep_items:
+            slides.append({"type": "section", "title": "편별 기획", "items": ep_items})
+
+    # 마케팅
+    m = detail.get("marketing") or {}
+    m_items = []
+    for k, f in [("유튜브 전략", "youtube_strategy"), ("KPI 목표", "kpi_targets")]:
+        v = m.get(f)
+        if v:
+            m_items.append((k, str(v)[:200] if not isinstance(v, str) else v[:200]))
+    if m_items:
+        slides.append({"type": "section", "title": "마케팅 전략", "items": m_items})
+
+    # 마무리
+    slides.append({
+        "type": "end",
+        "title": "감사합니다",
+        "sub":   case.get("client_name", ""),
+    })
+    return slides
+
+
+def generate_from_template(detail: dict, template_bytes: bytes,
+                            pages: int = 20, progress_cb=None,
+                            file_ext: str = ".pptx") -> bytes:
+    """참고 파일의 디자인 스타일을 적용한 제안서 PPT 생성.
+
+    Args:
+        detail: get_case_detail() 반환값
+        template_bytes: 업로드된 파일 바이트 (.pptx / .pdf / .hwp / .hwpx)
+        pages: 최대 슬라이드 수 (현재는 content 기반으로 자동 결정)
+        progress_cb: callback(message, current, total)
+        file_ext: 파일 확장자 (소문자, 점 포함 — 추출 방법 결정에 사용)
+
+    Returns:
+        생성된 PPTX bytes
+    """
+    import io as _io
+
+    def _prog(msg, cur, tot):
+        if progress_cb:
+            try:
+                progress_cb(msg, cur, tot)
+            except Exception:
+                pass
+
+    ext = file_ext.lower()
+    _prog("템플릿 스타일 분석 중...", 1, 5)
+
+    if ext == ".pptx":
+        tmpl_prs = Presentation(_io.BytesIO(template_bytes))
+        sty = _extract_template_style(tmpl_prs)
+    elif ext == ".pdf":
+        sty = _extract_style_from_pdf(template_bytes)
+    elif ext == ".hwpx":
+        sty = _extract_style_from_hwp(template_bytes, is_hwpx=True)
+    else:  # .hwp (바이너리) — 기본 스타일
+        sty = _extract_style_from_hwp(template_bytes, is_hwpx=False)
+
+    print(f"  [Template/{ext}] bg={sty['bg']} hd={sty['hd']} ac={sty['ac']} "
+          f"font={sty['tf']}/{sty['bf']}")
+
+    _prog("슬라이드 내용 구성 중...", 2, 5)
+    slides_data = _build_template_slides(detail)
+
+    _prog("PPT 파일 생성 중...", 3, 5)
+    prs = Presentation()
+    prs.slide_width  = _SLIDE_W
+    prs.slide_height = _SLIDE_H
+    blank = prs.slide_layouts[6]
+
+    SW = _SLIDE_W.cm   # 슬라이드 너비(cm)
+    SH = _SLIDE_H.cm
+
+    for sdata in slides_data:
+        sl = prs.slides.add_slide(blank)
+        st = sdata["type"]
+        _template_bg(sl, sty["bg"])
+
+        if st == "cover":
+            # 상단 색상 바
+            hdr = sl.shapes.add_shape(1, Cm(0), Cm(0), Cm(SW), Cm(7))
+            hdr.fill.solid(); hdr.fill.fore_color.rgb = _t_rgb(sty["hd"])
+            hdr.line.fill.background()
+            # 제목
+            _tmpl_box(sl, 2.5, 1.5, SW - 5, 4, sdata["title"],
+                      sty["tf"], min(sty["ts"] + 6, 36), bold=True, color=sty["ht"])
+            # 발주처
+            _tmpl_box(sl, 2.5, 7.5, SW - 5, 2, sdata["sub"],
+                      sty["bf"], sty["bs"] + 2, color=sty["bd"])
+            # 날짜
+            _tmpl_box(sl, 2.5, 9.5, SW - 5, 1.5, sdata["date"],
+                      sty["bf"], sty["bs"], color=sty["bd"])
+
+        elif st == "end":
+            _template_bg(sl, sty["hd"])
+            _tmpl_box(sl, 0, SH / 2 - 2.5, SW, 4, sdata["title"],
+                      sty["tf"], 36, bold=True, color=sty["ht"], align=PP_ALIGN.CENTER)
+            if sdata.get("sub"):
+                _tmpl_box(sl, 0, SH / 2 + 1.5, SW, 2, sdata["sub"],
+                          sty["bf"], sty["bs"] + 2, color=sty["ht"], align=PP_ALIGN.CENTER)
+
+        elif st == "section":
+            # 헤더 바
+            hdr = sl.shapes.add_shape(1, Cm(0), Cm(0), Cm(SW), Cm(2.2))
+            hdr.fill.solid(); hdr.fill.fore_color.rgb = _t_rgb(sty["hd"])
+            hdr.line.fill.background()
+            _tmpl_box(sl, 1.5, 0.35, SW - 3, 1.6, sdata["title"],
+                      sty["tf"], sty["ts"], bold=True, color=sty["ht"])
+            # 항목
+            items = sdata.get("items", [])
+            n = max(len(items), 1)
+            row_h = (SH - 2.8) / n
+            y = 2.6
+            for label, content in items:
+                _tmpl_box(sl, 1.5, y, SW - 3, 0.9, label,
+                          sty["bf"], sty["bs"], bold=True, color=sty["ac"])
+                _tmpl_box(sl, 1.5, y + 0.9, SW - 3, max(row_h - 1.0, 1.2),
+                          content, sty["bf"], sty["bs"], color=sty["bd"], wrap=True)
+                y += row_h
+
+        elif st == "bullets":
+            hdr = sl.shapes.add_shape(1, Cm(0), Cm(0), Cm(SW), Cm(2.2))
+            hdr.fill.solid(); hdr.fill.fore_color.rgb = _t_rgb(sty["hd"])
+            hdr.line.fill.background()
+            _tmpl_box(sl, 1.5, 0.35, SW - 3, 1.6, sdata["title"],
+                      sty["tf"], sty["ts"], bold=True, color=sty["ht"])
+            items = sdata.get("items", [])
+            n = max(len(items), 1)
+            row_h = (SH - 2.8) / n
+            y = 2.6
+            for item in items:
+                _tmpl_box(sl, 1.5, y, SW - 3, row_h, f"• {item}",
+                          sty["bf"], sty["bs"], color=sty["bd"], wrap=True)
+                y += row_h
+
+    _prog("파일 저장 중...", 4, 5)
+    buf = _io.BytesIO()
+    prs.save(buf)
+    buf.seek(0)
+    _prog("완료!", 5, 5)
+    return buf.getvalue()
+
+
+# ─────────────────────────────────────────────
 # Gamma API 연동
 # ─────────────────────────────────────────────
 

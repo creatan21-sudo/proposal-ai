@@ -1655,11 +1655,14 @@ def _cleanup_template_uploads():
 @login_required
 def ppt_upload_template():
     """옵션 3: 참고 PPTX 파일 업로드 → upload_id 반환."""
+    _ALLOWED_TMPL_EXT = {".pptx", ".pdf", ".hwp", ".hwpx"}
+
     f = request.files.get("template_file")
     if not f or not f.filename:
         return jsonify({"ok": False, "error": "파일 없음"}), 400
-    if not f.filename.lower().endswith(".pptx"):
-        return jsonify({"ok": False, "error": ".pptx 파일만 지원합니다"}), 400
+    ext = Path(f.filename).suffix.lower()
+    if ext not in _ALLOWED_TMPL_EXT:
+        return jsonify({"ok": False, "error": f"지원하지 않는 파일 형식입니다 (PPTX, PDF, HWP, HWPX만 가능)"}), 400
 
     data = f.read()
     if len(data) > 50 * 1024 * 1024:   # 50 MB 제한
@@ -1669,11 +1672,12 @@ def ppt_upload_template():
     _cleanup_template_uploads()
     with _template_uploads_lock:
         _template_uploads[upload_id] = {
-            "bytes":   data,
-            "ts":      time.time(),
-            "user_id": session["user_id"],
+            "bytes":    data,
+            "ts":       time.time(),
+            "user_id":  session["user_id"],
+            "file_ext": ext,
         }
-    print(f"[Template Upload] upload_id={upload_id} size={len(data)//1024}KB")
+    print(f"[Template Upload] upload_id={upload_id} ext={ext} size={len(data)//1024}KB")
     return jsonify({"ok": True, "upload_id": upload_id})
 
 
@@ -1852,13 +1856,15 @@ def ppt_start():
             raise RuntimeError("파일 접근 권한 없음")
 
         template_bytes = rec["bytes"]
+        file_ext       = rec.get("file_ext", ".pptx")
 
         def progress_cb(msg, cur, tot):
             _ppt_push(job_id, {"type": "ppt_progress",
                                 "message": msg, "current": cur, "total": tot})
 
         from output.pptx_builder import generate_from_template
-        pptx_bytes = generate_from_template(detail, template_bytes, pages, progress_cb)
+        pptx_bytes = generate_from_template(detail, template_bytes, pages, progress_cb,
+                                            file_ext=file_ext)
 
         with _ppt_jobs_lock:
             job = _ppt_jobs.get(job_id)

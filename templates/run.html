@@ -1145,7 +1145,7 @@ function esc(str) {
       <!-- 템플릿 업로드 영역 (template에서만 표시) -->
       <div id="ppt-tmpl-wrap" style="display:none;margin-bottom:16px;">
         <label style="display:block;font-size:.82rem;font-weight:600;color:#374151;margin-bottom:6px;">
-          참고 PPTX 파일 업로드
+          참고할 파일을 업로드하세요 (PPTX, PDF, HWP 지원)
         </label>
         <div id="ppt-tmpl-drop"
              onclick="document.getElementById('ppt-tmpl-input').click()"
@@ -1156,10 +1156,10 @@ function esc(str) {
           <div style="font-size:1.6rem;margin-bottom:6px;">📂</div>
           <div id="ppt-tmpl-label" style="font-size:.83rem;color:#6b7280;">
             클릭하거나 파일을 드래그하세요<br>
-            <span style="font-size:.75rem;color:#9ca3af;">.pptx 파일 (최대 50MB)</span>
+            <span style="font-size:.75rem;color:#9ca3af;">PPTX · PDF · HWP · HWPX (최대 50MB)</span>
           </div>
         </div>
-        <input type="file" id="ppt-tmpl-input" accept=".pptx" style="display:none"
+        <input type="file" id="ppt-tmpl-input" accept=".pptx,.pdf,.hwp,.hwpx" style="display:none"
                onchange="onTmplFile(this.files[0])">
         <div id="ppt-tmpl-status" style="font-size:.78rem;color:#059669;margin-top:6px;display:none;"></div>
       </div>
@@ -1324,7 +1324,7 @@ function openPptModal() {
   document.getElementById('ppt-pages-wrap').style.display = '';
   document.getElementById('ppt-tmpl-wrap').style.display  = 'none';
   document.getElementById('ppt-tmpl-label').innerHTML =
-    '클릭하거나 파일을 드래그하세요<br><span style="font-size:.75rem;color:#9ca3af;">.pptx 파일 (최대 50MB)</span>';
+    '클릭하거나 파일을 드래그하세요<br><span style="font-size:.75rem;color:#9ca3af;">PPTX · PDF · HWP · HWPX (최대 50MB)</span>';
   document.getElementById('ppt-tmpl-status').style.display = 'none';
   _updateGoBtn();
 }
