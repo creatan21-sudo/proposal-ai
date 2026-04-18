@@ -1636,6 +1636,47 @@ def _ppt_push(job_id: str, event: dict):
             job["sse_event"].set()
 
 
+# 템플릿 업로드 임시 저장소 (upload_id → bytes, 30분 TTL)
+_template_uploads: dict = {}
+_template_uploads_lock = threading.Lock()
+
+
+def _cleanup_template_uploads():
+    """30분 이상 지난 업로드 정리."""
+    now = time.time()
+    with _template_uploads_lock:
+        expired = [k for k, v in _template_uploads.items()
+                   if now - v.get("ts", 0) > 1800]
+        for k in expired:
+            del _template_uploads[k]
+
+
+@app.route("/ppt/upload_template", methods=["POST"])
+@login_required
+def ppt_upload_template():
+    """옵션 3: 참고 PPTX 파일 업로드 → upload_id 반환."""
+    f = request.files.get("template_file")
+    if not f or not f.filename:
+        return jsonify({"ok": False, "error": "파일 없음"}), 400
+    if not f.filename.lower().endswith(".pptx"):
+        return jsonify({"ok": False, "error": ".pptx 파일만 지원합니다"}), 400
+
+    data = f.read()
+    if len(data) > 50 * 1024 * 1024:   # 50 MB 제한
+        return jsonify({"ok": False, "error": "파일 크기가 너무 큽니다 (50MB 이하)"}), 400
+
+    upload_id = str(uuid.uuid4())
+    _cleanup_template_uploads()
+    with _template_uploads_lock:
+        _template_uploads[upload_id] = {
+            "bytes":   data,
+            "ts":      time.time(),
+            "user_id": session["user_id"],
+        }
+    print(f"[Template Upload] upload_id={upload_id} size={len(data)//1024}KB")
+    return jsonify({"ok": True, "upload_id": upload_id})
+
+
 @app.route("/ppt/has_gamma")
 @login_required
 def ppt_has_gamma():
@@ -1648,11 +1689,11 @@ def ppt_has_gamma():
 @login_required
 def ppt_start():
     """PPT 생성 시작.
-    GAMMA_API_KEY 설정 시 Gamma API로 생성, 미설정 시 python-pptx로 생성(폴백).
+    mode: 'basic' (python-pptx) | 'gamma' | 'template' (참고 PPTX 스타일 적용)
     """
     data    = request.get_json(force=True) or {}
     case_id = int(data.get("case_id", 0))
-    pages   = max(10, min(200, int(data.get("pages", 50))))
+    pages   = max(10, min(200, int(data.get("pages", 20))))
 
     if not case_id:
         return jsonify({"ok": False, "error": "case_id 필요"}), 400
@@ -1663,15 +1704,22 @@ def ppt_start():
     if detail["case"].get("user_id") != session["user_id"] and not session.get("is_admin"):
         return jsonify({"ok": False, "error": "권한 없음 — 다시 로그인 후 시도하세요"}), 403
 
-    force_pptx = bool(data.get("force_pptx", False))
-    gamma_key  = GAMMA_API_KEY.strip()
-    print(f"[PPT] GAMMA_API_KEY: {'SET='+gamma_key[:10] if gamma_key else 'NOT SET'}")
-    use_gamma  = bool(gamma_key) and not force_pptx
+    # mode 결정: 명시적 mode 우선, 레거시 force_pptx/Gamma 폴백
+    mode = data.get("mode", "")
+    if not mode:
+        force_pptx = bool(data.get("force_pptx", False))
+        gamma_key  = GAMMA_API_KEY.strip()
+        mode = "basic" if (force_pptx or not gamma_key) else "gamma"
+
+    gamma_key = GAMMA_API_KEY.strip()
+    use_gamma = (mode == "gamma") and bool(gamma_key)
+    print(f"[PPT] mode={mode} use_gamma={use_gamma}")
 
     job_id  = str(uuid.uuid4())
     case    = detail["case"]
     user_id = session["user_id"]
     fname   = f"{case['client_name']}_{case['project_name'][:20]}_제안서.pptx"
+    # Gamma는 PDF 형식으로 제공 — 실제 파일명은 _worker_gamma에서 .pdf로 교체
 
     with _ppt_jobs_lock:
         _ppt_jobs[job_id] = {
@@ -1687,6 +1735,8 @@ def ppt_start():
         try:
             if use_gamma:
                 _worker_gamma()
+            elif mode == "template":
+                _worker_template()
             else:
                 _worker_pptx()
         except Exception as e:
@@ -1717,23 +1767,29 @@ def ppt_start():
         pptx_export_url = result.get("pptx_url")
 
         if pptx_export_url:
-            # ── PPTX 파일 다운로드 → 서버에서 직접 제공 ──
+            # ── PDF 파일 다운로드 → 서버에서 직접 제공 ──
             _ppt_push(job_id, {"type": "ppt_progress",
-                                "message": "PPTX 파일 다운로드 중...", "current": 3, "total": 4})
+                                "message": "PDF 파일 다운로드 중...", "current": 3, "total": 4})
 
             dl_resp = _req.get(pptx_export_url, timeout=120)
             dl_resp.raise_for_status()
-            pptx_bytes = dl_resp.content
+            pdf_bytes = dl_resp.content
+
+            # 파일명 확장자를 .pdf로 교체
+            pdf_fname = fname.replace(".pptx", ".pdf")
 
             with _ppt_jobs_lock:
                 job = _ppt_jobs.get(job_id)
                 if job:
                     job["status"]     = "done"
-                    job["pptx_bytes"] = pptx_bytes
+                    job["pptx_bytes"] = pdf_bytes
+                    job["filename"]   = pdf_fname
+                    job["is_pdf"]     = True
 
             _ppt_push(job_id, {
                 "type":         "ppt_done",
                 "download_url": f"/ppt/download/{job_id}",
+                "gamma_url":    result.get("url", ""),
             })
 
         else:
@@ -1782,6 +1838,48 @@ def ppt_start():
                 send_telegram(chat_id,
                     f"📊 <b>{case['project_name']}</b> PPT 생성 완료!\n"
                     f"다운로드: /history/{case_id}")
+            except Exception:
+                pass
+
+    def _worker_template():
+        """참고 PPTX 스타일 적용 PPT 생성."""
+        upload_id = data.get("upload_id", "")
+        with _template_uploads_lock:
+            rec = _template_uploads.get(upload_id)
+        if not rec:
+            raise RuntimeError("템플릿 파일을 찾을 수 없습니다. 파일을 다시 업로드하세요.")
+        if rec.get("user_id") != user_id and not session.get("is_admin"):
+            raise RuntimeError("파일 접근 권한 없음")
+
+        template_bytes = rec["bytes"]
+
+        def progress_cb(msg, cur, tot):
+            _ppt_push(job_id, {"type": "ppt_progress",
+                                "message": msg, "current": cur, "total": tot})
+
+        from output.pptx_builder import generate_from_template
+        pptx_bytes = generate_from_template(detail, template_bytes, pages, progress_cb)
+
+        with _ppt_jobs_lock:
+            job = _ppt_jobs.get(job_id)
+            if job:
+                job["status"]     = "done"
+                job["pptx_bytes"] = pptx_bytes
+
+        _ppt_push(job_id, {
+            "type":         "ppt_done",
+            "download_url": f"/ppt/download/{job_id}",
+        })
+
+        # 사용한 업로드 정리
+        with _template_uploads_lock:
+            _template_uploads.pop(upload_id, None)
+
+        chat_id = get_telegram_chat_id(user_id)
+        if chat_id:
+            try:
+                send_telegram(chat_id,
+                    f"📊 <b>{case['project_name']}</b> 템플릿 PPT 생성 완료!")
             except Exception:
                 pass
 
@@ -1905,6 +2003,8 @@ def ppt_status(job_id):
             resp["gamma_pptx_url"] = ev.get("pptx_url", "")
         elif t == "ppt_done" and "download_url" not in resp:
             resp["download_url"] = ev.get("download_url", f"/ppt/download/{job_id}")
+            if ev.get("gamma_url"):
+                resp["gamma_url"] = ev["gamma_url"]
         elif t == "ppt_error":
             resp["error"] = ev.get("message", "알 수 없는 오류")
 
@@ -1928,11 +2028,16 @@ def ppt_download(job_id):
     if job["user_id"] != session["user_id"] and not session.get("is_admin"):
         abort(403)
     buf = _io.BytesIO(job["pptx_bytes"])
+    mimetype = (
+        "application/pdf"
+        if job.get("is_pdf")
+        else "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
     return send_file(
         buf,
         as_attachment=True,
         download_name=job["filename"],
-        mimetype="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        mimetype=mimetype,
     )
 
 

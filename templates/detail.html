@@ -805,21 +805,24 @@ document.addEventListener('DOMContentLoaded', function () {
                      border-radius:8px;font-size:.9rem;cursor:pointer;">닫기</button>
     </div>
 
-    <!-- ── Gamma 완료 (웹 링크 폴백) ── -->
+    <!-- ── Gamma 완료 (PDF 다운로드 + 링크) ── -->
     <div id="ppt-gamma-done" style="display:none;text-align:center;padding:8px 0;">
-      <div style="font-size:2.8rem;margin-bottom:14px;">⚠️</div>
-      <p style="color:#d97706;font-weight:700;font-size:1.1rem;margin-bottom:6px;">PPTX 변환 불가</p>
-      <p style="font-size:.85rem;color:#6b7280;margin-bottom:16px;">
-        Gamma가 PPTX 내보내기를 지원하지 않습니다.<br>아래 링크에서 직접 다운로드하세요.
+      <div style="font-size:2.8rem;margin-bottom:14px;">✅</div>
+      <p style="color:#059669;font-weight:700;font-size:1.1rem;margin-bottom:8px;">PDF 다운로드 완료!</p>
+      <p style="font-size:.84rem;color:#374151;line-height:1.7;margin-bottom:16px;text-align:left;
+                background:#f0fdf4;border-radius:8px;padding:12px 14px;">
+        PDF로 다운로드됐습니다.<br>
+        PPT 편집이 필요하면 아래 링크에서<br>
+        Gamma 앱에서 직접 PPTX로 내보내기하세요.
       </p>
       <a id="gamma-open-url" href="#" target="_blank"
-         style="display:inline-block;margin-bottom:10px;padding:11px 24px;
+         style="display:inline-block;margin-bottom:12px;padding:11px 24px;
                 background:linear-gradient(135deg,#7c3aed,#4f46e5);color:#fff;
                 border-radius:8px;font-size:.9rem;font-weight:700;text-decoration:none;">
-        Gamma에서 열기 →
+        Gamma에서 PPTX 내보내기 →
       </a>
       <button onclick="closePptModal()"
-              style="display:block;margin:14px auto 0;padding:10px 28px;background:#6b7280;
+              style="display:block;margin:8px auto 0;padding:10px 28px;background:#6b7280;
                      color:#fff;border:none;border-radius:8px;font-size:.9rem;cursor:pointer;">닫기</button>
     </div>
 
@@ -1009,11 +1012,18 @@ function _pollPpt(jobId) {
           progBar.style.width = '100%';
           progPct.textContent = '100%';
           document.getElementById('ppt-progress').style.display = 'none';
-          if (d.download_url) {
+          if (d.download_url && d.gamma_url) {
+            // Gamma PDF 다운로드 + 편집 링크
+            document.getElementById('ppt-gamma-done').style.display = '';
+            document.getElementById('gamma-open-url').href = d.gamma_url;
+            const a = document.createElement('a');
+            a.href = d.download_url; a.click();
+          } else if (d.download_url) {
             document.getElementById('ppt-done').style.display = '';
             const a = document.createElement('a');
             a.href = d.download_url; a.click();
           } else if (d.gamma_url) {
+            // PDF 다운로드 없이 웹 링크만 있는 경우
             document.getElementById('ppt-gamma-done').style.display = '';
             document.getElementById('gamma-open-url').href = d.gamma_url;
           } else {
