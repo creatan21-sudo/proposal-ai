@@ -24,6 +24,9 @@ MAX_TOKENS: int = 8192
 TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
 SERP_API_KEY:   str = os.getenv("SERP_API_KEY", "")
 
+# Gamma PPT API
+GAMMA_API_KEY: str = os.getenv("GAMMA_API_KEY", "")
+
 # 텔레그램 알림
 TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
 

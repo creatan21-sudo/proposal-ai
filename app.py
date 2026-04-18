@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 load_dotenv(override=False)
 print(f"[startup] ANTHROPIC_API_KEY: {'SET' if os.environ.get('ANTHROPIC_API_KEY') else 'NOT SET'}", flush=True)
+print(f"[startup] GAMMA_API_KEY: {'SET' if os.environ.get('GAMMA_API_KEY') else 'NOT SET'}", flush=True)
 
 import dataclasses
 import datetime as _dt
@@ -40,6 +41,7 @@ from database.db import (
 )
 from output.txt_writer import write_txt
 from utils.telegram_notify import send_telegram
+from config import GAMMA_API_KEY
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "proposal-ai-web-secret-2024")
@@ -1643,9 +1645,8 @@ def ppt_start():
         return jsonify({"ok": False, "error": "권한 없음 — 다시 로그인 후 시도하세요"}), 403
 
     force_pptx = bool(data.get("force_pptx", False))
-    # 함수 실행 시점에 직접 읽기 (gunicorn worker fork 이후에도 정상 반영)
-    gamma_key = os.environ.get("GAMMA_API_KEY", "").strip()
-    print(f"[PPT] 실시간 GAMMA_API_KEY 확인: {'SET='+gamma_key[:10] if gamma_key else 'NOT SET'}")
+    gamma_key  = GAMMA_API_KEY.strip()
+    print(f"[PPT] GAMMA_API_KEY: {'SET='+gamma_key[:10] if gamma_key else 'NOT SET'}")
     use_gamma  = bool(gamma_key) and not force_pptx
 
     job_id  = str(uuid.uuid4())
