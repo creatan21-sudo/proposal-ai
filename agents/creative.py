@@ -124,8 +124,17 @@ def run(dna: ConceptDNA) -> dict:
         "forbidden_expressions": result["forbidden_expressions"],
         "visual_direction":      result["visual_direction"],
     })
+
+    # 창작 DNA 잠금 — STEP 6 이후 모든 에이전트에 강제 주입
+    dna.locked_slogan    = result["confirmed_slogan"]
+    dna.locked_keywords  = result["tone_keywords"][:5] if result["tone_keywords"] else []
+    dna.locked_tone      = result["tone_description"]
+    dna.locked_narrative = result.get("concept_description", "")
+    dna.dna_locked       = True
+
     print(f"  컨셉 확정: {result['concept']}")
     print(f"  슬로건 1순위: {result['confirmed_slogan']}")
+    print(f"  [DNA 잠금] 슬로건·키워드·톤앤매너 고정 완료")
 
     # 5. DB 저장
     try:

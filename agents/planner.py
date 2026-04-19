@@ -18,7 +18,7 @@ import re
 from datetime import datetime, timedelta
 
 from core import claude_client
-from core.dna import ConceptDNA, update_dna, dna_to_context_string
+from core.dna import ConceptDNA, update_dna, dna_to_context_string, dna_lock_block
 from database.db import save_plan
 
 
@@ -92,6 +92,16 @@ def run(dna: ConceptDNA) -> dict:
     print("  제작 계획 생성 중...")
     prompt = _build_prompt(dna, is_youtube, schedule_skeleton, budget_skeleton)
     result = claude_client.call_json(prompt, max_tokens=8000)
+
+    # DNA 잠금 검증 — 슬로건 미포함 시 재시도 1회
+    _locked = getattr(dna, "locked_slogan", "")
+    if _locked:
+        _result_str = str(result)
+        if _locked not in _result_str:
+            print(f"  [DNA경고] 슬로건 미포함 — 재시도")
+            result2 = claude_client.call_json(prompt + f"\n\n⚠️ 슬로건 '{_locked}'을 episodes의 core_message에 반드시 포함하라.", max_tokens=8000)
+            if result2:
+                result = result2
 
     # 4. 필수 키 보정
     result.setdefault("is_youtube_channel", is_youtube)
@@ -385,7 +395,8 @@ def _build_prompt(
         episodes_guide = f"""episodes에는 납품할 전체 {dna.quantity}편 각각의 계획을 작성하세요.
 각 에피소드: {{episode_number, title, core_message, target_audience, key_scene, differentiation}}"""
 
-    return f"""당신은 대한민국 정부 영상콘텐츠 제작 전문 PD이자 제작사 PM입니다.
+    lock = dna_lock_block(dna)
+    return f"""{lock}당신은 대한민국 정부 영상콘텐츠 제작 전문 PD이자 제작사 PM입니다.
 아래 정보를 바탕으로 영상 제작 실행 계획을 수립해주세요.
 
 ━━━━━━━━━━━━━━━━━━━━━━━

@@ -20,7 +20,7 @@ import re
 import concurrent.futures as _cf
 
 from core import claude_client
-from core.dna import ConceptDNA, update_dna, dna_to_context_string
+from core.dna import ConceptDNA, update_dna, dna_to_context_string, dna_lock_block
 from database.db import save_marketing, save_platform
 
 _SONNET_MODEL = "claude-sonnet-4-6"
@@ -863,6 +863,7 @@ def run_platform(dna: ConceptDNA, progress_fn=None) -> dict:
 
     print(f"  [플랫폼 운영전략] 선정 플랫폼: {', '.join(platforms)}")
     _progress(f"플랫폼 운영전략 수립 중... ({', '.join(platforms[:3])})")
+    dna_ctx = dna_lock_block(dna) + dna_ctx  # DNA 잠금 블록 선두 주입
 
     platform_text = ""
     try:
@@ -920,6 +921,7 @@ def run_marketing(dna: ConceptDNA, progress_fn=None) -> dict:
     if rfp_kpis:
         print(f"  [마케팅/홍보] RFP KPI 힌트: {', '.join(rfp_kpis)}")
     _progress(f"마케팅·홍보 전략 수립 중...")
+    dna_ctx = dna_lock_block(dna) + dna_ctx  # DNA 잠금 블록 선두 주입
 
     marketing_text = ""
     try:

@@ -71,7 +71,12 @@ def _generate_one(scene: dict, scene_num: int, style: str,
             "ok": True,
         }
     except Exception as e:
-        print(f"  [스토리보드] DALL-E 호출 실패 (씬 {scene_num}): {e}")
+        err_str = str(e).lower()
+        if any(k in err_str for k in ("billing", "insufficient_quota", "quota", "credit", "payment")):
+            err_msg = "OpenAI 크레딧 부족"
+        else:
+            err_msg = str(e)
+        print(f"  [스토리보드] DALL-E 호출 실패 (씬 {scene_num}): {err_msg}")
         return {
             "scene_num": scene_num,
             "image_path": "",
@@ -154,15 +159,47 @@ def run(dna: ConceptDNA, style: str = "line", progress_fn=None) -> dict:
 
     results.sort(key=lambda x: x.get("scene_num", 0))
 
-    # DB 저장
-    try:
-        from database.db import save_storyboard
-        save_storyboard(case_id=case_id, frames=results, style=style)
-    except Exception as db_err:
-        print(f"  [스토리보드] DB 저장 실패: {db_err}")
+    ok_count   = sum(1 for r in results if r.get("ok"))
+    fail_count = len(results) - ok_count
+    print(f"  [스토리보드] 완료: {ok_count}/{len(results)}컷 성공, {fail_count}컷 실패")
+
+    # 크레딧 부족 감지
+    credit_error = any(
+        "크레딧 부족" in (r.get("error") or "")
+        for r in results
+    )
+    if credit_error and progress_fn:
+        try:
+            progress_fn({
+                "type":    "log",
+                "message": "❌ OpenAI 크레딧이 부족합니다. platform.openai.com → Billing에서 충전 후 재시도하세요.",
+            })
+        except Exception:
+            pass
+
+    if ok_count == 0:
+        if progress_fn:
+            try:
+                progress_fn({
+                    "type":    "log",
+                    "message": "❌ 스토리보드 생성 실패 — 모든 씬 이미지 생성 불가",
+                })
+            except Exception:
+                pass
+
+    # DB 저장 (성공 씬만)
+    if ok_count > 0:
+        try:
+            from database.db import save_storyboard
+            save_storyboard(case_id=case_id, frames=results, style=style)
+        except Exception as db_err:
+            print(f"  [스토리보드] DB 저장 실패: {db_err}")
 
     return {
-        "frames": results,
-        "style": style,
+        "frames":       results,
+        "style":        style,
         "total_scenes": len(results),
+        "ok_count":     ok_count,
+        "fail_count":   fail_count,
+        "error":        "일부 씬 생성 실패" if fail_count > 0 else "",
     }

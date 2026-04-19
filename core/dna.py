@@ -99,6 +99,13 @@ class ConceptDNA:
     reference_case_id: int = 0                                 # 참고할 이전 케이스 ID
     reference_case_context: str = ""                           # 이전 케이스 설득구조·컨셉·문체 요약
 
+    # STEP 5 컨셉 확정 후 잠금 — STEP 6 이후 모든 에이전트에 강제 주입
+    locked_slogan: str = ""
+    locked_keywords: list = field(default_factory=list)
+    locked_tone: str = ""
+    locked_narrative: str = ""
+    dna_locked: bool = False
+
     # STEP 6: 마케터가 추가
     distribution_strategy: str = ""                            # 유통/마케팅 전략 요약
     distribution_channels: list = field(default_factory=list)  # 채널별 배포 전략
@@ -265,3 +272,25 @@ def dna_to_context_string(dna: ConceptDNA) -> str:
             .format(dna=dna)
         )
     return "\n".join(lines)
+
+
+def dna_lock_block(dna: "ConceptDNA") -> str:
+    """STEP 5 확정 후 잠긴 창작 DNA를 모든 하위 에이전트 프롬프트 앞에 주입할 블록 반환.
+
+    dna.dna_locked == False이면 빈 문자열 반환.
+    """
+    if not getattr(dna, "dna_locked", False):
+        return ""
+    keywords = ", ".join(getattr(dna, "locked_keywords", []) or []) or "—"
+    return (
+        "【절대 준수 창작 DNA — 이 제안서의 핵심 서사】\n"
+        f"슬로건: {getattr(dna, 'locked_slogan', '') or '—'}\n"
+        f"감성 키워드: {keywords}\n"
+        f"톤앤매너: {getattr(dna, 'locked_tone', '') or '—'}\n"
+        f"핵심 내러티브: {getattr(dna, 'locked_narrative', '') or '—'}\n\n"
+        "⚠️ 위 창작 DNA는 이 제안서의 모든 내용을 관통하는 불변의 서사 구조입니다.\n"
+        "- 슬로건은 대본에서 실제 대사/자막으로 반드시 등장\n"
+        "- 감성 키워드는 모든 섹션의 언어 선택 기준\n"
+        "- 톤앤매너를 벗어나는 표현 절대 금지\n"
+        "- 모든 내용은 핵심 내러티브로 수렴해야 함\n\n"
+    )

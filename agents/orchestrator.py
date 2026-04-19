@@ -14,7 +14,7 @@ import dataclasses
 from dataclasses import asdict
 
 from core import claude_client
-from core.dna import ConceptDNA, update_dna, dna_to_context_string
+from core.dna import ConceptDNA, update_dna, dna_to_context_string, dna_lock_block
 from database.db import save_final_proposal, get_winning_patterns
 
 _OPUS_MODEL = "claude-opus-4-6"   # orchestrator 전용 고성능 모델
@@ -667,10 +667,20 @@ def _generate_pt_script(
     consistency: dict,
     company_profile: dict,
 ) -> dict:
-    """PT 발표 원고 초안 생성 (PPT 모드 시만, Claude)."""
-    prompt = _build_pt_qa_prompt(dna, consistency, company_profile)
-    result = claude_client.call_json(prompt, model=_OPUS_MODEL, max_tokens=1000)
-    return result.get("pt_script", {})
+    """PT 발표 원고 — 순수 텍스트로 생성 후 dict에 래핑."""
+    prompt = _build_pt_script_prompt(dna, consistency, company_profile)
+    text = claude_client.call(prompt, model=_OPUS_MODEL, max_tokens=6000)
+    if not text:
+        return {}
+
+    locked_slogan = getattr(dna, "locked_slogan", "") or dna.slogan or ""
+    if locked_slogan and locked_slogan not in text:
+        print(f"  [DNA경고] 슬로건 미포함 — 재시도")
+        text2 = claude_client.call(prompt + f"\n\n⚠️ 반드시 슬로건 '{locked_slogan}'을 원고 중에 포함하라.", model=_OPUS_MODEL, max_tokens=6000)
+        if text2:
+            text = text2
+
+    return {"text": text, "opening": "", "closing": "", "key_points": []}
 
 
 def generate_pt_script_for_ppt(dna: ConceptDNA) -> dict:
@@ -698,12 +708,52 @@ def _generate_pt_and_qa(
     return result
 
 
+def _build_pt_script_prompt(
+    dna: ConceptDNA,
+    consistency: dict,
+    company_profile: dict,
+) -> str:
+    """PT 원고 전용 프롬프트 — 순수 텍스트 원고 생성용 (JSON 없음)."""
+    dna_ctx = dna_lock_block(dna) + dna_to_context_string(dna)
+    locked_slogan = getattr(dna, "locked_slogan", "") or dna.slogan or "—"
+    pt_min   = max(3, min(30, getattr(dna, "pt_duration_min", 10) or 10))
+    pt_chars = pt_min * 250
+
+    return f"""【PT 발표 원고 작성】
+발표 시간: {pt_min}분
+목표 분량: {pt_chars}자 이상 (한국어 기준 분당 250자)
+
+실제 발표에서 읽을 수 있는 완성된 원고를 작성하라.
+절대 요약하거나 개요만 쓰지 말 것.
+실제 발표자가 읽었을 때 {pt_min}분이 되는 완전한 문장으로 된 원고를 작성하라.
+
+구성 (각 섹션 목표 분량):
+1. 오프닝 (인사, 회사 소개, 발표 구조 안내) — {int(pt_min*0.10*250)}자
+2. 사업 이해 및 분석 — {int(pt_min*0.15*250)}자
+3. 추진 전략 — {int(pt_min*0.20*250)}자
+4. 핵심 컨셉 및 슬로건 — {int(pt_min*0.15*250)}자
+5. 콘텐츠 기획 및 제작 계획 — {int(pt_min*0.20*250)}자
+6. 기대 효과 — {int(pt_min*0.10*250)}자
+7. 클로징 — {int(pt_min*0.10*250)}자
+
+구어체로 자연스럽게 작성.
+청중(심사위원)에게 직접 말하는 형식 (~습니다, ~드리겠습니다).
+슬로건 "{locked_slogan}"을 반드시 원고 내에 포함하라.
+
+━━━━━━━━━━━━━━━━━━━━━━━
+[프로젝트 컨텍스트]
+━━━━━━━━━━━━━━━━━━━━━━━
+{dna_ctx}
+
+PT 원고만 출력하라. JSON, 설명, 주석 없이 발표 원고 텍스트만."""
+
+
 def _build_pt_qa_prompt(
     dna: ConceptDNA,
     consistency: dict,
     company_profile: dict,
 ) -> str:
-    dna_ctx   = dna_to_context_string(dna)
+    dna_ctx   = dna_lock_block(dna) + dna_to_context_string(dna)
     strengths = "\n".join(f"  - {s}" for s in consistency.get("strengths", []))
     headline  = company_profile.get("headline", "인터즈")
     diff      = company_profile.get("differentiation", "")

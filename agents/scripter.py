@@ -20,7 +20,7 @@ import re
 import threading
 
 from core import claude_client
-from core.dna import ConceptDNA, update_dna, dna_to_context_string
+from core.dna import ConceptDNA, update_dna, dna_to_context_string, dna_lock_block
 from database.db import save_script
 
 
@@ -589,7 +589,8 @@ def _build_longform_prompt(
 - series_hook 객체에 cliffhanger_line과 callback_line을 구체적으로 작성
 {series_ctx}"""
 
-    return f"""당신은 20년 경력의 공공 캠페인 전문 방송작가입니다.
+    lock = dna_lock_block(dna)
+    return f"""{lock}당신은 20년 경력의 공공 캠페인 전문 방송작가입니다.
 아래 정보를 바탕으로 {dna.client_name} {ep_num}편 영상 대본을 완성본 수준으로 작성해주세요.
 
 【절대 원칙】
@@ -790,7 +791,8 @@ def _build_shortform_prompt(
     forbidden    = "\n".join(f"  - {e}" for e in dna.forbidden_expressions[:5]) or "  (없음)"
     series_ctx   = _format_series_context(ep_num, all_plans) if is_series else ""
 
-    return f"""당신은 숏폼 콘텐츠 전문 방송작가입니다.
+    lock = dna_lock_block(dna)
+    return f"""{lock}당신은 숏폼 콘텐츠 전문 방송작가입니다.
 아래 정보를 바탕으로 {dna.client_name} 숏폼 영상 {ep_num}편의 15초·30초·60초 버전을 각각 완성본으로 작성해주세요.
 
 【절대 원칙】
