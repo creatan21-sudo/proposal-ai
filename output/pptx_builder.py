@@ -43,10 +43,64 @@ _CONTENT_W = Cm(29.867)
 
 
 # ─────────────────────────────────────────────
+# RFP 기반 목차 (TOC)
+# ─────────────────────────────────────────────
+
+_DEFAULT_TOC = [
+    "표지",
+    "목차",
+    "사업 이해 및 분석",
+    "추진 전략",
+    "핵심 컨셉",
+    "콘텐츠 기획",
+    "제작 계획",
+    "대본/스토리보드",
+    "유통/마케팅 전략",
+    "추진 일정",
+    "예산 계획",
+    "수행 실적",
+    "회사 소개",
+    "마무리",
+]
+
+
+def _build_rfp_toc(rfp_data: dict) -> list:
+    """RFP 분석 결과(rfp_analysis step)에서 제안서 목차 구성.
+
+    core_tasks가 있으면 해당 내용을 기반으로 중간 섹션 구성.
+    없으면 기본 목차(_DEFAULT_TOC) 반환.
+    """
+    if not rfp_data or not isinstance(rfp_data, dict):
+        return _DEFAULT_TOC[:]
+
+    core_tasks = rfp_data.get("core_tasks", [])
+    if not core_tasks or not isinstance(core_tasks, list):
+        return _DEFAULT_TOC[:]
+
+    fixed_front = ["표지", "목차", "사업 이해 및 분석", "추진 전략", "핵심 컨셉"]
+    fixed_back  = ["추진 일정", "예산 계획", "수행 실적", "회사 소개", "마무리"]
+    existing    = set(fixed_front + fixed_back)
+
+    task_sections = []
+    for task in core_tasks:
+        if isinstance(task, str):
+            section = task.strip()
+            if section and section not in existing:
+                existing.add(section)
+                task_sections.append(section)
+
+    if not task_sections:
+        return _DEFAULT_TOC[:]
+
+    return fixed_front + task_sections + fixed_back
+
+
+# ─────────────────────────────────────────────
 # 진입점
 # ─────────────────────────────────────────────
 
-def build_pptx(dna: ConceptDNA, final_proposal: dict, output_dir: str = None) -> Path:
+def build_pptx(dna: ConceptDNA, final_proposal: dict, output_dir: str = None,
+               rfp_data: dict = None) -> Path:
     """제안서 전체를 PPTX로 생성.
 
     Args:
@@ -61,9 +115,11 @@ def build_pptx(dna: ConceptDNA, final_proposal: dict, output_dir: str = None) ->
     prs.slide_width  = _SLIDE_W
     prs.slide_height = _SLIDE_H
 
+    rfp_toc = _build_rfp_toc(rfp_data or {})
+
     # 섹션별 슬라이드 추가
     _add_cover_slide(prs, dna, final_proposal.get("cover", {}))
-    _add_toc_slide(prs, dna)
+    _add_toc_slide(prs, dna, rfp_toc)
     _add_strategy_slide(prs, final_proposal.get("strategy", {}), dna)
     _add_concept_slide(prs, final_proposal.get("concept", {}), dna)
     _add_execution_slide(prs, final_proposal.get("episodes", {}), dna)
@@ -154,28 +210,27 @@ def _add_cover_slide(prs: Presentation, dna: ConceptDNA, cover: dict) -> None:
     )
 
 
-def _add_toc_slide(prs: Presentation, dna: ConceptDNA) -> None:
-    """목차 슬라이드."""
+def _add_toc_slide(prs: Presentation, dna: ConceptDNA,
+                   rfp_toc: list = None) -> None:
+    """목차 슬라이드. rfp_toc가 있으면 RFP 기반 목차, 없으면 기본 목차 사용."""
     slide = _blank_slide(prs)
     _fill_background(slide, _C_LIGHT)
     _add_header_bar(slide, "목차  /  Contents")
 
-    toc_items = [
-        ("01", "현황 분석 & 전략",  "Crisis Statement · 해결책 방향"),
-        ("02", "핵심 컨셉 & 슬로건", "Big Idea · 톤앤매너 · 비주얼"),
-        ("03", "편별 실행 계획",    "제작 방향 · 일정 · 예산"),
-        ("04", "대본 & 장면 구성",  "씬 테이블 · 내레이션"),
-        ("05", "유통 & 마케팅 전략", "채널 전략 · KPI"),
-        ("06", "회사 소개",         "포트폴리오 · 인력 구성"),
-        ("07", "예상 Q&A",          "심사위원 예상 질문 & 답변"),
-    ]
+    # 표지/목차/마무리 제외하고 표시 (최대 10개)
+    toc = rfp_toc if rfp_toc else _DEFAULT_TOC
+    display_items = [s for s in toc if s not in ("표지", "목차", "마무리")][:10]
 
     col_w = Cm(13.5)
-    for idx, (num, title, sub) in enumerate(toc_items):
-        row   = idx // 2
-        col   = idx % 2
-        x     = _MARGIN_L + col * (col_w + Cm(1.0))
-        y     = Cm(4.2) + row * Cm(2.5)
+    for idx, section in enumerate(display_items):
+        num = f"{idx+1:02d}"
+        row = idx // 2
+        col = idx % 2
+        x   = _MARGIN_L + col * (col_w + Cm(1.0))
+        y   = Cm(4.2) + row * Cm(2.5)
+
+        if y + Cm(2.0) > _SLIDE_H - Cm(1.0):
+            break  # 슬라이드 하단 초과 방지
 
         # 번호 박스
         _add_rect(slide, x, y, Cm(1.4), Cm(1.4), _C_NAVY)
@@ -183,11 +238,8 @@ def _add_toc_slide(prs: Presentation, dna: ConceptDNA) -> None:
                       font_size=12, bold=True, color=_C_GOLD, align=PP_ALIGN.CENTER)
 
         # 타이틀
-        _add_text_box(slide, title, x + Cm(1.6), y, col_w - Cm(1.8), Cm(0.8),
+        _add_text_box(slide, section, x + Cm(1.6), y, col_w - Cm(1.8), Cm(1.4),
                       font_size=13, bold=True, color=_C_TEXT, align=PP_ALIGN.LEFT)
-        # 서브타이틀
-        _add_text_box(slide, sub, x + Cm(1.6), y + Cm(0.85), col_w - Cm(1.8), Cm(0.7),
-                      font_size=10, bold=False, color=_C_GRAY, align=PP_ALIGN.LEFT)
 
 
 def _add_strategy_slide(prs: Presentation, strategy: dict, dna: ConceptDNA) -> None:
@@ -1074,25 +1126,9 @@ def _build_template_slides(detail: dict, target_pages: int = 20) -> list:
         "date":  datetime.now().strftime("%Y년 %m월"),
     })
 
-    # ── 2. 목차 ──────────────────────────────────────────────
-    toc_sections = []
-    if _s("rfp_analysis"):
-        toc_sections.append("공모 개요 분석")
-    if _s("research"):
-        toc_sections.append("리서치 & 현황 분석")
-    if _s("strategy"):
-        toc_sections.append("전략 방향 수립")
-    if _s("creative"):
-        toc_sections.append("핵심 컨셉 & 슬로건")
-    if _s("plan"):
-        toc_sections.append("편별 실행 기획")
-    if _s("script"):
-        toc_sections.append("대본 & 장면 구성")
-    if _s("marketing"):
-        toc_sections.append("마케팅 & 유통 전략")
-    if _s("final_proposal"):
-        toc_sections.append("예상 Q&A")
-    toc_sections.append("감사합니다")
+    # ── 2. 목차 (RFP 기반) ───────────────────────────────────
+    rfp_toc      = _build_rfp_toc(_s("rfp_analysis"))
+    toc_sections = [s for s in rfp_toc if s not in ("표지", "목차")]
 
     slides.append({
         "type":  "toc",

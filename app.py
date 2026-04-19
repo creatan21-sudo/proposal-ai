@@ -2118,6 +2118,17 @@ def _build_gamma_topic(detail: dict) -> str:
     if not steps:
         steps = detail
 
+    # RFP 기반 목차 추출 → Gamma 슬라이드 구성 순서 지시
+    from output.pptx_builder import _build_rfp_toc
+    rfp_toc_items = _build_rfp_toc(steps.get("rfp_analysis", {}))
+    toc_lines     = "\n".join(f"{i+1}. {s}" for i, s in enumerate(rfp_toc_items))
+    toc_instruction = (
+        f"## 슬라이드 구성 순서 (반드시 이 목차 순서를 따르라)\n\n"
+        f"아래 목차 순서를 반드시 따라서 슬라이드를 구성하라. "
+        f"각 항목당 1~2장을 할당하되 목차 순서를 벗어나지 마라:\n\n"
+        f"{toc_lines}\n"
+    )
+
     parts = []
     project = case.get("project_name", "")
     client  = case.get("client_name", "")
@@ -2224,7 +2235,7 @@ def _build_gamma_topic(detail: dict) -> str:
 - 아이콘 기반 인포그래픽
 - 강조 텍스트 카드"""
 
-    return content + guidelines
+    return toc_instruction + "\n\n" + content + guidelines
 
 
 @app.route("/ppt/stream/<job_id>")
@@ -2455,39 +2466,52 @@ def ppt_gamma_start():
             _ppt_push(job_id, {"type": "ppt_progress", "message": "Gamma API에 요청 전송 중...", "current": 0, "total": 3})
 
             # 제안서 텍스트 조합
-            case = detail["case"]
+            case  = detail["case"]
+            steps = detail.get("steps", {})
             parts = []
             if case.get("project_name"):
                 parts.append(f"# {case['project_name']}\n발주처: {case.get('client_name', '')}")
-            if detail.get("strategy"):
-                s = detail["strategy"]
+            if steps.get("strategy"):
+                s = steps["strategy"]
                 if s.get("core_problem"):
                     parts.append(f"## 핵심 문제\n{s['core_problem']}")
                 if s.get("solution_direction"):
                     parts.append(f"## 해결 방향\n{s['solution_direction']}")
-            if detail.get("creative"):
-                c = detail["creative"]
+            if steps.get("creative"):
+                c = steps["creative"]
                 if c.get("concept"):
                     parts.append(f"## 핵심 컨셉\n{c['concept']}")
                 if c.get("confirmed_slogan"):
                     parts.append(f"## 슬로건\n{c['confirmed_slogan']}")
-            if detail.get("plan"):
-                p = detail["plan"]
+            if steps.get("plan"):
+                p = steps["plan"]
                 if p.get("production_schedule"):
                     sched = p["production_schedule"]
                     if isinstance(sched, list):
                         parts.append("## 제작 일정\n" + "\n".join(str(x) for x in sched[:10]))
-            if detail.get("script"):
-                sc = detail["script"]
+            if steps.get("script"):
+                sc = steps["script"]
                 scripts = sc.get("scripts") or sc.get("script_outline") or []
                 if scripts and isinstance(scripts, list):
                     parts.append("## 대본 개요\n" + "\n".join(str(x)[:200] for x in scripts[:3]))
-            if detail.get("marketing"):
-                m = detail["marketing"]
+            if steps.get("marketing"):
+                m = steps["marketing"]
                 if m.get("youtube_strategy"):
                     parts.append(f"## 유통 전략\n{str(m['youtube_strategy'])[:300]}")
 
             content = "\n\n".join(parts) if parts else f"{case.get('project_name', '')} 제안서"
+
+            # RFP 기반 목차 순서 지시 삽입
+            from output.pptx_builder import _build_rfp_toc
+            _gamma_rfp_toc = _build_rfp_toc(steps.get("rfp_analysis", {}))
+            _gamma_toc_lines = "\n".join(f"{i+1}. {s}" for i, s in enumerate(_gamma_rfp_toc))
+            _gamma_toc_instruction = (
+                f"## 슬라이드 구성 순서 (반드시 이 목차 순서를 따르라)\n\n"
+                f"아래 목차 순서를 반드시 따라서 슬라이드를 구성하라. "
+                f"각 항목당 1~2장을 할당하되 목차 순서를 벗어나지 마라:\n\n"
+                f"{_gamma_toc_lines}\n"
+            )
+            content = _gamma_toc_instruction + "\n\n" + content
 
             _ppt_push(job_id, {"type": "ppt_progress", "message": "Gamma AI 생성 중 (30~60초 소요)...", "current": 1, "total": 3})
 
