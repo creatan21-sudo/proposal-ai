@@ -279,6 +279,8 @@ def _script_section(dna: ConceptDNA, r: dict) -> list:
             if interview_q:
                 lines.append(f"  [인터뷰 질문]\n  {interview_q}")
         versions = sc.get("versions", {})
+        if not isinstance(versions, dict):
+            versions = {}
         for ver_key, ver_data in sorted(versions.items()):
             if not isinstance(ver_data, dict):
                 continue
