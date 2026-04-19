@@ -9,10 +9,33 @@ from pathlib import Path
 
 from core.dna import ConceptDNA
 
+_CRITICAL_PREFIX = (
+    "CRITICAL RULES — MUST FOLLOW: "
+    "(1) Absolutely NO English text, NO Latin alphabet, NO Roman characters anywhere in this image. "
+    "(2) If any text appears in the image, it MUST be Korean (한국어) only. "
+    "(3) Modern contemporary Korean setting only — present-day Korea (2020s). "
+    "(4) NO historical, traditional, or period Korean clothing. "
+    "NO joseon dynasty, NO hanbok, NO sageuk style, NO traditional Korean patterns. "
+    "(5) Single storyboard frame only — one scene, one image. "
+    "Do NOT create multiple panels, grid layouts, or collage. Fill entire frame with one scene. "
+)
+
 _STYLE_TEMPLATES = {
-    "line":  "storyboard frame, pen sketch, black and white line art, {scene_description}",
-    "color": "storyboard frame, illustration style, colorful, {scene_description}",
-    "photo": "storyboard frame, cinematic photo style, realistic, {scene_description}",
+    "line": (
+        _CRITICAL_PREFIX
+        + "Style: storyboard frame, pen sketch, black and white line art. "
+        + "장면: {scene_description}"
+    ),
+    "color": (
+        _CRITICAL_PREFIX
+        + "Style: storyboard frame, illustration style, colorful. "
+        + "장면: {scene_description}"
+    ),
+    "photo": (
+        _CRITICAL_PREFIX
+        + "Style: storyboard frame, cinematic photo style, realistic. "
+        + "장면: {scene_description}"
+    ),
 }
 
 _DEFAULT_STYLE = "line"

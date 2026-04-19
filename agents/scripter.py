@@ -106,7 +106,7 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
                 progress_fn({
                     "type":    "step_progress",
                     "step":    "script",
-                    "message": f"대본 생성 중... {ep_num}/{total}편 ({ep_title})",
+                    "message": f"시나리오 생성 중... {ep_num}/{total}편 ({ep_title})",
                 })
             except Exception:
                 pass

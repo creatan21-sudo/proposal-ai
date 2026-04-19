@@ -41,7 +41,7 @@
     ('strategy',          '전략'),
     ('creative',          '컨셉'),
     ('plan',              '기획'),
-    ('script',            '대본'),
+    ('script',            '시나리오'),
     ('storyboard',        '스토리보드'),
     ('platform',          '플랫폼'),
     ('marketing',         '마케팅'),
@@ -115,7 +115,7 @@ const STEPS = [
   { key: 'strategy',          label: '전략',         num: 4 },
   { key: 'creative',          label: '컨셉',         num: 5 },
   { key: 'plan',              label: '기획',         num: 6 },
-  { key: 'script',            label: '대본',         num: 7 },
+  { key: 'script',            label: '시나리오',     num: 7 },
   { key: 'storyboard',        label: '스토리보드',   num: 8 },
   { key: 'platform',          label: '플랫폼',       num: 9 },
   { key: 'marketing',         label: '마케팅',       num: 10 },
@@ -774,7 +774,7 @@ function showEpisodeCountDialog(ev) {
   const presetSb = ev.preset_storyboard || 'auto';
   _scriptEpSelected = def;
 
-  title.innerHTML = '대본 옵션 설정';
+  title.innerHTML = '시나리오 옵션 설정';
 
   // 질문 1: 편수
   let html = `
@@ -809,7 +809,7 @@ function showEpisodeCountDialog(ev) {
       </label>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
         <input type="radio" name="sb-mode" value="none" ${sbNone}>
-        대본만 작성 (스토리보드 없음) — 실제 런닝타임 분량 대본 작성
+        시나리오만 작성 (스토리보드 없음) — 실제 런닝타임 분량 시나리오 작성
       </label>
       <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
         <input type="radio" name="sb-mode" value="custom" ${sbCustom}
@@ -831,7 +831,7 @@ function showEpisodeCountDialog(ev) {
   // radio change → cuts input enable/disable
   html += `
   <div class="confirm-row" style="margin-top:4px;">
-    <button class="btn btn-primary" onclick="submitScriptOptions()">대본 생성 시작 →</button>
+    <button class="btn btn-primary" onclick="submitScriptOptions()">시나리오 생성 시작 →</button>
     <button class="btn btn-skip" onclick="hideConfirm();sendConfirm('__abort__')">취소</button>
   </div>`;
 

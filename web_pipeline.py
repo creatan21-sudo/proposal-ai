@@ -25,7 +25,7 @@ _STEPS = [
     ("strategy",          "STEP 4   전략",               strategist,   True),
     ("creative",          "STEP 5   컨셉",               creative,     True),
     ("plan",              "STEP 6   기획",               planner,      True),
-    ("script",            "STEP 7   대본",               scripter,     False),
+    ("script",            "STEP 7   시나리오",             scripter,     False),
     ("storyboard",        "STEP 8   스토리보드",         storyboard,   False),
     ("platform",          "STEP 9   플랫폼 운영전략",   marketer,     False),
     ("marketing",         "STEP 10  마케팅/홍보 전략",  marketer,     False),

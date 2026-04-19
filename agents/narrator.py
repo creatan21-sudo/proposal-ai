@@ -3,7 +3,7 @@
 # - 리서치 직후 실행, 전략 수립 전 방향 설정
 # - 20줄 내외 5섹션 내러티브 → 사용자 컨펌 or 재생성
 
-from core.dna import ConceptDNA, dna_to_context_string
+from core.dna import ConceptDNA, dna_to_context_string, update_dna
 from core.claude_client import call
 
 _NARRATOR_MODEL     = "claude-sonnet-4-6"
@@ -86,6 +86,8 @@ def run(dna: ConceptDNA) -> dict:
         )
 
     sections = _parse_sections(raw)
+    # DNA에 내러티브 저장 — 파이프라인 완료 시 dna_json으로 DB에 영속
+    update_dna(dna, {"narrative": raw})
     return {"narrative": raw, "sections": sections}
 
 

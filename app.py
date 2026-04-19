@@ -583,7 +583,7 @@ def start():
     # 실행 모드
     auto_run = (request.form.get("run_mode", "interactive") == "auto")
 
-    # 대본 사전 설정 (기본 1편)
+    # 시나리오 사전 설정 (기본 1편)
     script_preset_episodes   = int(request.form.get("script_preset_episodes") or 1)
     if script_preset_episodes < 1:
         script_preset_episodes = 1
@@ -1144,7 +1144,7 @@ def _build_history_txt(detail: dict) -> list:
         "strategy":      "STEP 4   전략",
         "creative":      "STEP 5   컨셉",
         "plan":          "STEP 6   기획",
-        "script":        "STEP 7   대본",
+        "script":        "STEP 7   시나리오",
         "storyboard":    "STEP 8   스토리보드",
         "platform":      "STEP 9   플랫폼 운영전략",
         "marketing":     "STEP 10  마케팅/홍보 전략",
@@ -1424,8 +1424,7 @@ def resume_case(case_id):
                 ).fetchone()
             if exists:
                 completed.add(step_key)
-    if dna.narrative:
-        completed.add("narrative")
+    # narrative는 DB 테이블 없음 — 항상 재실행 (completed에 추가 안 함)
 
     start_step_key = None
     for step_key in PIPELINE_ORDER:
@@ -2179,7 +2178,7 @@ def _build_gamma_topic(detail: dict) -> str:
     if p.get("production_schedule") and isinstance(p["production_schedule"], list):
         parts.append("## 제작 일정\n" + "\n".join(str(x) for x in p["production_schedule"][:6]))
 
-    # 대본
+    # 시나리오
     scripts_list = steps.get("script") or []
     if isinstance(scripts_list, list) and scripts_list:
         sc_lines = []
@@ -2194,7 +2193,7 @@ def _build_gamma_topic(detail: dict) -> str:
                         narr = sc.get("narration", sc.get("dialogue", ""))
                         sc_lines.append(f"- {str(narr)[:120]}")
         if sc_lines:
-            parts.append("## 대본 개요\n" + "\n".join(sc_lines))
+            parts.append("## 시나리오 개요\n" + "\n".join(sc_lines))
 
     # 마케팅
     m = _s("marketing")
@@ -2497,7 +2496,7 @@ def ppt_gamma_start():
                 sc = steps["script"]
                 scripts = sc.get("scripts") or sc.get("script_outline") or []
                 if scripts and isinstance(scripts, list):
-                    parts.append("## 대본 개요\n" + "\n".join(str(x)[:200] for x in scripts[:3]))
+                    parts.append("## 시나리오 개요\n" + "\n".join(str(x)[:200] for x in scripts[:3]))
             if steps.get("marketing"):
                 m = steps["marketing"]
                 if m.get("youtube_strategy"):

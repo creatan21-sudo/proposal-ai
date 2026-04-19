@@ -669,17 +669,40 @@ def _generate_pt_script(
 ) -> dict:
     """PT 발표 원고 — 순수 텍스트로 생성 후 dict에 래핑."""
     prompt = _build_pt_script_prompt(dna, consistency, company_profile)
-    text = claude_client.call(prompt, model=_OPUS_MODEL, max_tokens=6000)
+    pt_min = max(3, min(30, getattr(dna, "pt_duration_min", 10) or 10))
+    target_chars = pt_min * 250
+
+    text = claude_client.call(prompt, model=_OPUS_MODEL, max_tokens=8000)
     if not text:
         return {}
 
+    # 분량 부족 시 자동 재시도
+    if len(text) < target_chars * 0.8:
+        shortage = target_chars - len(text)
+        print(f"  [PT원고] 분량 부족 ({len(text)}자 / 목표 {target_chars}자) — 재시도")
+        retry_prompt = (
+            prompt
+            + f"\n\n⚠️ 현재 원고가 너무 짧습니다. "
+            f"목표 {target_chars}자 중 {len(text)}자만 생성됐습니다. "
+            f"나머지 {shortage}자 분량을 추가로 작성하여 완성된 {pt_min}분 원고를 만드세요. "
+            f"이미 작성한 내용을 반복하지 말고 각 섹션을 더 충분히 서술하세요."
+        )
+        text2 = claude_client.call(retry_prompt, model=_OPUS_MODEL, max_tokens=8000)
+        if text2 and len(text2) > len(text):
+            text = text2
+
+    # 슬로건 미포함 시 재시도
     locked_slogan = getattr(dna, "locked_slogan", "") or dna.slogan or ""
     if locked_slogan and locked_slogan not in text:
         print(f"  [DNA경고] 슬로건 미포함 — 재시도")
-        text2 = claude_client.call(prompt + f"\n\n⚠️ 반드시 슬로건 '{locked_slogan}'을 원고 중에 포함하라.", model=_OPUS_MODEL, max_tokens=6000)
+        text2 = claude_client.call(
+            prompt + f"\n\n⚠️ 반드시 슬로건 '{locked_slogan}'을 원고 중에 포함하라.",
+            model=_OPUS_MODEL, max_tokens=8000
+        )
         if text2:
             text = text2
 
+    print(f"  [PT원고] 생성 완료: {len(text)}자 (목표 {target_chars}자)")
     return {"text": text, "opening": "", "closing": "", "key_points": []}
 
 
@@ -719,33 +742,43 @@ def _build_pt_script_prompt(
     pt_min   = max(3, min(30, getattr(dna, "pt_duration_min", 10) or 10))
     pt_chars = pt_min * 250
 
+    company_name = getattr(dna, "company_name", "") or "인터즈"
+
     return f"""【PT 발표 원고 작성】
 발표 시간: {pt_min}분
 목표 분량: {pt_chars}자 이상 (한국어 기준 분당 250자)
 
-실제 발표에서 읽을 수 있는 완성된 원고를 작성하라.
-절대 요약하거나 개요만 쓰지 말 것.
-실제 발표자가 읽었을 때 {pt_min}분이 되는 완전한 문장으로 된 원고를 작성하라.
+⚠️ 절대 원칙:
+- 실제 발표자가 읽었을 때 {pt_min}분이 되는 완전한 원고를 작성하라.
+- 요약·개요·목차 나열 금지. 각 섹션을 완성된 문장으로 충분히 서술하라.
+- 각 섹션 목표 분량을 반드시 채워라. 짧게 끝내지 마라.
+- 구어체 경어체로 작성 (~습니다, ~드리겠습니다).
+- 슬로건 "{locked_slogan}"을 반드시 원고 내에 포함하라.
+- 오프닝에 반드시 "{company_name}"를 언급하며 회사 소개를 포함하라.
 
-구성 (각 섹션 목표 분량):
-1. 오프닝 (인사, 회사 소개, 발표 구조 안내) — {int(pt_min*0.10*250)}자
-2. 사업 이해 및 분석 — {int(pt_min*0.15*250)}자
-3. 추진 전략 — {int(pt_min*0.20*250)}자
-4. 핵심 컨셉 및 슬로건 — {int(pt_min*0.15*250)}자
+구성 (각 섹션 목표 분량 — 반드시 충족):
+1. 오프닝 — {int(pt_min*0.12*250)}자
+   (인사말, {company_name} 회사 소개 2~3문장, 발표 구조 안내)
+2. 사업 이해 및 현황 분석 — {int(pt_min*0.15*250)}자
+   (발주처 현황, 핵심 과제, 타겟 오디언스)
+3. 추진 전략 및 차별화 포인트 — {int(pt_min*0.20*250)}자
+   (경쟁사 대비 우위, {company_name}만의 접근법)
+4. 핵심 컨셉 및 슬로건 "{locked_slogan}" — {int(pt_min*0.13*250)}자
+   (컨셉 탄생 배경, 슬로건 의미, 톤앤매너)
 5. 콘텐츠 기획 및 제작 계획 — {int(pt_min*0.20*250)}자
-6. 기대 효과 — {int(pt_min*0.10*250)}자
+   (편성 계획, 씬 구성, 제작 일정)
+6. 기대 효과 및 KPI — {int(pt_min*0.10*250)}자
+   (수치 기반 기대 효과, KPI 목표)
 7. 클로징 — {int(pt_min*0.10*250)}자
-
-구어체로 자연스럽게 작성.
-청중(심사위원)에게 직접 말하는 형식 (~습니다, ~드리겠습니다).
-슬로건 "{locked_slogan}"을 반드시 원고 내에 포함하라.
+   (마무리 인사, 슬로건 재언급, 심사위원에게 신뢰 강조)
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 [프로젝트 컨텍스트]
 ━━━━━━━━━━━━━━━━━━━━━━━
 {dna_ctx}
 
-PT 원고만 출력하라. JSON, 설명, 주석 없이 발표 원고 텍스트만."""
+PT 원고만 출력하라. JSON, 설명, 주석 없이 발표 원고 텍스트만.
+각 섹션 제목은 【오프닝】 형식으로 구분하고, 본문을 충분히 작성하라."""
 
 
 def _build_pt_qa_prompt(
