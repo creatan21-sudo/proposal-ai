@@ -1946,9 +1946,13 @@ def ppt_start():
 
 def _build_gamma_topic(detail: dict) -> str:
     """케이스 상세 정보를 Gamma topic 문자열로 조합."""
-    case = detail.get("case", {})
-    parts = []
+    case  = detail.get("case", {})
+    steps = detail.get("steps", {})
+    # steps가 없는 구버전 호환
+    if not steps:
+        steps = detail
 
+    parts = []
     project = case.get("project_name", "")
     client  = case.get("client_name", "")
     if project:
@@ -1956,51 +1960,105 @@ def _build_gamma_topic(detail: dict) -> str:
     if client:
         parts.append(f"발주처: {client}")
 
+    def _s(key): return steps.get(key) or {}
+
     # 전략
-    s = detail.get("strategy") or {}
-    if s.get("core_problem"):
-        parts.append(f"\n## 핵심 문제\n{s['core_problem']}")
-    if s.get("crisis_statement"):
-        parts.append(f"## 현황 진단\n{s['crisis_statement']}")
-    if s.get("solution_direction"):
-        parts.append(f"## 해결 방향\n{s['solution_direction']}")
-    if s.get("expected_effects"):
-        ef = s["expected_effects"]
-        if isinstance(ef, list):
-            parts.append("## 기대 효과\n" + "\n".join(f"- {x}" for x in ef[:5]))
+    s = _s("strategy")
+    for label, field in [("핵심 문제", "core_problem"), ("현황 진단", "crisis_statement"),
+                         ("해결 방향", "solution_direction"), ("전략 요약", "strategy_summary")]:
+        if s.get(field):
+            parts.append(f"\n## {label}\n{s[field]}")
+    ef = s.get("expected_effects")
+    if isinstance(ef, list) and ef:
+        parts.append("## 기대 효과\n" + "\n".join(f"- {x}" for x in ef[:5]))
 
     # 컨셉
-    c = detail.get("creative") or {}
-    if c.get("concept"):
-        parts.append(f"\n## 핵심 컨셉\n{c['concept']}")
-    if c.get("confirmed_slogan"):
-        parts.append(f"## 슬로건\n{c['confirmed_slogan']}")
-    if c.get("tone_description"):
-        parts.append(f"## 톤앤매너\n{c['tone_description']}")
+    c = _s("creative")
+    for label, field in [("핵심 컨셉", "concept"), ("슬로건", "confirmed_slogan"),
+                         ("톤앤매너", "tone_description"), ("비주얼 방향", "visual_direction")]:
+        if c.get(field):
+            parts.append(f"\n## {label}\n{c[field]}")
+    kws = c.get("tone_keywords") or []
+    if kws:
+        parts.append("## 감성 키워드\n" + ", ".join(str(k) for k in kws[:8]))
 
-    # 실행계획
-    p = detail.get("plan") or {}
+    # 편별 기획
+    p = _s("plan")
+    eps = p.get("episodes") or []
+    if isinstance(eps, list) and eps:
+        ep_lines = []
+        for ep in eps[:5]:
+            if isinstance(ep, dict):
+                num = ep.get("episode_number", ep.get("ep_num", ""))
+                title = ep.get("title", "")
+                msg = ep.get("core_message", ep.get("key_message", ""))
+                ep_lines.append(f"- {num}편 [{title}]: {msg}")
+        if ep_lines:
+            parts.append("## 편별 기획\n" + "\n".join(ep_lines))
     if p.get("production_schedule") and isinstance(p["production_schedule"], list):
-        parts.append("## 제작 일정\n" + "\n".join(str(x) for x in p["production_schedule"][:8]))
-    if p.get("team_composition") and isinstance(p["team_composition"], dict):
-        team = ", ".join(f"{k}: {v}" for k, v in list(p["team_composition"].items())[:6])
-        if team:
-            parts.append(f"## 투입 인력\n{team}")
+        parts.append("## 제작 일정\n" + "\n".join(str(x) for x in p["production_schedule"][:6]))
 
     # 대본
-    sc = detail.get("script") or {}
-    scripts = sc.get("scripts") or sc.get("script_outline") or []
-    if scripts and isinstance(scripts, list):
-        parts.append("## 대본 개요\n" + "\n".join(str(x)[:200] for x in scripts[:3]))
+    scripts_list = steps.get("script") or []
+    if isinstance(scripts_list, list) and scripts_list:
+        sc_lines = []
+        for sc_row in scripts_list[:2]:
+            ep_num = sc_row.get("episode_number", "")
+            script_data = sc_row.get("script") or {}
+            scenes = script_data.get("scenes") or []
+            if scenes:
+                sc_lines.append(f"### {ep_num}편 씬 구성")
+                for sc in scenes[:4]:
+                    if isinstance(sc, dict):
+                        narr = sc.get("narration", sc.get("dialogue", ""))
+                        sc_lines.append(f"- {str(narr)[:120]}")
+        if sc_lines:
+            parts.append("## 대본 개요\n" + "\n".join(sc_lines))
 
     # 마케팅
-    m = detail.get("marketing") or {}
-    if m.get("youtube_strategy"):
-        parts.append(f"## 유통·마케팅 전략\n{str(m['youtube_strategy'])[:300]}")
-    if m.get("kpi_targets"):
-        parts.append(f"## KPI 목표\n{str(m['kpi_targets'])[:200]}")
+    m = _s("marketing")
+    for label, field in [("유통·마케팅 전략", "youtube_strategy"),
+                         ("SNS 전략", "sns_strategy"), ("KPI 목표", "kpi")]:
+        v = m.get(field)
+        if v:
+            parts.append(f"## {label}\n{str(v)[:250]}")
 
-    return "\n\n".join(parts) if parts else f"{project} 제안서 PT 자료"
+    content = "\n\n".join(parts) if parts else f"{project} 제안서 PT 자료"
+
+    # ── 이미지 가이드라인 + 디자인 방향 ──────────────────────────
+    guidelines = """
+
+---
+
+【이미지 사용 가이드라인】
+
+✅ 사용 권장:
+- 보편적 인물 (일반 직장인, 학생, 가족 등 특정 신원 없는 사람)
+- 자연 (풍경, 하늘, 바다 등)
+- 사물 (제품, 건물, 도시 풍경 등)
+- 추상적 비주얼 (컬러 블록, 패턴, 텍스처)
+- 다이어그램, 차트, 인포그래픽, 아이콘
+
+⚠️ 신뢰도 위험 — 이미지 자리만 표시:
+- 특정 국가의 군복, 제복, 군사 장비
+- 특정 국가 국기, 정부 상징
+- 실존 인물, 유명인, 공인
+- 특정 기관/브랜드 로고
+- 역사적 사건 장면
+
+위험 항목이 필요한 슬라이드는:
+이미지 대신 [이미지: (실제 사진으로 교체 권장)] 텍스트로 표시하고
+컬러 배경 + 텍스트 강조로 대체할 것.
+
+【디자인 방향】
+가능한 한 아래 요소를 활용해서 시각적으로 풍부하게 구성:
+- 컬러 배경 블록
+- 데이터 시각화 (차트, 그래프)
+- 다이어그램 (화살표, 프로세스 흐름)
+- 아이콘 기반 인포그래픽
+- 강조 텍스트 카드"""
+
+    return content + guidelines
 
 
 @app.route("/ppt/stream/<job_id>")

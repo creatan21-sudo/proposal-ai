@@ -868,8 +868,20 @@ def _extract_style_from_hwp(hwp_bytes: bytes, is_hwpx: bool = False) -> dict:
 
 
 def _extract_template_style(tmpl_prs) -> dict:
-    """PPTX 파일에서 디자인 토큰(색상·폰트) 추출."""
+    """PPTX 파일에서 디자인 토큰 + 레이아웃 패턴 추출.
+
+    sty 키:
+      bg, hd, ht, bd, ac, tf, bf, ts, bs  — 기본 토큰
+      palette   — 발견된 컬러 목록 (최대 5개, 밝기순 정렬)
+      ac2       — 보조 강조색 (팔레트 2번째)
+      has_line  — 구분선 도형 존재 여부
+      layout    — 추출된 레이아웃 타입 힌트 ('cover'|'section'|'two_col'|'plain')
+    """
     sty = _default_style()
+    sty["palette"]  = []
+    sty["ac2"]      = sty["ac"]
+    sty["has_line"] = False
+    sty["layout"]   = "plain"
 
     def _safe_rgb(rgb_obj):
         try:
@@ -877,7 +889,20 @@ def _extract_template_style(tmpl_prs) -> dict:
         except Exception:
             return None
 
-    for slide in (tmpl_prs.slides or [])[:3]:
+    def _brightness(c):
+        return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+
+    def _is_neutral(c):
+        r, g, b = c
+        is_white = r > 235 and g > 235 and b > 235
+        is_black = r < 20 and g < 20 and b < 20
+        is_gray  = abs(r - g) < 18 and abs(g - b) < 18
+        return is_white or is_black or is_gray
+
+    color_scores: dict = {}   # rgb_tuple → 면적(px²) 누적
+
+    num_slides = len(tmpl_prs.slides)
+    for slide in (tmpl_prs.slides or [])[:5]:
         # 배경색
         try:
             fill = slide.background.fill
@@ -888,46 +913,106 @@ def _extract_template_style(tmpl_prs) -> dict:
         except Exception:
             pass
 
+        shape_count = 0
+        textbox_count = 0
+        wide_shape_count = 0   # 가로로 긴 도형 (헤더 바 후보)
+
         for shape in slide.shapes:
-            # 도형 채움색 → 헤더 후보
+            shape_count += 1
+            # ── 도형 채움색 + 면적 누적 ──
             try:
                 if hasattr(shape, "fill") and shape.fill.type == 1:
                     c = _safe_rgb(shape.fill.fore_color.rgb)
-                    if c:
-                        r, g, b = c
-                        is_white = r > 230 and g > 230 and b > 230
-                        is_gray  = abs(r - g) < 20 and abs(g - b) < 20
-                        if not is_white and not is_gray:
+                    if c and not _is_neutral(c):
+                        w = shape.width or 0
+                        h = shape.height or 0
+                        area = (w / 914400) * (h / 914400)   # cm²
+                        color_scores[c] = color_scores.get(c, 0) + area
+
+                        # 가로로 넓은 도형 → 헤더 바 후보
+                        w_cm = w / 914400
+                        h_cm = h / 914400
+                        if w_cm > 20 and h_cm < 5:
+                            wide_shape_count += 1
                             sty["hd"] = c
-                            sty["ac"] = c
-                            brightness = 0.299 * r + 0.587 * g + 0.114 * b
-                            sty["ht"] = (255, 255, 255) if brightness < 140 else (0, 0, 0)
+                            br = _brightness(c)
+                            sty["ht"] = (255, 255, 255) if br < 140 else (0, 0, 0)
             except Exception:
                 pass
 
-            # 텍스트 폰트/색상
-            if not shape.has_text_frame:
-                continue
-            for para in shape.text_frame.paragraphs:
-                for run in para.runs:
-                    try:
-                        fn   = run.font.name
-                        sz   = run.font.size.pt if run.font.size else None
-                        clr  = _safe_rgb(run.font.color.rgb)
-                        if fn and sz:
-                            if sz >= 18:
-                                sty["tf"] = fn
-                                sty["ts"] = int(sz)
-                                if clr:
-                                    sty["bd"] = clr  # 제목색 → 본문 기본도 갱신
-                            elif sz >= 9:
-                                sty["bf"] = fn
-                                sty["bs"] = int(sz)
-                                if clr:
-                                    sty["bd"] = clr
-                    except Exception:
-                        pass
+            # ── 선/구분선 감지 ──
+            try:
+                from pptx.enum.shapes import MSO_SHAPE_TYPE
+                if shape.shape_type == MSO_SHAPE_TYPE.LINE:
+                    sty["has_line"] = True
+                elif hasattr(shape, "width") and hasattr(shape, "height"):
+                    w_cm = (shape.width or 0) / 914400
+                    h_cm = (shape.height or 0) / 914400
+                    if w_cm > 15 and h_cm < 0.3:
+                        sty["has_line"] = True
+            except Exception:
+                pass
 
+            # ── 텍스트 박스 카운트 + 폰트 추출 ──
+            if shape.has_text_frame:
+                textbox_count += 1
+                for para in shape.text_frame.paragraphs:
+                    for run in para.runs:
+                        try:
+                            fn  = run.font.name
+                            sz  = run.font.size.pt if run.font.size else None
+                            clr = _safe_rgb(run.font.color.rgb)
+                            if fn and sz:
+                                if sz >= 18:
+                                    sty["tf"] = fn
+                                    sty["ts"] = max(int(sz), sty["ts"])
+                                    if clr and not _is_neutral(clr):
+                                        sty["bd"] = clr
+                                elif sz >= 9:
+                                    sty["bf"] = fn
+                                    sty["bs"] = int(sz)
+                                    if clr and not _is_neutral(clr):
+                                        sty["bd"] = clr
+                        except Exception:
+                            pass
+
+        # ── 레이아웃 타입 힌트 ──
+        if wide_shape_count >= 1 and textbox_count >= 2:
+            sty["layout"] = "section"
+        elif textbox_count >= 4:
+            sty["layout"] = "two_col"
+
+    # ── 컬러 팔레트 정리 (면적 큰 순서) ──
+    sorted_colors = sorted(color_scores.items(), key=lambda x: -x[1])
+    palette = []
+    for c, _ in sorted_colors:
+        if len(palette) >= 5:
+            break
+        # 기존 팔레트와 너무 유사한 색 제외 (유클리드 거리 < 30)
+        too_close = any(
+            sum((c[i] - p[i]) ** 2 for i in range(3)) ** 0.5 < 30
+            for p in palette
+        )
+        if not too_close:
+            palette.append(c)
+    sty["palette"] = palette
+
+    if palette:
+        # 가장 면적 큰 색 → 헤더 (이미 wide_shape으로 설정됐으면 유지)
+        if sty["hd"] == _default_style()["hd"] and palette:
+            sty["hd"] = palette[0]
+            br = _brightness(palette[0])
+            sty["ht"] = (255, 255, 255) if br < 140 else (0, 0, 0)
+        # 2번째 색 → 강조색
+        if len(palette) >= 2:
+            sty["ac"]  = palette[1]
+            sty["ac2"] = palette[0]
+        else:
+            sty["ac"]  = palette[0]
+            sty["ac2"] = palette[0]
+
+    print(f"  [Template] palette={sty['palette']} hd={sty['hd']} ac={sty['ac']} "
+          f"layout={sty['layout']} has_line={sty['has_line']}")
     return sty
 
 
@@ -1065,28 +1150,34 @@ def _build_template_slides(detail: dict, target_pages: int = 20) -> list:
         items = []
         for label, field in [
             ("핵심 문제 정의", "core_problem"),
-            ("위기 제시", "crisis_statement"),
-            ("현황 진단", "current_situation"),
-            ("해결 방향", "solution_direction"),
-            ("전략 요약", "strategy_summary"),
+            ("위기 제시",      "crisis_statement"),
+            ("현황 진단",      "current_situation"),
+            ("해결 방향",      "solution_direction"),
+            ("전략 요약",      "strategy_summary"),
         ]:
             v = strat.get(field)
             if v:
                 items.append((label, str(v)[:350]))
 
+        _append_section_chunks(slides, "전략 방향 수립", items, max_per_slide=2)
+
+        # 기대 효과 → process 슬라이드
         efx = strat.get("expected_effects") or []
         if isinstance(efx, list) and efx:
-            items.append(("기대 효과", "\n".join(
-                f"• {str(e)[:120]}" for e in efx[:6]
-            )))
+            slides.append({
+                "type":  "process",
+                "title": "기대 효과",
+                "steps": [str(e)[:100] for e in efx[:5]],
+            })
 
+        # 설득 구조 → process 슬라이드
         persu = strat.get("persuasion_structure") or []
         if isinstance(persu, list) and persu:
-            items.append(("설득 구조", "\n".join(
-                f"• {str(p)[:120]}" for p in persu[:5]
-            )))
-
-        _append_section_chunks(slides, "전략 방향 수립", items, max_per_slide=2)
+            slides.append({
+                "type":  "process",
+                "title": "설득 구조",
+                "steps": [str(p)[:100] for p in persu[:5]],
+            })
 
     # ── 6. 핵심 컨셉 & 슬로건 ───────────────────────────────
     cre = _s("creative")
@@ -1263,6 +1354,24 @@ def _build_template_slides(detail: dict, target_pages: int = 20) -> list:
                 m_items.append((label, text))
 
         _append_section_chunks(slides, "마케팅 & 유통 전략", m_items, max_per_slide=2)
+
+        # KPI → diagram 슬라이드
+        kpi_raw = mkt.get("kpi") or mkt.get("kpi_targets") or []
+        if isinstance(kpi_raw, list) and kpi_raw:
+            kpi_labels = []
+            for k in kpi_raw[:6]:
+                if isinstance(k, dict):
+                    metric = k.get("metric", k.get("name", ""))
+                    target = k.get("target", k.get("value", ""))
+                    kpi_labels.append(f"{metric}\n{target}".strip())
+                else:
+                    kpi_labels.append(str(k)[:60])
+            if kpi_labels:
+                slides.append({
+                    "type":   "diagram",
+                    "title":  "KPI 목표",
+                    "labels": kpi_labels,
+                })
 
     # ── 10. 예상 Q&A ─────────────────────────────────────────
     final = _s("final_proposal")
@@ -1479,6 +1588,98 @@ def generate_from_template(detail: dict, template_bytes: bytes,
                           str(kw), sty["bf"], sty["bs"] + 1,
                           color=sty["ht"], align=PP_ALIGN.CENTER)
 
+        elif st == "process":
+            # 단계별 흐름도: 번호 배지 + 화살표 심볼 + 내용
+            _hdr_bar(sl, sdata["title"])
+            steps_list = sdata.get("steps", [])
+            n = max(len(steps_list), 1)
+            # 가로 배치 (최대 5단계) vs 세로 배치
+            if n <= 5:
+                item_w = (SW - 3.0) / n
+                y_top  = 3.2
+                item_h = SH - y_top - 0.5
+                for i, step_text in enumerate(steps_list):
+                    x = 1.5 + i * item_w
+                    # 번호 배지
+                    badge = sl.shapes.add_shape(1, Cm(x + item_w / 2 - 0.6), Cm(y_top),
+                                                Cm(1.2), Cm(1.2))
+                    badge.fill.solid()
+                    badge.fill.fore_color.rgb = _t_rgb(sty["ac"])
+                    badge.line.fill.background()
+                    _tmpl_box(sl, x + item_w / 2 - 0.6, y_top, 1.2, 1.2,
+                              str(i + 1), sty["tf"], sty["bs"] + 2,
+                              bold=True, color=sty["ht"], align=PP_ALIGN.CENTER)
+                    # 내용 박스
+                    cont_box = sl.shapes.add_shape(1, Cm(x + 0.1), Cm(y_top + 1.5),
+                                                   Cm(item_w - 0.3), Cm(item_h - 1.7))
+                    cont_box.fill.solid()
+                    cont_box.fill.fore_color.rgb = _t_rgb(
+                        sty["ac2"] if i % 2 == 0 else sty["hd"])
+                    cont_box.line.fill.background()
+                    _tmpl_box(sl, x + 0.2, y_top + 1.6, item_w - 0.5, item_h - 1.9,
+                              step_text, sty["bf"], sty["bs"],
+                              color=sty["ht"], wrap=True, align=PP_ALIGN.CENTER)
+                    # 화살표 (마지막 제외)
+                    if i < n - 1:
+                        _tmpl_box(sl, x + item_w - 0.5, y_top + item_h / 2 - 0.4,
+                                  0.9, 0.9, "▶", sty["tf"], sty["bs"] + 4,
+                                  color=sty["ac"], align=PP_ALIGN.CENTER)
+            else:
+                # 세로 배치 (5개 초과)
+                row_h = (SH - 3.2) / n
+                y = 3.2
+                for i, step_text in enumerate(steps_list):
+                    badge = sl.shapes.add_shape(1, Cm(1.5), Cm(y + 0.1),
+                                                Cm(1.0), Cm(row_h - 0.2))
+                    badge.fill.solid()
+                    badge.fill.fore_color.rgb = _t_rgb(sty["ac"])
+                    badge.line.fill.background()
+                    _tmpl_box(sl, 1.5, y + 0.1, 1.0, row_h - 0.2,
+                              str(i + 1), sty["bf"], sty["bs"],
+                              bold=True, color=sty["ht"], align=PP_ALIGN.CENTER)
+                    _tmpl_box(sl, 3.0, y + 0.1, SW - 4.5, row_h - 0.2,
+                              step_text, sty["bf"], sty["bs"],
+                              color=sty["bd"], wrap=True)
+                    y += row_h
+
+        elif st == "diagram":
+            # 카드 그리드 다이어그램 (KPI 등)
+            _hdr_bar(sl, sdata["title"])
+            labels = sdata.get("labels", [])
+            n = len(labels)
+            if n == 0:
+                pass
+            else:
+                cols = min(n, 3)
+                rows = (n + cols - 1) // cols
+                card_w = (SW - 3.0) / cols
+                card_h = min((SH - 3.5) / rows, 4.0)
+                for i, lbl in enumerate(labels):
+                    col = i % cols
+                    row = i // cols
+                    cx = 1.5 + col * card_w
+                    cy = 3.2 + row * (card_h + 0.3)
+                    card = sl.shapes.add_shape(1, Cm(cx), Cm(cy),
+                                               Cm(card_w - 0.3), Cm(card_h))
+                    card.fill.solid()
+                    card.fill.fore_color.rgb = _t_rgb(sty["hd"])
+                    card.line.fill.background()
+                    # 상단 강조 띠
+                    accent_bar = sl.shapes.add_shape(1, Cm(cx), Cm(cy),
+                                                     Cm(card_w - 0.3), Cm(0.4))
+                    accent_bar.fill.solid()
+                    accent_bar.fill.fore_color.rgb = _t_rgb(sty["ac"])
+                    accent_bar.line.fill.background()
+                    _tmpl_box(sl, cx + 0.2, cy + 0.5, card_w - 0.7, card_h - 0.6,
+                              lbl, sty["bf"], sty["bs"] + 1,
+                              color=sty["ht"], wrap=True, align=PP_ALIGN.CENTER)
+
+            # 구분선 (참고 파일에 선이 있었으면)
+            if sty.get("has_line"):
+                line = sl.shapes.add_shape(1, Cm(1.5), Cm(2.6), Cm(SW - 3), Cm(0.06))
+                line.fill.solid(); line.fill.fore_color.rgb = _t_rgb(sty["ac"])
+                line.line.fill.background()
+
     _prog("파일 저장 중...", 4, 5)
     buf = _io.BytesIO()
     prs.save(buf)
@@ -1548,7 +1749,7 @@ def generate_with_gamma(topic: str, pages: int) -> dict:
     resp = requests.post(
         f"{_BASE}/v1.0/generations",
         json={
-            "inputText": topic[:5000],
+            "inputText": topic[:8000],
             "textMode":  "generate",
             "format":    "presentation",
             "numCards":  num_cards,
