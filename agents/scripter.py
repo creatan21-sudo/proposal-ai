@@ -70,7 +70,7 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
     print(f"  대본 생성: {total}편 / {'숏폼' if is_short else '롱폼'} "
           f"({dna.duration}) {'| 시리즈 연결고리 포함' if is_series else ''}")
 
-    _EP_TIMEOUT = 120  # 편당 최대 2분
+    _EP_TIMEOUT = 300  # 편당 최대 5분 (씬별 개별 API 호출로 시간 증가)
 
     def _generate_one(idx: int, ep_plan: dict) -> dict:
         ep_num = idx + 1
@@ -196,48 +196,34 @@ def _generate_longform_outline(
 ) -> dict:
     """제안서 개요용 대본 생성.
 
-    is_sample=True  (1편): 메타데이터 JSON + 씬 텍스트 개별 호출 → 합산
-    is_sample=False (나머지): 기존 소형 JSON 방식 유지 (씬 3개, 속도 우선)
+    모든 편: 메타데이터 JSON(소형) + 씬별 개별 텍스트 API 호출 → 합산
+    1편(샘플): 5씬까지, 나머지: 3씬
+    씬 텍스트는 max_tokens=2000으로 실제 방송 대본 형식으로 작성
     """
     duration_s  = _duration_to_seconds(dna.duration)
     full_scenes = _calc_scene_count(duration_s)
     title       = ep_plan.get("title", f"{ep_num}편")
+    word_count  = _calc_word_count(duration_s)
 
-    if not is_sample:
-        # ── 2편 이상: 기존 소형 JSON (3씬, max_tokens=400) ──
-        scene_count = min(full_scenes, 3)
-        prompt      = _build_outline_minimal_prompt(dna, ep_plan, ep_num, scene_count)
-        raw         = claude_client.call_json(prompt, max_tokens=400, _validate=False)
-        if raw.get("_parse_failed"):
-            raw = {"episode": ep_num, "title": title, "format": "longform",
-                   "duration": dna.duration, "scenes": [], "opening_hook": {},
-                   "closing_cta": {}, "series_hook": {}}
-        raw.setdefault("episode", ep_num)
-        raw.setdefault("title",   title)
-        raw.setdefault("format",  "longform")
-        raw.setdefault("duration", dna.duration)
-        raw.setdefault("opening_hook", {})
-        raw.setdefault("scenes", [])
-        raw.setdefault("interview_questions", [])
-        raw.setdefault("closing_cta", {})
-        raw.setdefault("series_hook", {})
-        n = len(raw.get("scenes") or [])
-        print(f"  [확인] {ep_num}편 개요 대본 완료: {n}씬")
-        return raw
+    # 1편 샘플은 5씬, 나머지는 3씬
+    scene_count = min(full_scenes, 5) if is_sample else min(full_scenes, 3)
 
-    # ── 1편 샘플: 메타데이터 JSON + 씬 텍스트 별도 호출 ──
-    scene_count = min(full_scenes, 5)
-
-    # 1단계: 메타데이터 (작은 JSON, max_tokens=250)
-    meta_prompt = _build_meta_only_prompt(dna, ep_plan, ep_num, all_plans, is_series)
+    # 1단계: 메타데이터 JSON (작은 호출)
+    meta_prompt = _build_meta_only_prompt(dna, ep_plan, ep_num, all_plans if is_sample else [], is_series)
     meta = claude_client.call_json(meta_prompt, max_tokens=250, _validate=False)
     if meta.get("_parse_failed"):
         meta = {}
 
-    # 2단계: 씬 텍스트 (일반 텍스트, max_tokens=600)
-    scene_prompt = _build_scene_text_prompt(dna, ep_plan, ep_num, scene_count, duration_s, is_series)
-    scene_text   = claude_client.call(scene_prompt, max_tokens=600)
-    scenes       = _parse_scene_text(scene_text, scene_count)
+    # 2단계: 씬별 개별 텍스트 API 호출 (max_tokens=2000)
+    scenes = []
+    for scene_num in range(1, scene_count + 1):
+        scene_prompt = _build_scene_text_prompt_v2(
+            dna, ep_plan, ep_num, scene_num, scene_count, duration_s, word_count
+        )
+        scene_text = claude_client.call(scene_prompt, max_tokens=2000)
+        scene_obj  = _parse_scene_text_v2(scene_text, scene_num, duration_s, scene_count)
+        scenes.append(scene_obj)
+        print(f"  [씬] {ep_num}편 S#{scene_num}/{scene_count} 완료 ({len(scene_text)}자)")
 
     result = {
         "episode":             ep_num,
@@ -253,7 +239,8 @@ def _generate_longform_outline(
             "callback_line":    None,
         },
     }
-    print(f"  [확인] {ep_num}편 샘플 대본 완료: {len(scenes)}씬")
+    label = "샘플" if is_sample else "개요"
+    print(f"  [확인] {ep_num}편 {label} 대본 완료: {len(scenes)}씬")
     return result
 
 
@@ -277,71 +264,144 @@ def _build_meta_only_prompt(
     )
 
 
-def _build_scene_text_prompt(
+def _build_scene_text_prompt_v2(
     dna: ConceptDNA,
     ep_plan: dict,
     ep_num: int,
-    scene_count: int,
+    scene_num: int,
+    total_scenes: int,
     duration_s: int,
-    is_series: bool,
+    word_count: int,
 ) -> str:
-    """씬 구성 텍스트 전용 프롬프트 (JSON 없이 마크다운 목록으로 출력)."""
-    title      = ep_plan.get("title", f"{ep_num}편")
-    core_msg   = ep_plan.get("core_message", "")
-    dur_label  = f"{duration_s // 60}분 {duration_s % 60}초" if duration_s % 60 else f"{duration_s // 60}분"
+    """씬 개별 호출용 실제 방송 대본 프롬프트 (JSON 없이 텍스트 출력)."""
+    title     = ep_plan.get("title", f"{ep_num}편")
+    core_msg  = ep_plan.get("core_message", "")
+    dur_label = f"{duration_s // 60}분 {duration_s % 60}초" if duration_s % 60 else f"{duration_s // 60}분"
 
-    series_note = ""
-    if is_series:
-        prev = f"{ep_num-1}편 복선 포함" if ep_num > 1 else ""
-        nxt  = f"{ep_num+1}편 클리프행어 포함" if ep_num < len([]) else ""
-        if prev or nxt:
-            series_note = f"시리즈 연결: {prev or ''}{' / ' + nxt if nxt else ''}\n"
+    scene_dur = max(1, duration_s // total_scenes)
+    start_s   = (scene_num - 1) * scene_dur
+    end_s     = scene_num * scene_dur
+    def _tc(s): return f"{s // 60}:{s % 60:02d}"
+    timecode  = f"{_tc(start_s)}~{_tc(end_s)}"
+    min_chars = max(200, word_count // total_scenes)
 
     return (
-        f"공공 홍보 영상 {ep_num}편 씬 구성 {scene_count}개를 아래 형식으로 작성하라.\n"
-        f"발주처:{dna.client_name} 사업:{dna.project_name} 제목:{title}\n"
+        f"실제 방송용 대본을 작성하라. 요약이나 메타 설명은 절대 금지.\n"
+        f"발주처:{dna.client_name} 사업:{dna.project_name} {ep_num}편 제목:{title}\n"
         f"컨셉:{dna.concept or '미정'} 톤:{dna.tone_and_manner or '미정'} 러닝타임:{dur_label}\n"
-        f"핵심메시지:{core_msg}\n{series_note}\n"
-        f"[출력 형식 — 반드시 아래 형식만 사용]\n"
-        f"씬1 [장소]: 핵심 내용 1문장\n"
-        f"씬2 [장소]: 핵심 내용 1문장\n"
-        f"...\n\n"
-        f"설명 없이 씬 목록만 출력하라."
+        f"핵심메시지:{core_msg}\n\n"
+        f"【이 씬 정보】 S#{scene_num}/{total_scenes} | 타임코드:{timecode} (약 {scene_dur}초)\n\n"
+        f"【필수 포함 항목 — 각 항목 실제 내용으로 작성】\n"
+        f"▶ 나레이션: 나레이터가 실제로 읽을 완성된 문장 전문 (문어체 격식체, 2~4문장)\n"
+        f"▶ 대사: 출연자 실제 대사 전문 (구어체, 감정지문 포함) — 없으면 '없음'\n"
+        f"▶ 화면: 카메라 앵글 + 피사체 + 움직임 + 인물 표정 묘사 (2~3문장)\n"
+        f"▶ 자막: 화면에 표시될 자막 문구 그대로 (**핵심단어** 강조)\n\n"
+        f"분량 기준: 최소 {min_chars}자 이상. 실제 촬영 가능한 수준으로 상세히 작성.\n"
+        f"'설명한다', '보여준다', '삽입한다' 같은 메타 설명 절대 금지.\n\n"
+        f"[출력 형식 — 아래 형식 그대로 시작]\n"
+        f"S#{scene_num} [장소명 — 구체적 촬영지] ({timecode})\n"
+        f"▶ 나레이션: ...\n"
+        f"▶ 대사: ...\n"
+        f"▶ 화면: ...\n"
+        f"▶ 자막: ..."
+    )
+
+
+def _parse_scene_text_v2(text: str, scene_num: int, duration_s: int, total_scenes: int) -> dict:
+    """방송 대본 형식 씬 텍스트 → 씬 dict 파싱."""
+    lines = text.strip().splitlines()
+    location = ""
+    fields: dict = {"narration": [], "dialogue": [], "visual": [], "caption": []}
+    current_field = None
+
+    scene_dur = max(1, duration_s // total_scenes)
+    start_s   = (scene_num - 1) * scene_dur
+    end_s     = scene_num * scene_dur
+    def _tc(s): return f"{s // 60}:{s % 60:02d}"
+    timecode  = f"{_tc(start_s)}~{_tc(end_s)}"
+
+    MARKERS = [
+        ("▶ 나레이션:", "narration"), ("▶나레이션:", "narration"), ("나레이션:", "narration"),
+        ("▶ 대사:", "dialogue"),   ("▶대사:", "dialogue"),   ("대사:", "dialogue"),
+        ("▶ 화면:", "visual"),     ("▶화면:", "visual"),     ("화면:", "visual"),
+        ("▶ 자막:", "caption"),    ("▶자막:", "caption"),    ("자막:", "caption"),
+    ]
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            continue
+        # 첫 줄에서 장소 추출
+        if not location:
+            m = re.match(r'^S#\d+\s*\[([^\]]+)\]', stripped)
+            if m:
+                location = m.group(1).strip()
+                continue
+
+        matched = False
+        for marker, field in MARKERS:
+            if stripped.startswith(marker):
+                current_field = field
+                rest = stripped[len(marker):].strip()
+                if rest:
+                    fields[field].append(rest)
+                matched = True
+                break
+        if not matched and current_field:
+            fields[current_field].append(stripped)
+
+    narration = "\n".join(fields["narration"]).strip()
+    dialogue  = "\n".join(fields["dialogue"]).strip()
+    visual    = "\n".join(fields["visual"]).strip()
+    caption   = "\n".join(fields["caption"]).strip()
+
+    # key_point: 나레이션 요약 (없으면 전체 텍스트 앞부분)
+    key_point = narration[:200] if narration else text.strip()[:200]
+
+    return {
+        "scene_number": scene_num,
+        "timecode":     timecode,
+        "location":     location or f"씬{scene_num} 촬영지",
+        "narration":    narration,
+        "dialogue":     dialogue if dialogue and "없음" not in dialogue else None,
+        "visual":       visual,
+        "caption":      caption,
+        "key_point":    key_point,
+    }
+
+
+# 하위 호환 유지 (레거시 — 직접 호출 안 함)
+def _build_scene_text_prompt(dna, ep_plan, ep_num, scene_count, duration_s, is_series):
+    return _build_scene_text_prompt_v2(
+        dna, ep_plan, ep_num, 1, scene_count, duration_s,
+        _calc_word_count(duration_s)
     )
 
 
 def _parse_scene_text(text: str, expected_count: int) -> list:
-    """씬 텍스트에서 씬 목록 추출."""
+    """레거시 호환 — 단일 텍스트에서 씬 목록 추출."""
     scenes = []
     for line in text.strip().splitlines():
         line = line.strip()
         if not line:
             continue
-        # 씬N [장소]: 내용  또는  씬N: 내용
         m = re.match(r'^씬\s*(\d+)\s*(?:\[([^\]]*)\])?\s*[:\-]\s*(.*)', line)
         if not m:
             m = re.match(r'^S#(\d+)\s*(?:\[([^\]]*)\])?\s*[:\-]\s*(.*)', line, re.IGNORECASE)
         if not m:
             m = re.match(r'^(\d+)[.\)]\s+(.+)', line)
             if m:
-                scenes.append({
-                    "scene_number": int(m.group(1)),
-                    "location":     "",
-                    "key_point":    m.group(2).strip(),
-                })
+                scenes.append({"scene_number": int(m.group(1)), "location": "", "key_point": m.group(2).strip()})
                 continue
         if m:
             num = int(m.group(1))
             loc = (m.group(2) or "").strip()
             kp  = (m.group(3) if len(m.groups()) >= 3 else m.group(2) or "").strip()
             scenes.append({"scene_number": num, "location": loc, "key_point": kp})
-
-    # 파싱 실패 시 줄 단위 fallback
     if not scenes:
         for i, line in enumerate(text.strip().splitlines()[:expected_count], 1):
             if line.strip():
                 scenes.append({"scene_number": i, "location": "", "key_point": line.strip()})
-
     return scenes[:expected_count]
 
 
@@ -1013,6 +1073,11 @@ def _is_shortform(duration_seconds: int) -> bool:
 def _calc_scene_count(duration_seconds: int) -> int:
     """러닝타임(초) → 적정 장면 수 계산 (장면당 평균 12초)."""
     return max(3, min(duration_seconds // _SECS_PER_SCENE, 20))
+
+
+def _calc_word_count(duration_s: int) -> int:
+    """러닝타임(초) 기준 최소 글자 수 (30초당 300자 기준)."""
+    return max(300, (duration_s // 30) * 300)
 
 
 def _format_episode_plan(ep_plan: dict) -> str:

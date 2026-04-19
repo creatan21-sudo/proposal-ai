@@ -237,7 +237,7 @@
                 </div>
               </label>
               <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
-                <input type="radio" name="run_mode" value="auto" style="margin-top:2px;">
+                <input type="radio" name="run_mode" value="auto" style="margin-top:2px;" onchange="onRunModeChange(this)">
                 <div>
                   <strong>자동 실행</strong> — 선택한 스텝 전부 자동으로 완료까지 진행
                   <div style="color:#6b7280;font-size:.78rem;">각 스텝 완료 시 ✅ 표시, 전체 완료 후 알림</div>
@@ -321,6 +321,20 @@
       });
     });
     document.getElementById('script-preset-ep')?.addEventListener('input', checkCutsWarning);
+
+    function onRunModeChange(radio) {
+      if (radio.value !== 'auto') return;
+      const ok = confirm(
+        '자동 실행 확인\n\n' +
+        '무분별한 자동 실행은 과한 크레딧 손실로 이어질 수 있습니다.\n\n' +
+        '계속하시겠습니까?'
+      );
+      if (!ok) {
+        // 취소 시 인터랙티브 모드로 복귀
+        const interactive = document.querySelector('input[name="run_mode"][value="interactive"]');
+        if (interactive) interactive.checked = true;
+      }
+    }
     </script>
   </div>
 
