@@ -622,6 +622,18 @@ def _generate_pt_script(
     return result.get("pt_script", {})
 
 
+def generate_pt_script_for_ppt(dna: ConceptDNA) -> dict:
+    """PPT 버전 저장 시 PT 원고 초안 생성 (공개 함수 — 경량 호출).
+
+    consistency/company_profile 없이 DNA만으로 PT 원고 생성.
+    """
+    try:
+        return _generate_pt_script(dna, consistency={}, company_profile={})
+    except Exception as e:
+        print(f"  [PT원고] 생성 실패: {e}")
+        return {}
+
+
 def _generate_pt_and_qa(
     dna: ConceptDNA,
     consistency: dict,

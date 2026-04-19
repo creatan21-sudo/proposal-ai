@@ -109,6 +109,15 @@
                     title="{{ '숨김 해제' if c.get('hidden') else '숨기기' }}">
               {{ '👁 표시' if c.get('hidden') else '🙈 숨기기' }}
             </button>
+            {% if is_admin %}
+            <button class="btn btn-sm btn-delete-direct"
+                    onclick="directDelete(event, {{ c.id }}, '{{ c.project_name|replace("'","") }}')"
+                    title="즉시 삭제">🗑️ 삭제</button>
+            {% else %}
+            <button class="btn btn-sm btn-delete-req"
+                    onclick="requestDelete(event, {{ c.id }}, '{{ c.client_name|replace("'","") }}', '{{ c.project_name|replace("'","") }}')"
+                    title="삭제 요청">🗑️ 삭제 요청</button>
+            {% endif %}
           </div>
         </td>
       </tr>
@@ -184,6 +193,23 @@
   </div>
 </div>
 
+<!-- 삭제 요청 모달 -->
+<div id="del-req-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);
+     z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:12px;padding:28px;width:400px;max-width:90vw;
+              box-shadow:0 20px 60px rgba(0,0,0,.25);">
+    <div style="font-weight:700;font-size:16px;margin-bottom:8px;">삭제 요청</div>
+    <div id="del-req-body" style="font-size:14px;color:#374151;margin-bottom:20px;line-height:1.6;">
+      해당 프로젝트의 삭제를 운영자에게 요청하겠습니까?
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-secondary" onclick="closeDelReqModal()">취소</button>
+      <button class="btn btn-primary" onclick="submitDelReq()"
+              style="background:#dc2626;border-color:#dc2626;">요청하기</button>
+    </div>
+  </div>
+</div>
+
 <style>
 .hidden-row { opacity: 0.45; background: #fafafa; }
 .btn-hide {
@@ -200,6 +226,16 @@
   font-size: 11px; padding: 3px 8px;
 }
 .btn-share:hover { background: #dbeafe; }
+.btn-delete-direct {
+  background: #fee2e2; color: #dc2626; border: 1px solid #fecaca;
+  font-size: 11px; padding: 3px 8px;
+}
+.btn-delete-direct:hover { background: #fecaca; }
+.btn-delete-req {
+  background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa;
+  font-size: 11px; padding: 3px 8px;
+}
+.btn-delete-req:hover { background: #ffedd5; }
 </style>
 
 <script>
@@ -254,6 +290,57 @@ async function doShare() {
 // 모달 바깥 클릭으로 닫기
 document.getElementById('share-modal').addEventListener('click', function(e) {
   if (e.target === this) closeShareModal();
+});
+
+let _delReqCaseId = null;
+
+function requestDelete(event, caseId, clientName, projectName) {
+  event.stopPropagation();
+  _delReqCaseId = caseId;
+  document.getElementById('del-req-body').innerHTML =
+    `해당 프로젝트의 삭제를 운영자에게 요청하겠습니까?<br>` +
+    `<span style="font-weight:600;color:#374151;">${clientName} / ${projectName}</span><br>` +
+    `<span style="font-size:12px;color:#6b7280;">무분별한 자동 실행은 과한 크레딧 손실로 이어질 수 있습니다.</span>`;
+  document.getElementById('del-req-modal').style.display = 'flex';
+}
+
+function closeDelReqModal() {
+  document.getElementById('del-req-modal').style.display = 'none';
+  _delReqCaseId = null;
+}
+
+async function submitDelReq() {
+  if (!_delReqCaseId) return;
+  try {
+    const res = await fetch(`/history/${_delReqCaseId}/request_delete`, { method: 'POST' });
+    const d   = await res.json();
+    closeDelReqModal();
+    if (d.ok) {
+      alert(d.message || '삭제 요청이 접수됐습니다. 운영자 확인 후 처리됩니다.');
+    } else {
+      alert('오류: ' + (d.error || ''));
+    }
+  } catch(e) { alert('네트워크 오류: ' + e); }
+}
+
+async function directDelete(event, caseId, projectName) {
+  event.stopPropagation();
+  if (!confirm(`"${projectName}" 프로젝트를 즉시 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) return;
+  try {
+    const res = await fetch(`/history/${caseId}/delete`, { method: 'POST' });
+    const d   = await res.json();
+    if (d.ok) {
+      const row = document.getElementById('row-' + caseId);
+      if (row) row.remove();
+      alert('삭제되었습니다.');
+    } else {
+      alert('오류: ' + (d.error || ''));
+    }
+  } catch(e) { alert('네트워크 오류: ' + e); }
+}
+
+document.getElementById('del-req-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeDelReqModal();
 });
 
 function toggleHide(event, caseId, isHidden) {

@@ -183,6 +183,167 @@
   </div>
 </div>
 
+<!-- ── PPT 버전 히스토리 ────────────────────────────── -->
+<div id="ppt-versions-panel" style="margin-bottom:20px;">
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+    <button onclick="togglePptVersions()" id="ppt-ver-toggle-btn"
+            style="background:none;border:none;cursor:pointer;font-size:.85rem;
+                   color:#6b7280;font-weight:600;display:flex;align-items:center;gap:6px;padding:0;">
+      <span id="ppt-ver-arrow">▶</span> PPT 버전 히스토리
+    </button>
+    <span id="ppt-ver-count" style="font-size:.78rem;color:#9ca3af;"></span>
+  </div>
+  <div id="ppt-versions-content" style="display:none;">
+    <div class="card" style="padding:0;overflow:hidden;" id="ppt-versions-card">
+      <div style="padding:16px;text-align:center;color:#9ca3af;font-size:14px;" id="ppt-ver-loading">
+        로딩 중...
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- PT 원고 모달 -->
+<div id="pt-script-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);
+     z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:12px;padding:28px;width:640px;max-width:92vw;
+              max-height:85vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.3);">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+      <div style="font-weight:700;font-size:16px;" id="pt-modal-title">PT 원고 (v—)</div>
+      <button onclick="closePtModal()"
+              style="background:none;border:none;font-size:20px;cursor:pointer;color:#6b7280;">✕</button>
+    </div>
+    <div id="pt-script-content" style="font-size:13px;line-height:1.7;color:#374151;white-space:pre-wrap;"></div>
+  </div>
+</div>
+
+<script>
+const _PPT_VER_CASE_ID = {{ case_id }};
+let _pptVersionsLoaded = false;
+
+function togglePptVersions() {
+  const content = document.getElementById('ppt-versions-content');
+  const arrow   = document.getElementById('ppt-ver-arrow');
+  const open    = content.style.display === 'none';
+  content.style.display = open ? '' : 'none';
+  arrow.textContent = open ? '▼' : '▶';
+  if (open && !_pptVersionsLoaded) loadPptVersions();
+}
+
+async function loadPptVersions() {
+  _pptVersionsLoaded = true;
+  try {
+    const res  = await fetch(`/api/ppt_versions/${_PPT_VER_CASE_ID}`);
+    const data = await res.json();
+    renderPptVersions(data.versions || []);
+  } catch(e) {
+    document.getElementById('ppt-ver-loading').textContent = '로딩 실패: ' + e;
+  }
+}
+
+function renderPptVersions(versions) {
+  const card  = document.getElementById('ppt-versions-card');
+  const count = document.getElementById('ppt-ver-count');
+  count.textContent = versions.length > 0 ? `(${versions.length}개 버전)` : '';
+
+  if (versions.length === 0) {
+    card.innerHTML = '<div style="padding:24px;text-align:center;color:#9ca3af;font-size:13px;">아직 생성된 PPT 버전이 없습니다.</div>';
+    return;
+  }
+
+  let html = '<table style="width:100%;">' +
+    '<thead><tr>' +
+    '<th style="padding:10px 14px;font-size:12px;color:#6b7280;font-weight:600;text-align:left;background:#f9fafb;border-bottom:1px solid #e5e7eb;">버전</th>' +
+    '<th style="padding:10px 14px;font-size:12px;color:#6b7280;font-weight:600;text-align:left;background:#f9fafb;border-bottom:1px solid #e5e7eb;">생성일시</th>' +
+    '<th style="padding:10px 14px;font-size:12px;color:#6b7280;font-weight:600;text-align:left;background:#f9fafb;border-bottom:1px solid #e5e7eb;">생성자</th>' +
+    '<th style="padding:10px 14px;font-size:12px;color:#6b7280;font-weight:600;text-align:left;background:#f9fafb;border-bottom:1px solid #e5e7eb;">메모</th>' +
+    '<th style="padding:10px 14px;font-size:12px;color:#6b7280;font-weight:600;text-align:left;background:#f9fafb;border-bottom:1px solid #e5e7eb;"></th>' +
+    '</tr></thead><tbody>';
+
+  versions.forEach((v, idx) => {
+    const isCurrent = idx === 0;
+    const dt = v.created_at ? v.created_at.substring(0,16).replace('T',' ') : '-';
+    const memoId = `memo-${v.id}`;
+    html += `<tr style="border-bottom:1px solid #f3f4f6;">
+      <td style="padding:10px 14px;">
+        <span style="font-weight:700;color:#4f46e5;">v${v.version}</span>
+        ${isCurrent ? ' <span style="color:#f59e0b;font-size:12px;" title="최신 버전">★ 현재</span>' : ''}
+        ${v.is_pdf ? ' <span style="font-size:11px;color:#6b7280;">PDF</span>' : ''}
+      </td>
+      <td style="padding:10px 14px;font-size:13px;color:#374151;">${dt}</td>
+      <td style="padding:10px 14px;font-size:13px;color:#6b7280;">${v.created_by || '-'}</td>
+      <td style="padding:10px 14px;">
+        <input type="text" id="${memoId}" value="${(v.memo || '').replace(/"/g,'&quot;')}"
+               placeholder="메모 입력..."
+               style="width:160px;padding:4px 8px;border:1px solid #e5e7eb;border-radius:6px;font-size:12px;"
+               onblur="saveMemo(${v.id}, this.value)">
+      </td>
+      <td style="padding:10px 14px;white-space:nowrap;">
+        <div style="display:flex;gap:4px;">
+          <a href="/ppt/version/${v.id}/download"
+             class="btn btn-primary btn-sm">⬇ 다운로드</a>
+          <button class="btn btn-secondary btn-sm"
+                  onclick="showPtScript(${v.id}, ${v.version})"
+                  ${Object.keys(v.pt_script_parsed || {}).length === 0 ? 'disabled style="opacity:.5;"' : ''}>
+            PT 원고
+          </button>
+        </div>
+      </td>
+    </tr>`;
+  });
+
+  html += '</tbody></table>';
+  card.innerHTML = html;
+}
+
+async function saveMemo(versionId, memo) {
+  try {
+    await fetch(`/api/ppt_version/${versionId}/memo`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ memo }),
+    });
+  } catch(e) { console.error('메모 저장 실패:', e); }
+}
+
+async function showPtScript(versionId, versionNum) {
+  document.getElementById('pt-modal-title').textContent = `PT 원고 (v${versionNum})`;
+  document.getElementById('pt-script-content').textContent = '로딩 중...';
+  document.getElementById('pt-script-modal').style.display = 'flex';
+  try {
+    const res  = await fetch(`/api/ppt_version/${versionId}/pt_script`);
+    const data = await res.json();
+    if (data.ok) {
+      const pt = data.pt_script || {};
+      let text = '';
+      if (pt.opening)     text += `[오프닝]\n${pt.opening}\n\n`;
+      if (pt.body)        text += `[본론]\n${pt.body}\n\n`;
+      if (pt.sections && Array.isArray(pt.sections)) {
+        pt.sections.forEach((s, i) => {
+          text += `[섹션 ${i+1}]\n`;
+          if (s.title)   text += `제목: ${s.title}\n`;
+          if (s.script)  text += `${s.script}\n`;
+          text += '\n';
+        });
+      }
+      if (pt.closing)     text += `[클로징]\n${pt.closing}\n\n`;
+      if (!text) text = JSON.stringify(pt, null, 2);
+      document.getElementById('pt-script-content').textContent = text.trim() || '(내용 없음)';
+    } else {
+      document.getElementById('pt-script-content').textContent = 'PT 원고 없음';
+    }
+  } catch(e) {
+    document.getElementById('pt-script-content').textContent = '로딩 실패: ' + e;
+  }
+}
+
+function closePtModal() {
+  document.getElementById('pt-script-modal').style.display = 'none';
+}
+document.getElementById('pt-script-modal').addEventListener('click', function(e) {
+  if (e.target === this) closePtModal();
+});
+</script>
+
 {# ────────────────────────────────────────────────
    스텝 정의 + 탭 아이콘
    ──────────────────────────────────────────────── #}

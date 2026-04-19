@@ -194,6 +194,32 @@ def init_db() -> None:
                 project_name TEXT    NOT NULL DEFAULT '',
                 data_json    TEXT    NOT NULL DEFAULT '{}'
             );
+
+            CREATE TABLE IF NOT EXISTS delete_requests (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_id       INTEGER NOT NULL,
+                requested_by  TEXT    NOT NULL,
+                requested_at  TEXT    NOT NULL,
+                status        TEXT    DEFAULT 'pending',
+                handled_by    TEXT,
+                handled_at    TEXT,
+                reject_reason TEXT,
+                client_name   TEXT    DEFAULT '',
+                project_name  TEXT    DEFAULT ''
+            );
+
+            CREATE TABLE IF NOT EXISTS ppt_versions (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_id      INTEGER NOT NULL,
+                version      INTEGER NOT NULL,
+                ppt_data     BLOB,
+                ppt_filename TEXT    DEFAULT '',
+                pt_script    TEXT    DEFAULT '{}',
+                created_at   TEXT    NOT NULL,
+                created_by   TEXT    DEFAULT '',
+                memo         TEXT    DEFAULT '',
+                is_pdf       INTEGER DEFAULT 0
+            );
         """)
         # ── 마이그레이션: 기존 DB에 누락된 컬럼 추가 ──
         for migration in [
@@ -1366,4 +1392,137 @@ def save_research_cache(client_name: str, project_name: str, data: dict) -> None
                VALUES (?, ?, ?, ?)""",
             (datetime.now().isoformat(), client_name, project_name,
              _json.dumps(data, ensure_ascii=False)),
+        )
+
+
+# ─────────────────────────────────────────────
+# 삭제 요청 관리
+# ─────────────────────────────────────────────
+
+def create_delete_request(case_id: int, requested_by: str,
+                          client_name: str = "", project_name: str = "") -> int:
+    """삭제 요청 생성."""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """INSERT INTO delete_requests
+               (case_id, requested_by, requested_at, client_name, project_name)
+               VALUES (?,?,?,?,?)""",
+            (case_id, requested_by, datetime.now().isoformat(), client_name, project_name),
+        )
+        return cursor.lastrowid
+
+
+def list_delete_requests(status: str = "pending") -> list:
+    """삭제 요청 목록 조회."""
+    with get_connection() as conn:
+        if status:
+            rows = conn.execute(
+                "SELECT * FROM delete_requests WHERE status=? ORDER BY requested_at DESC",
+                (status,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM delete_requests ORDER BY requested_at DESC"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def approve_delete_request(req_id: int, handled_by: str) -> bool:
+    """삭제 요청 승인 — 케이스 실제 삭제."""
+    with get_connection() as conn:
+        req = conn.execute(
+            "SELECT * FROM delete_requests WHERE id=?", (req_id,)
+        ).fetchone()
+        if not req:
+            return False
+        req = dict(req)
+        conn.execute("DELETE FROM rfp_cases WHERE id=?", (req["case_id"],))
+        conn.execute(
+            "UPDATE delete_requests SET status='approved', handled_by=?, handled_at=? WHERE id=?",
+            (handled_by, datetime.now().isoformat(), req_id),
+        )
+        return True
+
+
+def reject_delete_request(req_id: int, handled_by: str, reject_reason: str = "") -> None:
+    """삭제 요청 거절."""
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE delete_requests
+               SET status='rejected', handled_by=?, handled_at=?, reject_reason=?
+               WHERE id=?""",
+            (handled_by, datetime.now().isoformat(), reject_reason, req_id),
+        )
+
+
+def delete_case(case_id: int) -> None:
+    """케이스 즉시 삭제 (관리자용)."""
+    with get_connection() as conn:
+        conn.execute("DELETE FROM rfp_cases WHERE id=?", (case_id,))
+
+
+def get_admin_telegram_ids() -> list:
+    """관리자 계정의 텔레그램 chat_id 목록 반환 (알림 전송용)."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT telegram_chat_id FROM users WHERE is_admin=1 AND telegram_chat_id != ''"
+        ).fetchall()
+        return [dict(r)["telegram_chat_id"] for r in rows if dict(r).get("telegram_chat_id")]
+
+
+# ─────────────────────────────────────────────
+# PPT 버전 관리
+# ─────────────────────────────────────────────
+
+def save_ppt_version(case_id: int, ppt_data: bytes, ppt_filename: str,
+                     pt_script: str = "{}", created_by: str = "",
+                     memo: str = "", is_pdf: bool = False) -> "tuple[int, int]":
+    """PPT 버전 저장.
+
+    Returns:
+        (version_id, version_number)
+    """
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT MAX(version) FROM ppt_versions WHERE case_id=?", (case_id,)
+        ).fetchone()
+        version = (row[0] or 0) + 1
+        cursor = conn.execute(
+            """INSERT INTO ppt_versions
+               (case_id, version, ppt_data, ppt_filename, pt_script,
+                created_at, created_by, memo, is_pdf)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (case_id, version, ppt_data, ppt_filename,
+             pt_script if isinstance(pt_script, str) else __import__("json").dumps(pt_script, ensure_ascii=False),
+             datetime.now().isoformat(), created_by, memo, int(is_pdf)),
+        )
+        return cursor.lastrowid, version
+
+
+def get_ppt_versions(case_id: int) -> list:
+    """PPT 버전 목록 조회 (ppt_data 제외 — 용량)."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT id, case_id, version, ppt_filename, pt_script,
+                      created_at, created_by, memo, is_pdf
+               FROM ppt_versions WHERE case_id=? ORDER BY version DESC""",
+            (case_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def get_ppt_version_data(version_id: int) -> "dict | None":
+    """특정 PPT 버전 전체 조회 (ppt_data 포함)."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM ppt_versions WHERE id=?", (version_id,)
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def update_ppt_version_memo(version_id: int, memo: str) -> None:
+    """PPT 버전 메모 수정."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE ppt_versions SET memo=? WHERE id=?", (memo, version_id)
         )

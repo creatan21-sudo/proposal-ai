@@ -38,6 +38,12 @@ from database.db import (
     share_proposal, unshare_proposal, get_shared_cases, get_case_shares,
     list_all_cases,
     mark_case_stopped,
+    # 삭제 요청
+    create_delete_request, list_delete_requests,
+    approve_delete_request, reject_delete_request, delete_case,
+    get_admin_telegram_ids,
+    # PPT 버전
+    save_ppt_version, get_ppt_versions, get_ppt_version_data, update_ppt_version_memo,
 )
 from output.txt_writer import write_txt
 from utils.telegram_notify import send_telegram
@@ -1260,6 +1266,90 @@ def api_shareable_users():
     return jsonify(result)
 
 
+# ─────────────────────────────────────────────
+# 삭제 요청
+# ─────────────────────────────────────────────
+
+@app.route("/history/<int:case_id>/request_delete", methods=["POST"])
+@login_required
+def request_delete_case(case_id):
+    """일반 사용자: 삭제 요청 전송 (운영자에게 알림)."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT client_name, project_name, user_id FROM rfp_cases WHERE id=?",
+            (case_id,)
+        ).fetchone()
+    if not row:
+        return jsonify({"ok": False, "error": "케이스 없음"}), 404
+    row = dict(row)
+    if row["user_id"] != session["user_id"] and not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+
+    username    = session.get("username", "")
+    client_name = row["client_name"]
+    project_name = row["project_name"]
+
+    create_delete_request(case_id, username, client_name, project_name)
+
+    # 관리자 텔레그램 알림
+    msg = (
+        f"🗑️ <b>삭제 요청</b>\n"
+        f"프로젝트: {project_name}\n"
+        f"발주처: {client_name}\n"
+        f"요청자: {username}\n"
+        f"요청 시간: {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
+        f"승인: /admin/delete_requests"
+    )
+    for chat_id in get_admin_telegram_ids():
+        try:
+            send_telegram(chat_id, msg)
+        except Exception:
+            pass
+
+    return jsonify({"ok": True, "message": "삭제 요청이 접수됐습니다. 운영자 확인 후 처리됩니다."})
+
+
+@app.route("/history/<int:case_id>/delete", methods=["POST"])
+@admin_required
+def admin_delete_case(case_id):
+    """관리자 직접 삭제."""
+    with get_connection() as conn:
+        row = conn.execute("SELECT id FROM rfp_cases WHERE id=?", (case_id,)).fetchone()
+    if not row:
+        return jsonify({"ok": False, "error": "케이스 없음"}), 404
+    delete_case(case_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/admin/delete_requests")
+@admin_required
+def admin_delete_requests():
+    """삭제 요청 목록 페이지 (관리자)."""
+    status = request.args.get("status", "pending")
+    reqs   = list_delete_requests(status=status if status != "all" else "")
+    return render_template("admin_delete_requests.html", requests=reqs, status=status)
+
+
+@app.route("/admin/delete_requests/<int:req_id>/approve", methods=["POST"])
+@admin_required
+def admin_approve_delete(req_id):
+    """삭제 요청 승인."""
+    ok = approve_delete_request(req_id, session.get("username", ""))
+    if ok:
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "error": "요청 없음"}), 404
+
+
+@app.route("/admin/delete_requests/<int:req_id>/reject", methods=["POST"])
+@admin_required
+def admin_reject_delete(req_id):
+    """삭제 요청 거절."""
+    data   = request.get_json(force=True) or {}
+    reason = data.get("reason", "")
+    reject_delete_request(req_id, session.get("username", ""), reason)
+    return jsonify({"ok": True})
+
+
 @app.route("/history/<int:case_id>/resume")
 @login_required
 def resume_case(case_id):
@@ -1766,6 +1856,44 @@ def ppt_start():
             "user_id":    user_id,
         }
 
+    def _save_version(pptx_bytes: bytes, filename: str, is_pdf: bool = False):
+        """PPT 생성 완료 후 버전 DB 저장 + PT 원고 동시 생성."""
+        import json as _json
+        try:
+            # 1. PT 원고: STEP 7 결과 우선, 없으면 orchestrator로 생성
+            pt_script_dict = {}
+            fp = detail.get("steps", {}).get("final_proposal", {})
+            if fp.get("pt_script"):
+                pt_script_dict = fp["pt_script"]
+            if not pt_script_dict:
+                try:
+                    from core.dna import ConceptDNA, update_dna
+                    from agents.orchestrator import generate_pt_script_for_ppt
+                    case_dna = detail["case"].get("dna", {})
+                    dna_obj  = ConceptDNA(
+                        client_name=case_dna.get("client_name", case["client_name"]),
+                        project_name=case_dna.get("project_name", case["project_name"]),
+                    )
+                    update_dna(dna_obj, case_dna)
+                    pt_script_dict = generate_pt_script_for_ppt(dna_obj)
+                    print(f"  [PPT버전] PT 원고 새로 생성 완료")
+                except Exception as e_pt:
+                    print(f"  [PPT버전] PT 원고 생성 실패: {e_pt}")
+
+            # 2. 버전 DB 저장
+            pt_script_str = _json.dumps(pt_script_dict, ensure_ascii=False)
+            version_id, version_num = save_ppt_version(
+                case_id     = case_id,
+                ppt_data    = pptx_bytes,
+                ppt_filename= filename,
+                pt_script   = pt_script_str,
+                created_by  = session.get("username", ""),
+                is_pdf      = is_pdf,
+            )
+            print(f"  [PPT버전] v{version_num} 저장 완료 (DB id={version_id})")
+        except Exception as e:
+            print(f"  [PPT버전] 버전 저장 실패: {e}")
+
     def _worker():
         try:
             if use_gamma:
@@ -1821,6 +1949,8 @@ def ppt_start():
                     job["filename"]   = pdf_fname
                     job["is_pdf"]     = True
 
+            _save_version(pdf_bytes, pdf_fname, is_pdf=True)
+
             _ppt_push(job_id, {
                 "type":         "ppt_done",
                 "download_url": f"/ppt/download/{job_id}",
@@ -1861,6 +1991,8 @@ def ppt_start():
             if job:
                 job["status"]     = "done"
                 job["pptx_bytes"] = pptx_bytes
+
+        _save_version(pptx_bytes, fname, is_pdf=False)
 
         _ppt_push(job_id, {
             "type":         "ppt_done",
@@ -1919,6 +2051,8 @@ def ppt_start():
             if job:
                 job["status"]     = "done"
                 job["pptx_bytes"] = pptx_bytes
+
+        _save_version(pptx_bytes, fname, is_pdf=False)
 
         _ppt_push(job_id, {
             "type":         "ppt_done",
@@ -2154,6 +2288,100 @@ def ppt_download(job_id):
         download_name=job["filename"],
         mimetype=mimetype,
     )
+
+
+# ─────────────────────────────────────────────
+# PPT 버전 관리
+# ─────────────────────────────────────────────
+
+@app.route("/api/ppt_versions/<int:case_id>")
+@login_required
+def api_ppt_versions(case_id):
+    """PPT 버전 목록 조회."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT user_id FROM rfp_cases WHERE id=?", (case_id,)
+        ).fetchone()
+    if not row:
+        return jsonify({"ok": False, "error": "케이스 없음"}), 404
+    if dict(row)["user_id"] != session["user_id"] and not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    import json as _json
+    versions = get_ppt_versions(case_id)
+    # pt_script JSON 파싱
+    for v in versions:
+        try:
+            v["pt_script_parsed"] = _json.loads(v.get("pt_script") or "{}")
+        except Exception:
+            v["pt_script_parsed"] = {}
+        v.pop("pt_script", None)
+    return jsonify({"ok": True, "versions": versions})
+
+
+@app.route("/ppt/version/<int:version_id>/download")
+@login_required
+def ppt_version_download(version_id):
+    """저장된 PPT 버전 다운로드."""
+    import io as _io
+    row = get_ppt_version_data(version_id)
+    if not row or not row.get("ppt_data"):
+        abort(404)
+    # 케이스 소유권 확인
+    with get_connection() as conn:
+        case_row = conn.execute(
+            "SELECT user_id FROM rfp_cases WHERE id=?", (row["case_id"],)
+        ).fetchone()
+    if case_row and dict(case_row)["user_id"] != session["user_id"] and not session.get("is_admin"):
+        abort(403)
+    buf = _io.BytesIO(row["ppt_data"])
+    mimetype = (
+        "application/pdf"
+        if row.get("is_pdf")
+        else "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+    )
+    return send_file(buf, as_attachment=True,
+                     download_name=row["ppt_filename"] or f"v{row['version']}.pptx",
+                     mimetype=mimetype)
+
+
+@app.route("/api/ppt_version/<int:version_id>/pt_script")
+@login_required
+def api_ppt_version_pt_script(version_id):
+    """PPT 버전의 PT 원고 조회."""
+    import json as _json
+    row = get_ppt_version_data(version_id)
+    if not row:
+        return jsonify({"ok": False, "error": "버전 없음"}), 404
+    with get_connection() as conn:
+        case_row = conn.execute(
+            "SELECT user_id FROM rfp_cases WHERE id=?", (row["case_id"],)
+        ).fetchone()
+    if case_row and dict(case_row)["user_id"] != session["user_id"] and not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    try:
+        pt_script = _json.loads(row.get("pt_script") or "{}")
+    except Exception:
+        pt_script = {}
+    return jsonify({"ok": True, "pt_script": pt_script, "version": row["version"]})
+
+
+@app.route("/api/ppt_version/<int:version_id>/memo", methods=["POST"])
+@login_required
+def api_ppt_version_memo(version_id):
+    """PPT 버전 메모 수정."""
+    data = request.get_json(force=True) or {}
+    memo = data.get("memo", "")
+    row  = get_ppt_version_data(version_id)
+    if not row:
+        return jsonify({"ok": False, "error": "버전 없음"}), 404
+    with get_connection() as conn:
+        case_row = conn.execute(
+            "SELECT user_id FROM rfp_cases WHERE id=?", (row["case_id"],)
+        ).fetchone()
+    if case_row and dict(case_row)["user_id"] != session["user_id"] and not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    update_ppt_version_memo(version_id, memo)
+    return jsonify({"ok": True})
 
 
 # ─────────────────────────────────────────────
