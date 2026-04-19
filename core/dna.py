@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 class ConceptDNA:
     """제안서 전체를 관통하는 핵심 컨셉 DNA."""
 
-    # STEP 0: RFP 파서가 추출
+    # STEP 1: RFP 파서가 추출
     client_name: str = ""             # 발주처명
     project_name: str = ""            # 사업명
     video_type: str = ""              # 영상 종류
@@ -68,7 +68,7 @@ class ConceptDNA:
     script_outline: list = field(default_factory=list)        # 대본 개요 (요약본)
     has_shortform: bool = False                               # 숏폼 버전 포함 여부
 
-    # STEP 1.5: 내러티브 에이전트가 추가
+    # STEP 3: 내러티브 에이전트가 추가
     narrative: str = ""                                        # 20줄 전략 내러티브 전문
 
     # 사용자 사전 지시

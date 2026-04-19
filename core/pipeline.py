@@ -1,6 +1,6 @@
 # core/pipeline.py
 # 역할: 에이전트 순차 실행 파이프라인 (인터랙티브 모드)
-# - STEP 0 → 0.5 → 1~7 에이전트 순서 실행
+# - STEP 1 → 3 → 2 → 4~7 에이전트 순서 실행
 # - 각 스텝 완료 후 핵심 결과 출력 → 사용자 컨펌 대기
 # - 수정 지시 입력 시 해당 스텝 재실행
 # - STEP 3 컨셉 선택/수정 후 STEP 4~7 자동 재실행
@@ -26,15 +26,15 @@ from agents import (
 
 # (step_key, display_name, step_num_label, agent_module, critical)
 _STEPS = [
-    ("rfp_analysis",   "STEP 0    RFP 분석",          "0",   rfp_parser,   True),
-    ("narrative",      "STEP 0.5  전략 내러티브",      "0.5", narrator,     False),
-    ("research",       "STEP 1    발주처 리서치",       "1",   researcher,   False),
-    ("strategy",       "STEP 2    전략 수립",           "2",   strategist,   True),
-    ("creative",       "STEP 3    컨셉 개발",           "3",   creative,     True),
-    ("plan",           "STEP 4    실행 기획",           "4",   planner,      True),
-    ("script",         "STEP 5    대본 제작",           "5",   scripter,     True),
-    ("marketing",      "STEP 6    마케팅 전략",         "6",   marketer,     False),
-    ("final_proposal", "STEP 7    최종 검수·완성",      "7",   orchestrator, True),
+    ("rfp_analysis",   "STEP 1    RFP 분석",           "1",   rfp_parser,   True),
+    ("research",       "STEP 2    발주처 리서치",       "2",   researcher,   False),
+    ("narrative",      "STEP 3    전략 내러티브",       "3",   narrator,     False),
+    ("strategy",       "STEP 4    전략 수립",           "4",   strategist,   True),
+    ("creative",       "STEP 5    컨셉 개발",           "5",   creative,     True),
+    ("plan",           "STEP 6    실행 기획",           "6",   planner,      True),
+    ("script",         "STEP 7    대본 제작",           "7",   scripter,     True),
+    ("marketing",      "STEP 10   마케팅 전략",         "10",  marketer,     False),
+    ("final_proposal", "STEP 11   최종 검수·완성",      "11",  orchestrator, True),
 ]
 
 # step_key → 인덱스 매핑
@@ -241,7 +241,7 @@ def _confirm_step(step_key: str, display_name: str, dna: ConceptDNA, result: dic
 
 
 def _confirm_narrative(dna: ConceptDNA, result: dict) -> bool:
-    """STEP 0.5 전략 내러티브 확인 및 재생성.
+    """STEP 3 전략 내러티브 확인 및 재생성.
 
     Returns:
         True  → 수정 지시 입력됨, 재생성 필요
@@ -250,7 +250,7 @@ def _confirm_narrative(dna: ConceptDNA, result: dict) -> bool:
     narrative = result.get("narrative", "")
 
     print(f"\n{'═' * 60}")
-    print("  ◆ STEP 0.5  전략 내러티브")
+    print("  ◆ STEP 3  전략 내러티브")
     print(f"{'═' * 60}")
     if narrative:
         print()
@@ -275,7 +275,7 @@ def _confirm_narrative(dna: ConceptDNA, result: dict) -> bool:
             return False
         if user_input:
             dna.user_feedback = user_input
-            _print_info("수정 지시 반영 후 [STEP 0.5  전략 내러티브] 재생성합니다...")
+            _print_info("수정 지시 반영 후 [STEP 3  전략 내러티브] 재생성합니다...")
             return True
 
 
@@ -350,7 +350,7 @@ def _print_summary(step_key: str, dna: ConceptDNA, result: dict) -> None:
 
 
 def _summary_rfp(dna: ConceptDNA, result: dict) -> None:
-    _box("STEP 0  RFP 분석 결과")
+    _box("STEP 1  RFP 분석 결과")
     _kv("발주처",    dna.client_name)
     _kv("사업명",    dna.project_name)
     _kv("기관 유형", dna.agency_type or result.get("agency_type", "-"))

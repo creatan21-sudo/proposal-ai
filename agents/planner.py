@@ -63,7 +63,7 @@ def run(dna: ConceptDNA) -> dict:
     """제작 실행 계획 수립.
 
     Args:
-        dna: STEP 0~3 결과가 모두 반영된 ConceptDNA
+        dna: STEP 1~5 결과가 모두 반영된 ConceptDNA
 
     Returns:
         {

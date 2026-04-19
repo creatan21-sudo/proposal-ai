@@ -1,5 +1,5 @@
 # agents/storyboard.py
-# STEP 5.5: DALL-E 3로 씬별 스토리보드 이미지 생성
+# STEP 8: DALL-E 3로 씬별 스토리보드 이미지 생성
 
 import os
 import urllib.request

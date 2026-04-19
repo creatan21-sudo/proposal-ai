@@ -572,17 +572,18 @@ def start():
     user_direction = request.form.get("user_direction", "").strip()
     reference_case_id = int(request.form.get("reference_case_id") or 0)
 
-    # 고급 설정: 스텝 선택 (체크되지 않은 경우 None → 전체 실행)
-    _all_steps = ["rfp_analysis","research","narrative","strategy",
-                  "creative","plan","script","storyboard","platform","marketing","final_proposal"]
+    # 고급 설정: 스텝 선택 (미선택 시 기본값 = 전체 스텝, 단 스토리보드 제외)
+    _default_steps = ["rfp_analysis","research","narrative","strategy",
+                      "creative","plan","script","platform","marketing","final_proposal"]
+    _all_steps     = _default_steps + ["storyboard"]
     selected_steps_raw = request.form.getlist("selected_steps")
-    selected_steps = set(selected_steps_raw) if selected_steps_raw else None
+    selected_steps = set(selected_steps_raw) if selected_steps_raw else set(_default_steps)
 
     # 실행 모드
     auto_run = (request.form.get("run_mode", "interactive") == "auto")
 
-    # 대본 사전 설정
-    script_preset_episodes   = int(request.form.get("script_preset_episodes") or 0)
+    # 대본 사전 설정 (기본 1편)
+    script_preset_episodes   = int(request.form.get("script_preset_episodes") or 1)
     script_preset_storyboard = request.form.get("script_preset_storyboard", "auto").strip() or "auto"
     # 스토리보드 사전 설정
     _sb_style_raw = request.form.get("storyboard_style", "line").strip()

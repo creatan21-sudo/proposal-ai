@@ -449,7 +449,7 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
     {% if not data %}
       <p class="detail-empty">이 스텝 결과가 저장되지 않았습니다.</p>
 
-    {# ── STEP 1.5 내러티브 ── #}
+    {# ── STEP 3 내러티브 ── #}
     {% elif step_key == 'narrative' %}
       <div class="dv-text-lg">{{ data.narrative | default('') }}</div>
 

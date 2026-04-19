@@ -1,6 +1,6 @@
 # agents/orchestrator.py
-# STEP 6.5~7: PT/Q&A + 크리틱 에이전트 (오케스트레이터)
-# 역할: STEP 0~6 전체 산출물을 검수하고 PT 원고·질의응답·크리틱을 생성
+# STEP 11~12: PT/Q&A + 크리틱 에이전트 (오케스트레이터)
+# 역할: STEP 1~10 전체 산출물을 검수하고 PT 원고·질의응답·크리틱을 생성
 #
 # 처리 순서:
 #   PASS 1 (규칙 기반, 빠름): 컨셉 흐름·평가항목 커버리지·키워드 통합 점수 계산
@@ -63,7 +63,7 @@ def run(dna: ConceptDNA, pipeline_results: dict = None, generate_ppt: bool = Fal
         PASS 5 — PT 원고 초안 생성 (Claude, 항상)
 
     Args:
-        dna: STEP 0~6 결과가 모두 반영된 ConceptDNA
+        dna: STEP 1~10 결과가 모두 반영된 ConceptDNA
         pipeline_results: 각 에이전트 원본 출력물 (없으면 DNA에서 재구성)
         generate_ppt: (미사용, 호환성 유지용)
 

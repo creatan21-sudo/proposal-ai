@@ -73,7 +73,7 @@ def run(dna: ConceptDNA) -> dict:
     """크리에이티브 방향 설계 실행.
 
     Args:
-        dna: STEP 0~2 결과가 모두 반영된 ConceptDNA
+        dna: STEP 1~4 결과가 모두 반영된 ConceptDNA
 
     Returns:
         {
@@ -169,7 +169,7 @@ def _build_prompt(dna: ConceptDNA, preset: dict) -> str:
     """크리에이티브 생성용 Claude 프롬프트.
 
     Args:
-        dna: 현재 ConceptDNA (STEP 0~2 누적)
+        dna: 현재 ConceptDNA (STEP 1~4 누적)
         preset: _get_tone_preset()이 반환한 기관 유형 프리셋
 
     Returns:

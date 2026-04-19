@@ -46,7 +46,7 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
     """편별 대본 전체 생성.
 
     Args:
-        dna: STEP 0~4 결과가 모두 반영된 ConceptDNA
+        dna: STEP 1~6 결과가 모두 반영된 ConceptDNA
         progress_fn: 선택적 진행상황 콜백 (SSE push_event 함수)
                      progress_fn({"type": "step_progress", ...}) 형태로 호출
         max_episodes: 생성할 최대 편수 (0이면 기획된 전체 편수)

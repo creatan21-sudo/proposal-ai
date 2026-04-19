@@ -11,7 +11,7 @@
 # 핵심 원칙:
 #   - 평가항목 배점 높은 순으로 전략 집중
 #   - 발주처 키워드를 설득 논리에 자연스럽게 통합
-#   - DNA 전체 컨텍스트(STEP 0+1)를 모두 반영
+#   - DNA 전체 컨텍스트(STEP 1+2)를 모두 반영
 
 import re
 import json
@@ -29,7 +29,7 @@ def run(dna: ConceptDNA) -> dict:
     """전략 수립 실행.
 
     Args:
-        dna: STEP 0(rfp_parser) + STEP 1(researcher) 결과가 반영된 ConceptDNA
+        dna: STEP 1(rfp_parser) + STEP 2(researcher) 결과가 반영된 ConceptDNA
 
     Returns:
         {

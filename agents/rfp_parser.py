@@ -1,5 +1,5 @@
 # agents/rfp_parser.py
-# STEP 0: RFP 분석 에이전트
+# STEP 1: RFP 분석 에이전트
 # 역할: HWP/HWPX/PDF/TXT 파일에서 텍스트 추출 후 Claude API로 분석
 # 출력: 기관정보, 평가항목, 핵심키워드, 과업목록, 금지사항, 톤앤매너 힌트
 
