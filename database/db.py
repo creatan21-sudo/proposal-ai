@@ -220,6 +220,27 @@ def init_db() -> None:
                 memo         TEXT    DEFAULT '',
                 is_pdf       INTEGER DEFAULT 0
             );
+
+            CREATE TABLE IF NOT EXISTS storyboard_results (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_id          INTEGER NOT NULL,
+                scene_num        INTEGER NOT NULL,
+                image_path       TEXT    DEFAULT '',
+                image_url        TEXT    DEFAULT '',
+                scene_description TEXT   DEFAULT '',
+                style            TEXT    DEFAULT 'line',
+                created_at       TEXT    NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS step_content_overrides (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_id      INTEGER NOT NULL,
+                step_key     TEXT    NOT NULL,
+                content_json TEXT    NOT NULL DEFAULT '{}',
+                edited_at    TEXT    NOT NULL,
+                editor       TEXT    DEFAULT '',
+                UNIQUE(case_id, step_key)
+            );
         """)
         # ── 마이그레이션: 기존 DB에 누락된 컬럼 추가 ──
         for migration in [
@@ -786,6 +807,21 @@ def get_case_detail(case_id: int) -> "dict | None":
                                                  "influencer_strategy_json",
                                                  "kpi_json"})
             steps["marketing"] = mkt_row
+
+        # STEP 5.5 스토리보드
+        sb_rows = conn.execute(
+            "SELECT * FROM storyboard_results WHERE case_id=? ORDER BY scene_num",
+            (case_id_val,),
+        ).fetchall() if case_id_val else []
+        if sb_rows:
+            steps["storyboard"] = {
+                "frames": [dict(r) for r in sb_rows],
+                "total_scenes": len(sb_rows),
+                "style": dict(sb_rows[0]).get("style", "line") if sb_rows else "line",
+            }
+        else:
+            # 스토리보드 탭은 항상 활성화 (동적 로딩)
+            steps["storyboard"] = {"frames": [], "total_scenes": 0, "style": "line"}
 
         # STEP 7 최종 제안서
         row = _latest("final_proposals")
@@ -1526,3 +1562,103 @@ def update_ppt_version_memo(version_id: int, memo: str) -> None:
         conn.execute(
             "UPDATE ppt_versions SET memo=? WHERE id=?", (memo, version_id)
         )
+
+
+# ─────────────────────────────────────────────
+# 스토리보드
+# ─────────────────────────────────────────────
+
+def save_storyboard(case_id: int, frames: list, style: str = "line") -> None:
+    """스토리보드 프레임 일괄 저장 (기존 레코드 먼저 삭제)."""
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        conn.execute("DELETE FROM storyboard_results WHERE case_id=?", (case_id,))
+        for frame in frames:
+            if not isinstance(frame, dict):
+                continue
+            conn.execute(
+                """INSERT INTO storyboard_results
+                   (case_id, scene_num, image_path, image_url,
+                    scene_description, style, created_at)
+                   VALUES (?,?,?,?,?,?,?)""",
+                (
+                    case_id,
+                    frame.get("scene_num", 0),
+                    frame.get("image_path", ""),
+                    frame.get("image_url", ""),
+                    frame.get("scene_description", ""),
+                    style,
+                    now,
+                ),
+            )
+
+
+def get_storyboards(case_id: int) -> list:
+    """케이스의 스토리보드 프레임 조회 (씬 번호 순)."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM storyboard_results WHERE case_id=? ORDER BY scene_num",
+            (case_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+# ─────────────────────────────────────────────
+# 스텝 내용 수정 (오버라이드)
+# ─────────────────────────────────────────────
+
+def save_step_override(case_id: int, step_key: str,
+                       content: dict, editor: str = "") -> None:
+    """스텝 내용 수정본 저장 (UPSERT)."""
+    import json as _json
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO step_content_overrides
+               (case_id, step_key, content_json, edited_at, editor)
+               VALUES (?,?,?,?,?)
+               ON CONFLICT(case_id, step_key)
+               DO UPDATE SET content_json=excluded.content_json,
+                             edited_at=excluded.edited_at,
+                             editor=excluded.editor""",
+            (case_id, step_key, _json.dumps(content, ensure_ascii=False), now, editor),
+        )
+
+
+def get_step_override(case_id: int, step_key: str) -> "dict | None":
+    """스텝 수정본 조회. 없으면 None."""
+    import json as _json
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM step_content_overrides WHERE case_id=? AND step_key=?",
+            (case_id, step_key),
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        try:
+            d["content"] = _json.loads(d.get("content_json", "{}"))
+        except Exception:
+            d["content"] = {}
+        return d
+
+
+def get_all_step_overrides(case_id: int) -> dict:
+    """케이스의 모든 스텝 수정본 조회. { step_key: content_dict } 형태."""
+    import json as _json
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT step_key, content_json, edited_at FROM step_content_overrides WHERE case_id=?",
+            (case_id,),
+        ).fetchall()
+        result = {}
+        for row in rows:
+            step_key = row["step_key"]
+            try:
+                result[step_key] = {
+                    "content": _json.loads(row["content_json"] or "{}"),
+                    "edited_at": row["edited_at"],
+                }
+            except Exception:
+                result[step_key] = {"content": {}, "edited_at": row["edited_at"]}
+        return result

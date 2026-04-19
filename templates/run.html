@@ -318,6 +318,10 @@ function handleEvent(ev) {
       showEpisodeCountDialog(ev);
       playStepSound();
       break;
+    case 'storyboard_style_needed':
+      showStoryboardStyleDialog(ev);
+      playStepSound();
+      break;
     case 'slogan_selected':
       appendLog(`슬로건 확정: ${ev.slogan}`);
       break;
@@ -873,6 +877,59 @@ function submitScriptOptions() {
   hideConfirm();
   sendConfirm(`${_scriptEpSelected}|${sbMode}`);
 }
+function showStoryboardStyleDialog(ev) {
+  const panel = document.getElementById('confirm-panel');
+  const title = document.getElementById('confirm-title');
+  const body  = document.getElementById('confirm-body');
+  const def   = ev.default_style || 'line';
+
+  title.innerHTML = 'STEP 5.5 스토리보드 스타일 선택';
+
+  const styles = [
+    { value: 'line',  label: '라인 (펜 드로잉)', desc: '흑백 선 스케치 스타일' },
+    { value: 'color', label: '컬러 그림',         desc: '일러스트레이션 스타일' },
+    { value: 'photo', label: '실사',              desc: '시네마틱 사진 스타일' },
+  ];
+
+  let html = `<div style="margin-bottom:14px;">
+    <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:10px;">이미지 스타일을 선택하세요:</div>
+    <div style="display:flex;flex-direction:column;gap:8px;">`;
+
+  styles.forEach(s => {
+    const checked = s.value === def ? 'checked' : '';
+    html += `<label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;
+                    padding:10px;border:1px solid #e5e7eb;border-radius:8px;
+                    background:${s.value===def?'#eff6ff':'#fff'};"
+                    onmouseover="this.style.background='#f9fafb'"
+                    onmouseout="this.style.background='${s.value===def?'#eff6ff':'#fff'}'">
+      <input type="radio" name="sb-style" value="${s.value}" ${checked}
+             style="margin-top:2px;" onchange="document.querySelectorAll('label[for-style]').forEach(l=>l.style.background='#fff');this.closest('label').style.background='#eff6ff'">
+      <div>
+        <div style="font-weight:600;font-size:13px;">${s.label}</div>
+        <div style="font-size:12px;color:#6b7280;">${s.desc}</div>
+      </div>
+    </label>`;
+  });
+
+  html += `</div></div>
+  <div class="confirm-row" style="margin-top:8px;">
+    <button class="btn btn-primary" onclick="submitStoryboardStyle()">스토리보드 생성 →</button>
+    <button class="btn btn-skip" onclick="hideConfirm();sendConfirm('s')">이 단계 스킵</button>
+    <button class="btn btn-abort" onclick="hideConfirm();sendConfirm('__abort__')">중단</button>
+  </div>`;
+
+  body.innerHTML = html;
+  panel.classList.add('visible');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+function submitStoryboardStyle() {
+  const sel = document.querySelector('input[name="sb-style"]:checked');
+  const style = sel ? sel.value : 'line';
+  hideConfirm();
+  sendConfirm(style);
+}
+
 function confirmContinue() {
   const val         = (document.getElementById('confirm-input')?.value || '').trim();
   const instruction = (document.getElementById('step-instruction-input')?.value || '').trim();

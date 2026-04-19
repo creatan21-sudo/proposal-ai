@@ -44,6 +44,10 @@ from database.db import (
     get_admin_telegram_ids,
     # PPT 버전
     save_ppt_version, get_ppt_versions, get_ppt_version_data, update_ppt_version_memo,
+    # 스토리보드
+    save_storyboard, get_storyboards,
+    # 스텝 수정 오버라이드
+    save_step_override, get_step_override, get_all_step_overrides,
 )
 from output.txt_writer import write_txt
 from utils.telegram_notify import send_telegram
@@ -59,9 +63,10 @@ UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", _default_upload))
 
 # 시작 시 필요한 폴더 자동 생성
 # /app/data: Railway Volume 마운트 경로 (DB 영구 보존용)
-_extra_dirs = [Path("/app/data")] if os.environ.get("RAILWAY_ENVIRONMENT") else []
+_extra_dirs = [Path("/app/data"), Path("/app/data/storyboards")] if os.environ.get("RAILWAY_ENVIRONMENT") else []
 for _d in [UPLOAD_DIR, Path(__file__).parent / "database",
-           Path(__file__).parent / "output" / "proposals"] + _extra_dirs:
+           Path(__file__).parent / "output" / "proposals",
+           Path(__file__).parent / "output" / "storyboards"] + _extra_dirs:
     _d.mkdir(parents=True, exist_ok=True)
 
 # gunicorn 등 외부 서버 기동 시에도 DB/테이블이 반드시 존재하도록 초기화
@@ -1983,8 +1988,25 @@ def ppt_start():
             _ppt_push(job_id, {"type": "ppt_progress",
                                 "message": message, "current": current, "total": total})
 
-        from agents import ppt_generator
-        pptx_bytes = ppt_generator.run(detail, pages, progress_cb)
+        try:
+            from agents import ppt_generator
+        except ImportError as imp_err:
+            import traceback as _tb
+            _tb.print_exc()
+            raise RuntimeError(f"ppt_generator 임포트 실패: {imp_err}")
+
+        _ppt_push(job_id, {"type": "ppt_progress",
+                            "message": "PPT 슬라이드 구성 중 (Claude AI)...",
+                            "current": 1, "total": 3})
+        try:
+            pptx_bytes = ppt_generator.run(detail, pages, progress_cb)
+        except Exception as run_err:
+            import traceback as _tb
+            tb_str = _tb.format_exc()
+            print(f"[PPT/basic] 생성 오류:\n{tb_str}")
+            _ppt_push(job_id, {"type": "ppt_progress",
+                                "message": f"오류 발생: {run_err}", "current": 0, "total": 3})
+            raise
 
         with _ppt_jobs_lock:
             job = _ppt_jobs.get(job_id)
@@ -2577,6 +2599,224 @@ def queue_status(sid):
         sess = _sessions.get(sid)
     status = sess["status"] if sess else "unknown"
     return jsonify({"position": pos, "total": len(queue_list), "status": status})
+
+
+# ─────────────────────────────────────────────
+# 스토리보드 API
+# ─────────────────────────────────────────────
+
+@app.route("/api/storyboard/<int:case_id>")
+@login_required
+def api_storyboard(case_id):
+    """스토리보드 프레임 목록 조회."""
+    frames = get_storyboards(case_id)
+    return jsonify({"ok": True, "frames": frames})
+
+
+@app.route("/api/storyboard/<int:case_id>/regenerate", methods=["POST"])
+@login_required
+def api_storyboard_regenerate(case_id):
+    """개별 씬 또는 전체 스토리보드 재생성."""
+    data = request.get_json(force=True) or {}
+    style      = data.get("style", "line")
+    scene_num  = data.get("scene_num")  # None이면 전체 재생성
+
+    detail = get_case_detail(case_id)
+    if not detail:
+        return jsonify({"ok": False, "error": "케이스 없음"}), 404
+    if detail["case"].get("user_id") != session["user_id"] and not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+
+    # DNA 복원
+    import dataclasses as _dc2
+    from core.dna import ConceptDNA
+    dna_dict = detail["case"].get("dna", {})
+    dna = ConceptDNA()
+    for f in _dc2.fields(dna):
+        if f.name in dna_dict:
+            try:
+                setattr(dna, f.name, dna_dict[f.name])
+            except Exception:
+                pass
+
+    # 스크립트 복원
+    scripts_steps = detail.get("steps", {}).get("script", [])
+    if isinstance(scripts_steps, list):
+        dna.scripts = [s.get("script", {}) for s in scripts_steps if isinstance(s, dict)]
+    dna.case_id = case_id
+
+    def _regen():
+        from agents.storyboard import run as sb_run
+        result = sb_run(dna, style=style)
+        print(f"  [스토리보드 재생성] case={case_id} style={style} 완료 {result.get('total_scenes')}컷")
+
+    t = threading.Thread(target=_regen, daemon=True)
+    t.start()
+    return jsonify({"ok": True, "message": "재생성 시작됨"})
+
+
+@app.route("/storyboard_image/<int:case_id>/<int:scene_num>")
+@login_required
+def storyboard_image(case_id, scene_num):
+    """저장된 스토리보드 이미지 제공."""
+    import io as _io
+    from config import IS_PRODUCTION
+    base = Path("/app/data/storyboards") if IS_PRODUCTION else Path(__file__).parent / "output" / "storyboards"
+    img_path = base / str(case_id) / f"{scene_num}.png"
+    if not img_path.exists():
+        abort(404)
+    return send_file(str(img_path), mimetype="image/png")
+
+
+# ─────────────────────────────────────────────
+# 스텝 재실행
+# ─────────────────────────────────────────────
+
+@app.route("/rerun_from_step/<int:case_id>/<step_key>", methods=["POST"])
+@login_required
+def rerun_from_step(case_id, step_key):
+    """특정 스텝부터 파이프라인 재실행."""
+    import dataclasses as _dc2
+
+    VALID_STEPS = {
+        "rfp_analysis", "research", "narrative", "strategy",
+        "creative", "plan", "script", "storyboard",
+        "marketing", "final_proposal",
+    }
+    if step_key not in VALID_STEPS:
+        return jsonify({"ok": False, "error": f"유효하지 않은 step_key: {step_key}"}), 400
+
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM rfp_cases WHERE id=?", (case_id,)).fetchone()
+    if not row:
+        return jsonify({"ok": False, "error": "케이스 없음"}), 404
+
+    case = dict(row)
+    if case["user_id"] != session["user_id"] and not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+
+    # DNA 복원
+    from core.dna import ConceptDNA
+    dna_dict = json.loads(case.get("dna_json") or "{}")
+    dna = ConceptDNA()
+    for f in _dc2.fields(dna):
+        if f.name in dna_dict:
+            try:
+                setattr(dna, f.name, dna_dict[f.name])
+            except Exception:
+                pass
+    dna.case_id = case_id
+
+    # 해당 스텝부터 이후 스텝 결과를 DB에서 삭제 (재실행을 위해)
+    STEP_TABLE_MAP = {
+        "rfp_analysis":   "rfp_analyses",
+        "research":       "research_results",
+        "strategy":       "strategy_results",
+        "creative":       "creative_results",
+        "plan":           "plan_results",
+        "script":         "script_results",
+        "storyboard":     "storyboard_results",
+        "marketing":      "marketing_results",
+        "final_proposal": "final_proposals",
+    }
+    PIPELINE_ORDER = [
+        "rfp_analysis", "research", "narrative", "strategy",
+        "creative", "plan", "script", "storyboard",
+        "marketing", "final_proposal",
+    ]
+    start_idx = PIPELINE_ORDER.index(step_key) if step_key in PIPELINE_ORDER else 0
+    steps_to_clear = PIPELINE_ORDER[start_idx:]
+
+    with get_connection() as conn:
+        for sk in steps_to_clear:
+            table = STEP_TABLE_MAP.get(sk)
+            if table:
+                conn.execute(f"DELETE FROM {table} WHERE case_id=?", (case_id,))
+
+    sid = str(uuid.uuid4())
+    with _sessions_lock:
+        _sessions[sid] = {
+            "status":           "queued",
+            "user_id":          session["user_id"],
+            "username":         session["username"],
+            "dna":              dna,
+            "rfp_file":         None,
+            "concept":          dna.concept or None,
+            "results":          {},
+            "events":           [],
+            "sse_event":        threading.Event(),
+            "confirm_event":    threading.Event(),
+            "user_input":       None,
+            "step_instruction": None,
+            "txt_path":         None,
+            "client":           case["client_name"],
+            "project":          case["project_name"],
+            "created_at":       datetime.now().isoformat(),
+            "retry_from":       step_key,
+            "case_id":          case_id,
+            "auto_run":         True,
+        }
+
+    with _queue_lock:
+        _job_queue.append(sid)
+    _ensure_worker()
+    _dispatch_jobs()
+    _broadcast_positions()
+
+    session["current_run_sid"] = sid
+    return jsonify({"ok": True, "sid": sid, "redirect": f"/run/{sid}"})
+
+
+# ─────────────────────────────────────────────
+# 스텝 내용 수정
+# ─────────────────────────────────────────────
+
+@app.route("/update_step_content/<int:case_id>/<step_key>", methods=["POST"])
+@login_required
+def update_step_content(case_id, step_key):
+    """스텝 내용을 직접 수정해 DB에 저장."""
+    VALID_STEPS = {
+        "rfp_analysis", "research", "narrative", "strategy",
+        "creative", "plan", "script", "storyboard",
+        "marketing", "final_proposal",
+    }
+    if step_key not in VALID_STEPS:
+        return jsonify({"ok": False, "error": "유효하지 않은 step_key"}), 400
+
+    with get_connection() as conn:
+        row = conn.execute("SELECT user_id FROM rfp_cases WHERE id=?", (case_id,)).fetchone()
+    if not row:
+        return jsonify({"ok": False, "error": "케이스 없음"}), 404
+    if dict(row)["user_id"] != session["user_id"] and not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+
+    data = request.get_json(force=True) or {}
+    content = data.get("content", {})
+    if not isinstance(content, dict):
+        return jsonify({"ok": False, "error": "content는 JSON 객체여야 합니다"}), 400
+
+    editor = session.get("username", "")
+    save_step_override(case_id=case_id, step_key=step_key,
+                       content=content, editor=editor)
+    return jsonify({"ok": True, "edited_at": datetime.now().isoformat()})
+
+
+@app.route("/api/step_content/<int:case_id>/<step_key>")
+@login_required
+def api_step_content(case_id, step_key):
+    """스텝 수정 오버라이드 조회."""
+    override = get_step_override(case_id, step_key)
+    if not override:
+        return jsonify({"ok": True, "override": None})
+    return jsonify({"ok": True, "override": override})
+
+
+@app.route("/api/step_overrides/<int:case_id>")
+@login_required
+def api_step_overrides(case_id):
+    """케이스의 모든 스텝 수정 오버라이드 조회."""
+    overrides = get_all_step_overrides(case_id)
+    return jsonify({"ok": True, "overrides": overrides})
 
 
 # ─────────────────────────────────────────────

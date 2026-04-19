@@ -355,6 +355,7 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
   ('creative',       'STEP 3',   '컨셉 개발',     '✨'),
   ('plan',           'STEP 4',   '실행 기획',     '📋'),
   ('script',         'STEP 5',   '대본',          '🎬'),
+  ('storyboard',     'STEP 5.5', '스토리보드',    '🖼️'),
   ('marketing',      'STEP 6',   '마케팅 전략',   '📣'),
   ('final_proposal', 'STEP 7',   '최종 제안서',   '✅'),
 ] %}
@@ -431,7 +432,19 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
       </span>
       <span class="detail-step-num">{{ step_num }}</span>
       <span class="detail-step-name">{{ step_icon }} {{ step_label }}</span>
+      <span id="edited-badge-{{ step_key }}" class="badge badge-blue" style="display:none;font-size:11px;">수정됨</span>
     </div>
+    {% if data %}
+    <div style="display:flex;gap:6px;align-items:center;">
+      <button onclick="toggleEditMode('{{ step_key }}')"
+              id="edit-btn-{{ step_key }}"
+              style="padding:4px 10px;font-size:12px;background:#fff;border:1px solid #d1d5db;
+                     border-radius:6px;cursor:pointer;color:#374151;font-weight:500;">✏️ 수정</button>
+      <button onclick="rerunFromStep('{{ step_key }}')"
+              style="padding:4px 10px;font-size:12px;background:#fff;border:1px solid #d1d5db;
+                     border-radius:6px;cursor:pointer;color:#374151;font-weight:500;">🔄 재실행</button>
+    </div>
+    {% endif %}
   </div>
 
   {# 본문 #}
@@ -517,6 +530,96 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
       </div>
       {% endfor %}
 
+    {# ── STEP 5.5 스토리보드 ── #}
+    {% elif step_key == 'storyboard' %}
+      <div id="storyboard-container-{{ case_id }}" style="min-height:100px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
+          <div style="font-size:13px;color:#6b7280;">스타일:
+            <select id="sb-style-sel" onchange="sbStyleChanged(this.value)"
+                    style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
+              <option value="line">라인 (펜 드로잉)</option>
+              <option value="color">컬러 그림</option>
+              <option value="photo">실사</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button onclick="regenAllStoryboard()"
+                    style="padding:6px 14px;font-size:12px;background:#4f46e5;color:#fff;
+                           border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+              🔄 전체 재생성
+            </button>
+          </div>
+        </div>
+        <div id="sb-grid-{{ case_id }}" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px;">
+          <div style="text-align:center;color:#9ca3af;padding:40px;grid-column:1/-1;">
+            스토리보드 로딩 중...
+          </div>
+        </div>
+      </div>
+      <script>
+      (function(){
+        const cid = {{ case_id }};
+        async function loadSb() {
+          try {
+            const r = await fetch(`/api/storyboard/${cid}`);
+            const d = await r.json();
+            renderSb(d.frames || []);
+          } catch(e) {
+            document.getElementById(`sb-grid-${cid}`).innerHTML =
+              '<div style="grid-column:1/-1;color:#ef4444;text-align:center;">로딩 실패: '+e+'</div>';
+          }
+        }
+        function renderSb(frames) {
+          const grid = document.getElementById(`sb-grid-${cid}`);
+          if (!frames.length) {
+            grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#9ca3af;padding:40px;">스토리보드가 아직 없습니다.<br>파이프라인 실행 시 STEP 5.5에서 생성됩니다.</div>';
+            return;
+          }
+          let html = '';
+          frames.forEach(f => {
+            const imgSrc = f.image_path
+              ? `/storyboard_image/${cid}/${f.scene_num}`
+              : (f.image_url || '');
+            html += `<div style="border:1px solid #e5e7eb;border-radius:8px;overflow:hidden;background:#fff;">
+              ${imgSrc
+                ? `<img src="${imgSrc}" alt="씬 ${f.scene_num}"
+                        style="width:100%;aspect-ratio:1;object-fit:cover;display:block;"
+                        onerror="this.style.display='none';this.nextSibling.style.display='flex'">`
+                : ''}
+              <div style="display:${imgSrc?'none':'flex'};align-items:center;justify-content:center;
+                           aspect-ratio:1;background:#f3f4f6;color:#9ca3af;font-size:13px;">
+                이미지 없음
+              </div>
+              <div style="padding:10px 12px;">
+                <div style="font-size:11px;font-weight:700;color:#4f46e5;margin-bottom:4px;">S#${f.scene_num}</div>
+                <div style="font-size:12px;color:#374151;line-height:1.5;">${f.scene_description||''}</div>
+              </div>
+            </div>`;
+          });
+          grid.innerHTML = html;
+        }
+        loadSb();
+        window.regenAllStoryboard = async function() {
+          const style = document.getElementById('sb-style-sel').value;
+          if (!confirm('전체 스토리보드를 재생성하시겠습니까?')) return;
+          const r = await fetch(`/api/storyboard/${cid}/regenerate`, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({style}),
+          });
+          const d = await r.json();
+          if (d.ok) {
+            alert('재생성 시작됨. 1~2분 후 새로고침하세요.');
+          } else {
+            alert('오류: ' + (d.error||'알 수 없음'));
+          }
+        };
+        window.sbStyleChanged = function(style) {
+          document.getElementById('sb-style-sel').value = style;
+        };
+      })();
+      </script>
+
     {# ── STEP 1 리서치 ── #}
     {% elif step_key == 'research' %}
       {% set research_sections = [
@@ -575,6 +678,34 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
         </div>
         {% endif %}
       {% endfor %}
+    {% endif %}
+
+    {# ── 수정 모드 오버레이 ── #}
+    {% if data and step_key != 'storyboard' %}
+    <div id="edit-overlay-{{ step_key }}"
+         style="display:none;margin-top:20px;border-top:2px solid #4f46e5;padding-top:16px;">
+      <div style="font-size:13px;font-weight:600;color:#4f46e5;margin-bottom:8px;">✏️ 내용 수정 모드</div>
+      <div style="font-size:12px;color:#6b7280;margin-bottom:10px;">
+        JSON 형식으로 수정하세요. 저장 후 "(수정됨)" 표시가 나타납니다.
+      </div>
+      <textarea id="edit-textarea-{{ step_key }}"
+                style="width:100%;min-height:300px;padding:12px;border:1px solid #d1d5db;
+                       border-radius:8px;font-family:monospace;font-size:12px;
+                       line-height:1.6;resize:vertical;box-sizing:border-box;"
+                placeholder="JSON 데이터..."></textarea>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button onclick="saveStepEdit('{{ step_key }}')"
+                style="padding:8px 18px;background:#4f46e5;color:#fff;border:none;
+                       border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">
+          저장
+        </button>
+        <button onclick="cancelStepEdit('{{ step_key }}')"
+                style="padding:8px 18px;background:#fff;color:#374151;
+                       border:1px solid #d1d5db;border-radius:6px;cursor:pointer;font-size:13px;">
+          취소
+        </button>
+      </div>
+    </div>
     {% endif %}
   </div>
 </div>
@@ -818,11 +949,125 @@ function switchTab(stepKey) {
 
 document.addEventListener('DOMContentLoaded', function () {
   const hash = window.location.hash.replace('#', '');
-  // 유효한 스텝 해시인지 확인 (disabled 탭 제외)
   const tabEl = hash ? document.getElementById('tab-' + hash) : null;
   const isValidHash = tabEl && !tabEl.disabled;
   switchTab(isValidHash ? hash : _FIRST_STEP);
+  loadStepOverrides();
 });
+
+// ── 스텝 재실행 ──
+const _DETAIL_CASE_ID = {{ case_id }};
+
+async function rerunFromStep(stepKey) {
+  const stepNames = {
+    rfp_analysis: 'RFP 분석', research: '리서치', narrative: '내러티브',
+    strategy: '전략 수립', creative: '컨셉 개발', plan: '실행 기획',
+    script: '대본 제작', storyboard: '스토리보드', marketing: '마케팅 전략',
+    final_proposal: '최종 검수',
+  };
+  const label = stepNames[stepKey] || stepKey;
+  if (!confirm(`"${label}"부터 다시 실행하시겠습니까?\n이 스텝 이후 결과도 모두 업데이트됩니다.`)) return;
+
+  try {
+    const r = await fetch(`/rerun_from_step/${_DETAIL_CASE_ID}/${stepKey}`, { method: 'POST' });
+    const d = await r.json();
+    if (d.ok && d.redirect) {
+      window.location.href = d.redirect;
+    } else {
+      alert('재실행 오류: ' + (d.error || '알 수 없음'));
+    }
+  } catch(e) {
+    alert('재실행 요청 실패: ' + e);
+  }
+}
+
+// ── 스텝 수정 ──
+const _editMode = {};
+
+async function toggleEditMode(stepKey) {
+  const overlay  = document.getElementById(`edit-overlay-${stepKey}`);
+  const textarea = document.getElementById(`edit-textarea-${stepKey}`);
+  const btn      = document.getElementById(`edit-btn-${stepKey}`);
+  if (!overlay) return;
+
+  if (_editMode[stepKey]) {
+    cancelStepEdit(stepKey);
+    return;
+  }
+
+  // 현재 오버라이드 또는 원본 데이터 로드
+  try {
+    const r = await fetch(`/api/step_content/${_DETAIL_CASE_ID}/${stepKey}`);
+    const d = await r.json();
+    const content = (d.override && d.override.content) ? d.override.content : {};
+    textarea.value = JSON.stringify(content, null, 2);
+  } catch(e) {
+    textarea.value = '{}';
+  }
+
+  overlay.style.display = '';
+  btn.textContent = '✕ 취소';
+  btn.style.background = '#fee2e2';
+  btn.style.color = '#dc2626';
+  btn.style.border = '1px solid #fca5a5';
+  _editMode[stepKey] = true;
+}
+
+function cancelStepEdit(stepKey) {
+  const overlay = document.getElementById(`edit-overlay-${stepKey}`);
+  const btn     = document.getElementById(`edit-btn-${stepKey}`);
+  if (overlay) overlay.style.display = 'none';
+  if (btn) {
+    btn.textContent = '✏️ 수정';
+    btn.style.background = '#fff';
+    btn.style.color = '#374151';
+    btn.style.border = '1px solid #d1d5db';
+  }
+  _editMode[stepKey] = false;
+}
+
+async function saveStepEdit(stepKey) {
+  const textarea = document.getElementById(`edit-textarea-${stepKey}`);
+  let content;
+  try {
+    content = JSON.parse(textarea.value);
+  } catch(e) {
+    alert('JSON 형식 오류: ' + e.message);
+    return;
+  }
+  try {
+    const r = await fetch(`/update_step_content/${_DETAIL_CASE_ID}/${stepKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      cancelStepEdit(stepKey);
+      const badge = document.getElementById(`edited-badge-${stepKey}`);
+      if (badge) badge.style.display = '';
+      alert('저장되었습니다. 페이지를 새로고침하면 수정된 내용이 반영됩니다.');
+    } else {
+      alert('저장 실패: ' + (d.error || '알 수 없음'));
+    }
+  } catch(e) {
+    alert('저장 요청 실패: ' + e);
+  }
+}
+
+async function loadStepOverrides() {
+  try {
+    const r = await fetch(`/api/step_overrides/${_DETAIL_CASE_ID}`);
+    const d = await r.json();
+    const overrides = d.overrides || {};
+    Object.keys(overrides).forEach(stepKey => {
+      const badge = document.getElementById(`edited-badge-${stepKey}`);
+      if (badge) badge.style.display = '';
+    });
+  } catch(e) {
+    // 무시
+  }
+}
 </script>
 
 <!-- ── PPT 생성 모달 ── -->

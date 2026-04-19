@@ -11,6 +11,7 @@ from core.claude_client import set_retry_callback, clear_retry_callback, Overloa
 from agents import (
     rfp_parser, narrator, researcher, strategist,
     creative, planner, scripter, marketer, orchestrator,
+    storyboard,
 )
 
 _STEPS = [
@@ -21,6 +22,7 @@ _STEPS = [
     ("creative",          "STEP 3    컨셉 개발",        creative,     True),
     ("plan",              "STEP 4    실행 기획",        planner,      True),
     ("script",            "STEP 5    대본 제작",        scripter,     False),
+    ("storyboard",        "STEP 5.5  스토리보드",       storyboard,   False),
     ("marketing",         "STEP 6    마케팅 전략",      marketer,     False),
     ("final_proposal",    "STEP 7    최종 검수·완성",   orchestrator, True),
     ("improvement_report","STEP 7.5  개선 제안",        None,         False),
@@ -196,6 +198,81 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
             results[step_key] = result
             _push_summary(push_event, step_key, step_name, elapsed,
                           _build_summary(step_key, dna, result))
+            i += 1
+            continue
+
+        # storyboard: 스타일 선택 후 DALL-E 생성
+        if step_key == "storyboard":
+            from config import OPENAI_API_KEY as _OAI_KEY
+            if not _OAI_KEY:
+                push_event({
+                    "type": "log",
+                    "message": "ℹ️ OPENAI_API_KEY 미설정 — 스토리보드 스텝 스킵",
+                })
+                results[step_key] = {}
+                i += 1
+                continue
+
+            if auto_run:
+                _sb_style = getattr(dna, "storyboard_style", "line") or "line"
+                push_event({
+                    "type": "log",
+                    "message": f"✓ 스토리보드: 스타일={_sb_style} 자동 진행",
+                })
+            else:
+                push_event({
+                    "type":          "storyboard_style_needed",
+                    "step":          "storyboard",
+                    "default_style": getattr(dna, "storyboard_style", "line") or "line",
+                })
+                sb_input = wait_confirm("storyboard_style")
+                if sb_input == "__abort__":
+                    push_event({"type": "pipeline_aborted", "step": step_key})
+                    results["__aborted_at__"] = step_key
+                    return results
+                if sb_input == "s":
+                    push_event({"type": "step_skipped", "step": step_key,
+                                "name": step_name + " (스킵)"})
+                    results[step_key] = {}
+                    i += 1
+                    continue
+                _sb_style = sb_input if sb_input in ("line", "color", "photo") else "line"
+
+            import functools as _fc
+            _call = _fc.partial(storyboard.run, dna, _sb_style, push_event)
+            _ka_stop_sb = _keepalive_start(push_event, step_key)
+            try:
+                result = _call()
+                elapsed = 0.0
+                pipe_exc = None
+            except Exception as _sb_e:
+                result = {}
+                pipe_exc = _sb_e
+                elapsed = 0.0
+            _ka_stop_sb.set()
+
+            results[step_key] = result
+            step_executed[step_key] = 1
+            _push_summary(push_event, step_key, step_name, elapsed,
+                          _build_summary(step_key, dna, result))
+
+            if auto_run:
+                push_event({"type": "log",
+                            "message": f"✓ {step_name.strip()} 자동 완료"})
+            else:
+                push_event({
+                    "type":        "confirm_needed",
+                    "step":        step_key,
+                    "name":        step_name,
+                    "is_creative": False,
+                    "slogans":     [],
+                })
+                user_input = wait_confirm(step_key)
+                if user_input == "__abort__":
+                    push_event({"type": "pipeline_aborted", "step": step_key})
+                    results["__aborted_at__"] = step_key
+                    return results
+
             i += 1
             continue
 
@@ -477,6 +554,7 @@ def _keepalive_start(push_event, step_key: str) -> threading.Event:
             "creative":     "컨셉 개발 중...",
             "plan":         "실행 계획 작성 중...",
             "script":       "대본 작성 중...",
+            "storyboard":   "스토리보드 이미지 생성 중...",
             "marketing":    "마케팅 전략 수립 중...",
             "final_proposal": "최종 제안서 완성 중...",
         }
@@ -702,6 +780,14 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
 
             ep_key = f"{ep_num}편 대본 [{title}]"
             s[ep_key] = "\n".join(lines)
+
+    elif step_key == "storyboard":
+        frames = result.get("frames", [])
+        ok_frames = [f for f in frames if f.get("ok")]
+        s["생성 결과"] = f"{len(ok_frames)}/{len(frames)}컷 생성 완료"
+        s["스타일"] = result.get("style", "line")
+        if result.get("error"):
+            s["오류"] = result["error"]
 
     elif step_key == "marketing":
         # result 키: "platforms", "youtube_strategy"(텍스트), "sns_strategy"(텍스트),
