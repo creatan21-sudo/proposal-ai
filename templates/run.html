@@ -35,15 +35,17 @@
 <!-- 스텝 진행 표시 -->
 <div class="steps-bar" id="steps-bar">
   {% set steps = [
-    ('rfp_analysis',   'RFP 분석'),
-    ('research',       '리서치'),
-    ('narrative',      '내러티브'),
-    ('strategy',       '전략'),
-    ('creative',       '컨셉'),
-    ('plan',           '기획'),
-    ('script',         '대본'),
-    ('marketing',      '마케팅'),
-    ('final_proposal', '최종'),
+    ('rfp_analysis',      'RFP 분석'),
+    ('research',          '리서치'),
+    ('narrative',         '내러티브'),
+    ('strategy',          '전략'),
+    ('creative',          '컨셉'),
+    ('plan',              '기획'),
+    ('script',            '대본'),
+    ('storyboard',        '스토리보드'),
+    ('marketing',         '마케팅'),
+    ('final_proposal',    'PT/Q&A'),
+    ('improvement_report','크리틱'),
   ] %}
   {% for key, label in steps %}
   <div class="step-pill" id="step-{{ key }}">

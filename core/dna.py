@@ -68,7 +68,7 @@ class ConceptDNA:
     script_outline: list = field(default_factory=list)        # 대본 개요 (요약본)
     has_shortform: bool = False                               # 숏폼 버전 포함 여부
 
-    # STEP 0.5: 내러티브 에이전트가 추가
+    # STEP 1.5: 내러티브 에이전트가 추가
     narrative: str = ""                                        # 20줄 전략 내러티브 전문
 
     # 사용자 사전 지시
@@ -85,6 +85,8 @@ class ConceptDNA:
     # 대본 사전 설정 (index.html에서 미리 설정, 0/""이면 런타임 다이얼로그로 확인)
     script_preset_episodes: int = 0        # 미리 설정된 작성 편수
     script_preset_storyboard: str = ""     # "auto"|"none"|"cuts:N"
+    storyboard_style: str = "line"         # "line"|"color"|"photo"
+    storyboard_cuts_per_ep: int = 10       # 편당 스토리보드 컷 수
 
     # PPT 생성 옵션 (app.py에서 주입)
     generate_ppt: bool = False                                 # True면 orchestrator PASS 4(PT원고) 포함

@@ -182,7 +182,8 @@
               <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;color:#374151;cursor:pointer;">
                 <input type="checkbox" name="selected_steps" value="{{ key }}"
                        class="step-chk" checked
-                       {% if key == 'script' %}onchange="toggleScriptOptions(this.checked)"{% endif %}>
+                       {% if key == 'script' %}onchange="toggleScriptOptions(this.checked)"{% endif %}
+                       {% if key == 'storyboard' %}onchange="toggleStoryboardOptions(this.checked)"{% endif %}>
                 {{ label }}
               </label>
               {% endfor %}
@@ -227,6 +228,32 @@
             </div>
           </div>
 
+          <!-- 스토리보드 옵션 -->
+          <div id="storyboard-options" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:16px;">
+            <div style="font-size:.85rem;font-weight:600;color:#374151;margin-bottom:10px;">스토리보드 설정:</div>
+            <div style="display:flex;flex-direction:column;gap:8px;font-size:.82rem;color:#374151;">
+              <div style="display:flex;align-items:center;gap:10px;">
+                <label style="min-width:60px;font-weight:500;">스타일:</label>
+                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+                  <input type="radio" name="storyboard_style" value="line" checked> 라인
+                </label>
+                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+                  <input type="radio" name="storyboard_style" value="color"> 컬러 그림
+                </label>
+                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+                  <input type="radio" name="storyboard_style" value="photo"> 실사
+                </label>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
+                <label style="min-width:60px;font-weight:500;">편당 컷 수:</label>
+                <input type="number" name="storyboard_cuts_per_ep" id="storyboard-cuts-input"
+                       min="1" max="30" value="10"
+                       style="width:52px;padding:2px 6px;border:1px solid #d1d5db;border-radius:4px;">
+                <span style="color:#6b7280;">컷/편 (1~30, 기본 10)</span>
+              </div>
+            </div>
+          </div>
+
           <!-- 실행 모드 -->
           <div style="margin-bottom:8px;">
             <div style="font-size:.85rem;font-weight:600;color:#374151;margin-bottom:8px;">실행 모드:</div>
@@ -267,9 +294,13 @@
     function setAllSteps(checked) {
       document.querySelectorAll('.step-chk').forEach(c => { c.checked = checked; });
       toggleScriptOptions(checked ? document.querySelector('.step-chk[value="script"]').checked : false);
+      toggleStoryboardOptions(checked ? document.querySelector('.step-chk[value="storyboard"]').checked : false);
     }
     function toggleScriptOptions(show) {
       document.getElementById('script-options').style.display = show ? '' : 'none';
+    }
+    function toggleStoryboardOptions(show) {
+      document.getElementById('storyboard-options').style.display = show ? '' : 'none';
     }
     function toggleCustomCuts(enable) {
       const inp = document.getElementById('script-cuts-input');
@@ -355,17 +386,17 @@
     <div class="card tips-card" style="margin-top:16px;">
       <h3>파이프라인 구조</h3>
       <ul>
-        <li><strong>STEP 0</strong> RFP 분석</li>
-        <li><strong>STEP 1</strong> 리서치</li>
-        <li><strong>STEP 1.5</strong> 내러티브</li>
-        <li><strong>STEP 2</strong> 전략</li>
-        <li><strong>STEP 3</strong> 컨셉</li>
-        <li><strong>STEP 4</strong> 기획</li>
-        <li><strong>STEP 5</strong> 대본</li>
-        <li><strong>STEP 5.5</strong> 스토리보드</li>
-        <li><strong>STEP 6</strong> 마케팅</li>
-        <li><strong>STEP 6.5</strong> PT/Q&A</li>
-        <li><strong>STEP 7</strong> 크리틱</li>
+        <li><strong>STEP 0</strong> RFP 분석 — 평가배점표 추출</li>
+        <li><strong>STEP 1</strong> 리서치 — 발주처·트렌드·경쟁사</li>
+        <li><strong>STEP 1.5</strong> 내러티브 — 전략 방향 설정</li>
+        <li><strong>STEP 2</strong> 전략 — 평가항목 기반 전략 수립</li>
+        <li><strong>STEP 3</strong> 컨셉 — 핵심 컨셉 및 슬로건 도출</li>
+        <li><strong>STEP 4</strong> 기획 — 콘텐츠 기획 및 편성</li>
+        <li><strong>STEP 5</strong> 대본 — 편별 대본 작성</li>
+        <li><strong>STEP 5.5</strong> 스토리보드 — 씬별 이미지 생성</li>
+        <li><strong>STEP 6</strong> 마케팅 — 유통/SNS/KPI 전략</li>
+        <li><strong>STEP 6.5</strong> PT/Q&A — PT 원고 및 예상 질의응답</li>
+        <li><strong>STEP 7</strong> 크리틱 — 최종 크리틱 및 품질 검수</li>
       </ul>
     </div>
   </div>

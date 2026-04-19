@@ -584,6 +584,10 @@ def start():
     # 대본 사전 설정
     script_preset_episodes   = int(request.form.get("script_preset_episodes") or 0)
     script_preset_storyboard = request.form.get("script_preset_storyboard", "auto").strip() or "auto"
+    # 스토리보드 사전 설정
+    _sb_style_raw = request.form.get("storyboard_style", "line").strip()
+    storyboard_style = _sb_style_raw if _sb_style_raw in ("line", "color", "photo") else "line"
+    storyboard_cuts_per_ep = max(1, min(30, int(request.form.get("storyboard_cuts_per_ep") or 10)))
 
     if not client or not project:
         return redirect(url_for("index"))
@@ -633,6 +637,8 @@ def start():
     dna.pages = pages
     dna.script_preset_episodes   = script_preset_episodes
     dna.script_preset_storyboard = script_preset_storyboard
+    dna.storyboard_style         = storyboard_style
+    dna.storyboard_cuts_per_ep   = storyboard_cuts_per_ep
     if ref_structure:
         dna.reference_structure = ref_structure
 
