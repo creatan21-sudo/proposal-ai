@@ -57,24 +57,26 @@ def run(dna: ConceptDNA, pipeline_results: dict = None, generate_ppt: bool = Fal
 
     PASS 구조:
         PASS 1 — 규칙 기반 검수 (API 호출 없음)
-        PASS 2 — 서사 완성도 심층 분석 (Claude)
+        PASS 2 — 서사 완성도 심층 분석 + 예상 점수 + 경쟁사 강약점 (Claude)
         PASS 3 — 회사소개 맞춤 재구성 (Claude, 항상)
         PASS 4 — 예상 질의응답 5개 생성 (Claude, 항상)
-        PASS 5 — PT 원고 초안 생성 (Claude, generate_ppt=True 시만)
+        PASS 5 — PT 원고 초안 생성 (Claude, 항상)
 
     Args:
         dna: STEP 0~6 결과가 모두 반영된 ConceptDNA
         pipeline_results: 각 에이전트 원본 출력물 (없으면 DNA에서 재구성)
-        generate_ppt: True면 PASS 5(PT원고) 추가 실행.
+        generate_ppt: (미사용, 호환성 유지용)
 
     Returns:
         {
             "consistency_score":   float,  # 0.0~1.0
             "evaluation_coverage": dict,   # 평가항목 커버리지
-            "issues":              list,   # 발견된 문제·개선사항
+            "issues":              list,   # 발견된 문제·개선사항 (critical/warning/info)
+            "predicted_scores":    list,   # 평가배점표 기준 예상 점수 (항상)
+            "competitive_analysis":dict,   # 경쟁사 대비 강약점 (항상)
             "company_profile":     dict,   # 인터즈 맞춤 회사소개 (항상)
             "qa_prep":             list,   # 심사위원 예상 질의응답 (항상)
-            "pt_script":           dict,   # PT 원고 초안 (generate_ppt=True 시만)
+            "pt_script":           dict,   # PT 발표 원고 (항상)
             "final_proposal":      dict,   # 최종 확정 제안서 구조
             "dna_snapshot":        dict,   # 최종 DNA 스냅샷
         }
@@ -120,16 +122,12 @@ def run(dna: ConceptDNA, pipeline_results: dict = None, generate_ppt: bool = Fal
         print(f"  [경고] PASS 4 실패 — 빈 값으로 대체: {type(e).__name__}: {e}")
         qa_prep = []
 
-    # ── PASS 5: PT 원고 (PPT 모드 시만) ──────────
-    if generate_ppt or getattr(dna, "generate_ppt", False):
-        print("  [PASS 5] PT 원고 초안 생성 (PPT 모드)...")
-        try:
-            pt_script = _generate_pt_script(dna, consistency, company_profile)
-        except Exception as e:
-            print(f"  [경고] PASS 5 실패 — 빈 값으로 대체: {type(e).__name__}: {e}")
-            pt_script = {}
-    else:
-        print("  [PASS 5] 생략 (PPT 모드 아님 — generate_ppt=False)")
+    # ── PASS 5: PT 원고 (항상 실행) ──────────────
+    print("  [PASS 5] PT 원고 초안 생성...")
+    try:
+        pt_script = _generate_pt_script(dna, consistency, company_profile)
+    except Exception as e:
+        print(f"  [경고] PASS 5 실패 — 빈 값으로 대체: {type(e).__name__}: {e}")
         pt_script = {}
 
     # ── FINAL: 최종 제안서 조립 ──────────────────
@@ -141,15 +139,17 @@ def run(dna: ConceptDNA, pipeline_results: dict = None, generate_ppt: bool = Fal
     dna_snapshot   = _snapshot_dna(dna)
 
     result = {
-        "consistency_score":   round(final_score, 3),
-        "evaluation_coverage": pre_checks["evaluation_coverage"],
-        "issues":              consistency.get("issues", []),
-        "revised_sections":    consistency.get("revised_sections", {}),
-        "company_profile":     company_profile,
-        "qa_prep":             qa_prep,
-        "pt_script":           pt_script,
-        "final_proposal":      final_proposal,
-        "dna_snapshot":        dna_snapshot,
+        "consistency_score":    round(final_score, 3),
+        "evaluation_coverage":  pre_checks["evaluation_coverage"],
+        "issues":               consistency.get("issues", []),
+        "revised_sections":     consistency.get("revised_sections", {}),
+        "predicted_scores":     consistency.get("predicted_scores", []),
+        "competitive_analysis": consistency.get("competitive_analysis", {}),
+        "company_profile":      company_profile,
+        "qa_prep":              qa_prep,
+        "pt_script":            pt_script,
+        "final_proposal":       final_proposal,
+        "dna_snapshot":         dna_snapshot,
     }
 
     # DNA 업데이트 (검수 통과 상태 기록)
@@ -293,13 +293,15 @@ def _calc_pre_score(pre_checks: dict) -> float:
 # ─────────────────────────────────────────────
 
 def _deep_consistency_check(dna: ConceptDNA, pre_checks: dict, winning_patterns: list = None) -> dict:
-    """서사 완성도·톤 일관성·미흡 섹션 자동 보완 (Claude)."""
+    """서사 완성도·톤 일관성·미흡 섹션 자동 보완 + 예상 점수 + 경쟁사 강약점 (Claude)."""
     prompt  = _build_consistency_prompt(dna, pre_checks, winning_patterns or [])
-    result  = claude_client.call_json(prompt, model=_OPUS_MODEL, max_tokens=2000)
+    result  = claude_client.call_json(prompt, model=_OPUS_MODEL, max_tokens=3000)
     result.setdefault("narrative_score", 0.7)
     result.setdefault("issues", [])
     result.setdefault("revised_sections", {})
     result.setdefault("strengths", [])
+    result.setdefault("predicted_scores", [])
+    result.setdefault("competitive_analysis", {})
     return result
 
 
@@ -325,6 +327,13 @@ def _build_consistency_prompt(dna: ConceptDNA, pre_checks: dict, winning_pattern
         f"  {s.get('episode','')}편 《{s.get('title','')}》 [{s.get('format','')}]"
         for s in dna.script_outline[:3]
     ) or "  (대본 정보 없음)"
+
+    # 평가배점표
+    eval_items_block = "\n".join(
+        f"  - {it.get('item', it) if isinstance(it, dict) else it}"
+        + (f" [{it.get('score', '')}점]" if isinstance(it, dict) and it.get('score') else "")
+        for it in dna.evaluation_items[:15]
+    ) or "  (평가항목 정보 없음 — predicted_scores는 일반적인 공공 입찰 기준으로 추정)"
 
     return f"""당신은 정부 입찰 제안서 전문 심사 컨설턴트입니다.
 아래 제안서 산출물의 일관성과 완성도를 심층 분석하고, 미흡한 부분을 자동 보완해주세요.
@@ -357,6 +366,11 @@ def _build_consistency_prompt(dna: ConceptDNA, pre_checks: dict, winning_pattern
 {json.dumps(dna.kpi_targets[:3], ensure_ascii=False) if dna.kpi_targets else '  (미설정)'}
 
 ━━━━━━━━━━━━━━━━━━━━━━━
+[평가배점표 (predicted_scores 산정 기준)]
+━━━━━━━━━━━━━━━━━━━━━━━
+{eval_items_block}
+
+━━━━━━━━━━━━━━━━━━━━━━━
 [사전 검수에서 발견된 미흡 항목]
 ━━━━━━━━━━━━━━━━━━━━━━━
 {pre_issues_block}
@@ -370,9 +384,20 @@ def _build_consistency_prompt(dna: ConceptDNA, pre_checks: dict, winning_pattern
 [분석 지침]
 ━━━━━━━━━━━━━━━━━━━━━━━
 1. narrative_score: 위기→진단→해결→효과 4단계 서사 흐름의 완성도 (0.0~1.0)
-2. issues: 발견된 불일치·빈틈·개선 사항 목록 (심각도별 분류)
+2. issues: 발견된 불일치·빈틈·개선 사항 목록 (심각도별 분류, critical/warning/info)
 3. revised_sections: 미흡 섹션의 보완 내용 (없으면 빈 dict)
 4. strengths: 이 제안서의 강점 3~5개
+5. predicted_scores: 평가배점표의 각 항목별 예상 점수. 평가항목이 없으면 빈 배열.
+   - item: 평가항목명
+   - max_score: 배점 (DNA의 evaluation_items에서 추출, 없으면 "미확인")
+   - predicted: 예상 취득 점수 (숫자 또는 "최대"/"높음"/"보통"/"낮음")
+   - rationale: 이 점수를 예상하는 이유 (1~2문장)
+   - risk: 감점 위험 요소 (없으면 null)
+6. competitive_analysis: 경쟁사 대비 우리 제안서의 강약점
+   - strengths: 경쟁 우위 요소 3~5개 (리스트)
+   - weaknesses: 경쟁 열위·위험 요소 2~3개 (리스트)
+   - differentiation_score: 경쟁 차별화 점수 (0.0~1.0)
+   - recommendation: 경쟁력 강화를 위한 핵심 권고 (1~2문장)
 
 ━━━━━━━━━━━━━━━━━━━━━━━
 [텍스트 필드 형식 규칙]
@@ -399,10 +424,16 @@ def _build_consistency_prompt(dna: ConceptDNA, pre_checks: dict, winning_pattern
   "narrative_score": 0.0,
   "issues": [
     {{
-      "severity":    "critical|warning|info",
+      "severity":    "critical",
       "section":     "해당 섹션명",
-      "description": "문제 설명",
-      "suggestion":  "개선 방안"
+      "description": "필수 개선 사항 — 반드시 고쳐야 할 것",
+      "suggestion":  "구체적 개선 방안"
+    }},
+    {{
+      "severity":    "warning",
+      "section":     "해당 섹션명",
+      "description": "보완 권고 사항 — 하면 좋은 것",
+      "suggestion":  "구체적 보완 방안"
     }}
   ],
   "revised_sections": {{
@@ -412,7 +443,27 @@ def _build_consistency_prompt(dna: ConceptDNA, pre_checks: dict, winning_pattern
     "강점 1",
     "강점 2"
   ],
-  "overall_assessment": "전체 제안서 완성도에 대한 종합 의견 (3~4문장)"
+  "overall_assessment": "전체 제안서 완성도에 대한 종합 의견 (3~4문장)",
+  "predicted_scores": [
+    {{
+      "item":      "평가항목명",
+      "max_score": "배점 또는 미확인",
+      "predicted": "예상 취득 점수 또는 높음/보통/낮음",
+      "rationale": "이 점수를 예상하는 이유 (1~2문장)",
+      "risk":      "감점 위험 요소 또는 null"
+    }}
+  ],
+  "competitive_analysis": {{
+    "strengths": [
+      "경쟁 우위 요소 1",
+      "경쟁 우위 요소 2"
+    ],
+    "weaknesses": [
+      "경쟁 열위·위험 요소 1"
+    ],
+    "differentiation_score": 0.0,
+    "recommendation": "경쟁력 강화를 위한 핵심 권고 (1~2문장)"
+  }}
 }}"""
 
 

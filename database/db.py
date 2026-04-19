@@ -840,11 +840,13 @@ def get_case_detail(case_id: int) -> "dict | None":
                 "qa_prep":   fp.get("qa_prep", []),
             }
             steps["critic"] = {
-                "consistency_score":   fp.get("consistency_score", 0),
-                "evaluation_coverage": fp.get("evaluation_coverage", {}),
-                "issues":              fp.get("issues", []),
-                "company_profile":     fp.get("company_profile", {}),
-                "final_proposal":      fp.get("final_proposal", {}),
+                "consistency_score":    fp.get("consistency_score", 0),
+                "evaluation_coverage":  fp.get("evaluation_coverage", {}),
+                "issues":               fp.get("issues", []),
+                "predicted_scores":     fp.get("predicted_scores", []),
+                "competitive_analysis": fp.get("competitive_analysis", {}),
+                "company_profile":      fp.get("company_profile", {}),
+                "final_proposal":       fp.get("final_proposal", {}),
             }
 
         return {"case": case, "steps": steps}

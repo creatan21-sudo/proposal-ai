@@ -183,13 +183,15 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
         pipe_exc = None
         elapsed  = 0.0
 
-        # improvement_report: DB/AI 호출 없이 final_proposal 결과에서 인라인 생성
+        # improvement_report(크리틱): DB/AI 호출 없이 final_proposal 결과에서 인라인 생성
         if step_key == "improvement_report":
             fp = results.get("final_proposal", {})
             result = {
-                "issues":              fp.get("issues", []),
-                "evaluation_coverage": fp.get("evaluation_coverage", {}),
-                "consistency_score":   fp.get("consistency_score", 0),
+                "issues":               fp.get("issues", []),
+                "evaluation_coverage":  fp.get("evaluation_coverage", {}),
+                "consistency_score":    fp.get("consistency_score", 0),
+                "predicted_scores":     fp.get("predicted_scores", []),
+                "competitive_analysis": fp.get("competitive_analysis", {}),
             }
             elapsed = 0.0
             pipe_exc = None
@@ -873,7 +875,11 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
             if desc:    line += f"\n{desc}"
             if suggest: line += f"\n→ {suggest}"
             formatted.append(line.strip())
+        critical_cnt = sum(1 for iss in issues if isinstance(iss, dict) and iss.get("severity") == "critical")
+        warning_cnt  = sum(1 for iss in issues if isinstance(iss, dict) and iss.get("severity") != "critical")
         if formatted:
+            s["필수 개선"] = f"{critical_cnt}건"
+            s["보완 권고"] = f"{warning_cnt}건"
             s["개선 포인트"] = formatted
         else:
             s["개선 포인트"] = ["개선 필요 항목 없음 — 모든 섹션 기준 충족"]
@@ -887,6 +893,14 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
         score = result.get("consistency_score", 0)
         if score:
             s["일관성 점수"] = f"{score:.0%}" if isinstance(score, float) else str(score)
+        pred = result.get("predicted_scores", [])
+        if pred:
+            s["예상 점수 항목 수"] = f"{len(pred)}개 항목 분석"
+        ca = result.get("competitive_analysis", {})
+        if ca and isinstance(ca, dict):
+            diff_score = ca.get("differentiation_score", 0)
+            if diff_score:
+                s["경쟁 차별화"] = f"{diff_score:.0%}"
 
     elif step_key == "final_proposal":
         score = result.get("consistency_score", result.get("score", 0))

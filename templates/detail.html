@@ -790,27 +790,131 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
       </div>
       {% endif %}
 
-      {% set issues = data.get('issues', []) %}
-      {% if issues %}
+      {# ── 필수 개선 사항 (critical) ── #}
+      {% set critical_issues = data.get('issues', []) | selectattr('severity', 'equalto', 'critical') | list %}
+      {% set warning_issues  = data.get('issues', []) | selectattr('severity', 'ne', 'critical') | list %}
+      {% set all_issues      = data.get('issues', []) %}
+      {% if all_issues %}
       <div class="detail-field">
-        <div class="detail-field-label">개선 포인트</div>
+        <div class="detail-field-label">필수 개선 사항 <span style="color:#6b7280;font-weight:400;font-size:11px;">(반드시 고쳐야 할 것)</span></div>
         <div class="dv-cards">
-          {% for iss in issues %}
-          {% if iss is mapping %}
-          {% set sev = iss.get('severity','') %}
-          <div class="dv-card" style="border-left:4px solid {% if sev=='critical' %}#dc2626{% elif sev=='warning' %}#d97706{% else %}#3b82f6{% endif %};">
-            <div style="font-size:11px;font-weight:700;margin-bottom:4px;color:{% if sev=='critical' %}#dc2626{% elif sev=='warning' %}#d97706{% else %}#3b82f6{% endif %};">
-              {% if sev=='critical' %}🔴 필수 개선{% elif sev=='warning' %}🟡 권장 개선{% else %}🔵 참고{% endif %}
-              {% if iss.get('section') %} | {{ iss.section }}{% endif %}
+          {% set shown = namespace(count=0) %}
+          {% for iss in all_issues %}
+          {% if iss is mapping and iss.get('severity') == 'critical' %}
+          {% set shown.count = shown.count + 1 %}
+          <div class="dv-card" style="border-left:4px solid #dc2626;">
+            <div style="font-size:11px;font-weight:700;margin-bottom:4px;color:#dc2626;">
+              🔴 필수 개선{% if iss.get('section') %} | {{ iss.section }}{% endif %}
             </div>
             {% if iss.get('description') %}<p class="dv-text">{{ iss.description }}</p>{% endif %}
             {% if iss.get('suggestion') %}<p class="dv-text" style="color:#6b7280;">→ {{ iss.suggestion }}</p>{% endif %}
           </div>
-          {% else %}
+          {% endif %}
+          {% endfor %}
+          {% if shown.count == 0 %}<p class="dv-text" style="color:#16a34a;">✓ 필수 개선 사항 없음</p>{% endif %}
+        </div>
+      </div>
+
+      <div class="detail-field">
+        <div class="detail-field-label">보완 권고 사항 <span style="color:#6b7280;font-weight:400;font-size:11px;">(하면 좋은 것)</span></div>
+        <div class="dv-cards">
+          {% set shown2 = namespace(count=0) %}
+          {% for iss in all_issues %}
+          {% if iss is mapping and iss.get('severity') != 'critical' %}
+          {% set shown2.count = shown2.count + 1 %}
+          {% set sev = iss.get('severity','info') %}
+          <div class="dv-card" style="border-left:4px solid {% if sev=='warning' %}#d97706{% else %}#3b82f6{% endif %};">
+            <div style="font-size:11px;font-weight:700;margin-bottom:4px;color:{% if sev=='warning' %}#d97706{% else %}#3b82f6{% endif %};">
+              {% if sev=='warning' %}🟡 권장 개선{% else %}🔵 참고{% endif %}{% if iss.get('section') %} | {{ iss.section }}{% endif %}
+            </div>
+            {% if iss.get('description') %}<p class="dv-text">{{ iss.description }}</p>{% endif %}
+            {% if iss.get('suggestion') %}<p class="dv-text" style="color:#6b7280;">→ {{ iss.suggestion }}</p>{% endif %}
+          </div>
+          {% elif iss is not mapping %}
+          {% set shown2.count = shown2.count + 1 %}
           <div class="dv-card"><p class="dv-text">{{ iss }}</p></div>
           {% endif %}
           {% endfor %}
+          {% if shown2.count == 0 %}<p class="dv-text" style="color:#16a34a;">✓ 보완 권고 사항 없음</p>{% endif %}
         </div>
+      </div>
+      {% endif %}
+
+      {# ── 평가배점표 기준 예상 점수 ── #}
+      {% set pred = data.get('predicted_scores', []) %}
+      {% if pred %}
+      <div class="detail-field">
+        <div class="detail-field-label">평가배점표 기준 예상 점수</div>
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
+          <thead>
+            <tr style="background:#f3f4f6;border-bottom:2px solid #e5e7eb;">
+              <th style="text-align:left;padding:8px 10px;font-weight:600;color:#374151;">평가항목</th>
+              <th style="text-align:center;padding:8px 10px;font-weight:600;color:#374151;white-space:nowrap;">배점</th>
+              <th style="text-align:center;padding:8px 10px;font-weight:600;color:#374151;white-space:nowrap;">예상</th>
+              <th style="text-align:left;padding:8px 10px;font-weight:600;color:#374151;">근거 / 위험</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for ps in pred %}
+            {% if ps is mapping %}
+            <tr style="border-bottom:1px solid #f3f4f6;">
+              <td style="padding:7px 10px;color:#111827;font-weight:500;">{{ ps.get('item', '') }}</td>
+              <td style="padding:7px 10px;text-align:center;color:#6b7280;">{{ ps.get('max_score', '-') }}</td>
+              <td style="padding:7px 10px;text-align:center;font-weight:700;
+                color:{% if ps.get('predicted')|string in ['높음','최대'] %}#16a34a{% elif ps.get('predicted')|string == '낮음' %}#dc2626{% else %}#d97706{% endif %};">
+                {{ ps.get('predicted', '-') }}
+              </td>
+              <td style="padding:7px 10px;font-size:12px;color:#374151;">
+                {{ ps.get('rationale', '') }}
+                {% if ps.get('risk') %}<br><span style="color:#dc2626;">⚠ {{ ps.risk }}</span>{% endif %}
+              </td>
+            </tr>
+            {% endif %}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+
+      {# ── 경쟁사 대비 강약점 ── #}
+      {% set ca = data.get('competitive_analysis', {}) %}
+      {% if ca and ca is mapping %}
+      <div class="detail-field">
+        <div class="detail-field-label">경쟁사 대비 강약점</div>
+        {% set ca_strengths = ca.get('strengths', []) %}
+        {% set ca_weaknesses = ca.get('weaknesses', []) %}
+        {% set ca_score = ca.get('differentiation_score', 0) %}
+        {% if ca_score %}
+        <div style="margin-bottom:12px;display:flex;align-items:center;gap:12px;">
+          <span style="font-size:12px;font-weight:600;color:#6b7280;">경쟁 차별화 점수</span>
+          <span style="font-size:22px;font-weight:700;color:{% if ca_score >= 0.7 %}#16a34a{% elif ca_score >= 0.5 %}#d97706{% else %}#dc2626{% endif %};">
+            {{ "%.0f"|format(ca_score * 100) }}%
+          </span>
+        </div>
+        {% endif %}
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;">
+          {% if ca_strengths %}
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:12px;">
+            <div style="font-size:12px;font-weight:700;color:#16a34a;margin-bottom:8px;">💪 경쟁 우위</div>
+            <ul style="margin:0;padding:0 0 0 16px;font-size:13px;color:#166534;">
+              {% for s in ca_strengths %}<li style="margin-bottom:4px;">{{ s }}</li>{% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+          {% if ca_weaknesses %}
+          <div style="background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:12px;">
+            <div style="font-size:12px;font-weight:700;color:#ea580c;margin-bottom:8px;">⚠ 개선 필요</div>
+            <ul style="margin:0;padding:0 0 0 16px;font-size:13px;color:#9a3412;">
+              {% for w in ca_weaknesses %}<li style="margin-bottom:4px;">{{ w }}</li>{% endfor %}
+            </ul>
+          </div>
+          {% endif %}
+        </div>
+        {% if ca.get('recommendation') %}
+        <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px;font-size:13px;color:#1e40af;">
+          <strong>💡 권고:</strong> {{ ca.recommendation }}
+        </div>
+        {% endif %}
       </div>
       {% endif %}
 
