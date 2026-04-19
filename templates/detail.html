@@ -348,16 +348,17 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
    스텝 정의 + 탭 아이콘
    ──────────────────────────────────────────────── #}
 {% set step_defs = [
-  ('rfp_analysis',   'STEP 0',   'RFP 분석',     '🔍'),
-  ('research',       'STEP 1',   '리서치',        '📊'),
-  ('narrative',      'STEP 1.5', '내러티브',      '💡'),
-  ('strategy',       'STEP 2',   '전략 수립',     '🎯'),
-  ('creative',       'STEP 3',   '컨셉 개발',     '✨'),
-  ('plan',           'STEP 4',   '실행 기획',     '📋'),
-  ('script',         'STEP 5',   '대본',          '🎬'),
-  ('storyboard',     'STEP 5.5', '스토리보드',    '🖼️'),
-  ('marketing',      'STEP 6',   '마케팅 전략',   '📣'),
-  ('final_proposal', 'STEP 7',   '최종 제안서',   '✅'),
+  ('rfp_analysis',   'STEP 0',   'RFP 분석',   '🔍'),
+  ('research',       'STEP 1',   '리서치',      '📊'),
+  ('narrative',      'STEP 1.5', '내러티브',    '💡'),
+  ('strategy',       'STEP 2',   '전략',        '🎯'),
+  ('creative',       'STEP 3',   '컨셉',        '✨'),
+  ('plan',           'STEP 4',   '기획',        '📋'),
+  ('script',         'STEP 5',   '대본',        '🎬'),
+  ('storyboard',     'STEP 5.5', '스토리보드',  '🖼️'),
+  ('marketing',      'STEP 6',   '마케팅',      '📣'),
+  ('pt_qa',          'PT/Q&A',   'PT/Q&A',      '📝'),
+  ('critic',         '크리틱',   '크리틱',       '🔎'),
 ] %}
 
 {# 첫 번째 데이터 있는 스텝 계산 #}
@@ -394,14 +395,6 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
     <span class="detail-tab-label">{{ step_label }}</span>
   </button>
   {% endfor %}
-  <button class="detail-tab detail-tab-all"
-          id="tab-__all__"
-          role="tab"
-          data-step="__all__"
-          onclick="switchTab('__all__')">
-    <span class="detail-tab-icon">📄</span>
-    <span class="detail-tab-label">전체보기</span>
-  </button>
 </div>
 
 <div class="detail-steps" id="detail-steps">
@@ -434,12 +427,14 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
       <span class="detail-step-name">{{ step_icon }} {{ step_label }}</span>
       <span id="edited-badge-{{ step_key }}" class="badge badge-blue" style="display:none;font-size:11px;">수정됨</span>
     </div>
-    {% if data %}
+    {% if data and step_key not in ('pt_qa', 'critic') %}
     <div style="display:flex;gap:6px;align-items:center;">
+      {% if step_key != 'storyboard' %}
       <button onclick="toggleEditMode('{{ step_key }}')"
               id="edit-btn-{{ step_key }}"
               style="padding:4px 10px;font-size:12px;background:#fff;border:1px solid #d1d5db;
                      border-radius:6px;cursor:pointer;color:#374151;font-weight:500;">✏️ 수정</button>
+      {% endif %}
       <button onclick="rerunFromStep('{{ step_key }}')"
               style="padding:4px 10px;font-size:12px;background:#fff;border:1px solid #d1d5db;
                      border-radius:6px;cursor:pointer;color:#374151;font-weight:500;">🔄 재실행</button>
@@ -668,6 +663,173 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
         {% endif %}
       {% endfor %}
 
+    {# ── PT/Q&A 탭 ── #}
+    {% elif step_key == 'pt_qa' %}
+      {# PT 원고 #}
+      {% set pt = data.get('pt_script', {}) %}
+      {% if pt and pt is mapping %}
+        <div class="detail-field">
+          <div class="detail-field-label" style="font-size:15px;font-weight:700;color:#4f46e5;margin-bottom:12px;">📋 PT 발표 원고</div>
+          {% if pt.get('opening') %}
+          <div style="margin-bottom:14px;">
+            <div class="detail-field-label">오프닝</div>
+            <p class="dv-text">{{ pt.opening }}</p>
+          </div>
+          {% endif %}
+          {% if pt.get('body') %}
+          <div style="margin-bottom:14px;">
+            <div class="detail-field-label">본론</div>
+            <p class="dv-text">{{ pt.body }}</p>
+          </div>
+          {% endif %}
+          {% if pt.get('sections') %}
+          <div style="margin-bottom:14px;">
+            <div class="detail-field-label">섹션별 원고</div>
+            <div class="dv-cards">
+              {% for sec in pt.sections %}
+              {% if sec is mapping %}
+              <div class="dv-card">
+                {% if sec.get('title') %}<div style="font-weight:700;font-size:13px;margin-bottom:6px;">{{ sec.title }}</div>{% endif %}
+                {% if sec.get('script') %}<p class="dv-text">{{ sec.script }}</p>{% endif %}
+              </div>
+              {% else %}
+              <div class="dv-card"><p class="dv-text">{{ sec }}</p></div>
+              {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+          {% if pt.get('closing') %}
+          <div style="margin-bottom:14px;">
+            <div class="detail-field-label">클로징</div>
+            <p class="dv-text">{{ pt.closing }}</p>
+          </div>
+          {% endif %}
+          {% if pt.get('slides') %}
+          <div style="margin-bottom:14px;">
+            <div class="detail-field-label">슬라이드별 원고</div>
+            <div class="dv-cards">
+              {% for sl in pt.slides %}
+              {% if sl is mapping %}
+              <div class="dv-card">
+                <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:6px;">슬라이드 {{ sl.get('slide_num','') }}: {{ sl.get('title','') }}</div>
+                {% if sl.get('narration') %}<p class="dv-text">{{ sl.narration }}</p>{% endif %}
+              </div>
+              {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+        </div>
+      {% elif pt and pt is string %}
+        <div class="detail-field">
+          <div class="detail-field-label">📋 PT 발표 원고</div>
+          <p class="dv-text">{{ pt }}</p>
+        </div>
+      {% else %}
+        <p class="detail-empty">PT 원고가 아직 없습니다. STEP 7 최종 검수 실행 후 생성됩니다.</p>
+      {% endif %}
+
+      {# 예상 Q&A #}
+      {% set qa = data.get('qa_prep', []) %}
+      {% if qa %}
+      <div class="detail-field" style="margin-top:24px;">
+        <div class="detail-field-label" style="font-size:15px;font-weight:700;color:#4f46e5;margin-bottom:12px;">❓ 예상 질의응답</div>
+        <div class="dv-cards">
+          {% for item in qa %}
+          {% if item is mapping %}
+          <div class="dv-card">
+            {% if item.get('category') %}
+            <span style="font-size:11px;background:#eff6ff;color:#2563eb;padding:2px 8px;border-radius:99px;font-weight:600;">{{ item.category }}</span>
+            {% endif %}
+            <p class="dv-text" style="font-weight:600;margin-top:8px;color:#1f2937;">Q: {{ item.get('question','') }}</p>
+            <p class="dv-text" style="color:#374151;">A: {{ item.get('answer','') }}</p>
+          </div>
+          {% else %}
+          <div class="dv-card"><p class="dv-text">{{ item }}</p></div>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+    {# ── 크리틱 탭 (최종검수 리뷰) ── #}
+    {% elif step_key == 'critic' %}
+      {% set score = data.get('consistency_score', 0) %}
+      {% if score %}
+      <div class="detail-field">
+        <div class="detail-field-label">일관성 점수</div>
+        <div style="font-size:28px;font-weight:700;color:{% if score >= 0.8 %}#16a34a{% elif score >= 0.6 %}#d97706{% else %}#dc2626{% endif %};">
+          {{ "%.0f"|format(score * 100) if score is number and score <= 1 else score }}{% if score is number and score <= 1 %}%{% endif %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% set cov = data.get('evaluation_coverage', {}) %}
+      {% if cov and cov is mapping %}
+      <div class="detail-field">
+        <div class="detail-field-label">평가항목 커버리지</div>
+        {% set covered = cov.get('covered', []) %}
+        {% set missing  = cov.get('missing', []) %}
+        {% if covered or missing %}
+          {% if covered %}
+          <div style="margin-bottom:8px;">
+            <div style="font-size:12px;font-weight:600;color:#16a34a;margin-bottom:4px;">✓ 충족 ({{ covered|length }}개)</div>
+            <ul class="dv-list">{% for it in covered %}<li>{{ it }}</li>{% endfor %}</ul>
+          </div>
+          {% endif %}
+          {% if missing %}
+          <div>
+            <div style="font-size:12px;font-weight:600;color:#dc2626;margin-bottom:4px;">✗ 미충족 ({{ missing|length }}개)</div>
+            <ul class="dv-list">{% for it in missing %}<li>{{ it }}</li>{% endfor %}</ul>
+          </div>
+          {% endif %}
+        {% else %}
+          {{ render_val(cov) }}
+        {% endif %}
+      </div>
+      {% endif %}
+
+      {% set issues = data.get('issues', []) %}
+      {% if issues %}
+      <div class="detail-field">
+        <div class="detail-field-label">개선 포인트</div>
+        <div class="dv-cards">
+          {% for iss in issues %}
+          {% if iss is mapping %}
+          {% set sev = iss.get('severity','') %}
+          <div class="dv-card" style="border-left:4px solid {% if sev=='critical' %}#dc2626{% elif sev=='warning' %}#d97706{% else %}#3b82f6{% endif %};">
+            <div style="font-size:11px;font-weight:700;margin-bottom:4px;color:{% if sev=='critical' %}#dc2626{% elif sev=='warning' %}#d97706{% else %}#3b82f6{% endif %};">
+              {% if sev=='critical' %}🔴 필수 개선{% elif sev=='warning' %}🟡 권장 개선{% else %}🔵 참고{% endif %}
+              {% if iss.get('section') %} | {{ iss.section }}{% endif %}
+            </div>
+            {% if iss.get('description') %}<p class="dv-text">{{ iss.description }}</p>{% endif %}
+            {% if iss.get('suggestion') %}<p class="dv-text" style="color:#6b7280;">→ {{ iss.suggestion }}</p>{% endif %}
+          </div>
+          {% else %}
+          <div class="dv-card"><p class="dv-text">{{ iss }}</p></div>
+          {% endif %}
+          {% endfor %}
+        </div>
+      </div>
+      {% endif %}
+
+      {% set profile = data.get('company_profile', {}) %}
+      {% if profile and profile is mapping %}
+      <div class="detail-field">
+        <div class="detail-field-label">회사 소개 (맞춤형)</div>
+        {{ render_val(profile) }}
+      </div>
+      {% endif %}
+
+      {% set fp_content = data.get('final_proposal', {}) %}
+      {% if fp_content and fp_content is mapping %}
+      <div class="detail-field">
+        <div class="detail-field-label">최종 제안서 본문</div>
+        {{ render_val(fp_content) }}
+      </div>
+      {% endif %}
+
     {# ── 나머지 스텝: 범용 렌더링 ── #}
     {% else %}
       {% for k, v in data.items() %}
@@ -681,7 +843,7 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
     {% endif %}
 
     {# ── 수정 모드 오버레이 ── #}
-    {% if data and step_key != 'storyboard' %}
+    {% if data and step_key not in ('storyboard', 'pt_qa', 'critic') %}
     <div id="edit-overlay-{{ step_key }}"
          style="display:none;margin-top:20px;border-top:2px solid #4f46e5;padding-top:16px;">
       <div style="font-size:13px;font-weight:600;color:#4f46e5;margin-bottom:8px;">✏️ 내용 수정 모드</div>
@@ -907,44 +1069,24 @@ function toggleStep(key) {
   if (arrow) arrow.style.transform = hidden ? 'rotate(0deg)' : 'rotate(-90deg)';
 }
 
-// 탭 전환
+// 탭 전환 (단독 탭 모드만 사용)
 function switchTab(stepKey) {
   const stepsEl = document.getElementById('detail-steps');
 
-  // 탭 버튼 active 상태 업데이트
   document.querySelectorAll('.detail-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.step === stepKey);
   });
 
-  if (stepKey === '__all__') {
-    // 전체보기: 모든 카드 표시, 아코디언 모드
-    stepsEl.className = 'detail-steps mode-all';
-    document.querySelectorAll('.detail-step-card').forEach(card => {
-      card.style.display = '';
-    });
-    // 데이터 있는 카드는 펼침, 없는 카드는 접힘
-    document.querySelectorAll('.detail-step-card').forEach(card => {
-      const key = card.dataset.step;
-      const body  = document.getElementById('body-' + key);
-      const arrow = document.getElementById('arrow-' + key);
-      const hasDone = card.classList.contains('detail-step-done');
-      if (body)  body.style.display  = hasDone ? 'block' : 'none';
-      if (arrow) arrow.style.transform = hasDone ? 'rotate(0deg)' : 'rotate(-90deg)';
-    });
-    history.replaceState(null, '', window.location.pathname + window.location.search);
-  } else {
-    // 단독 탭: 해당 카드만 표시, 탭 모드
-    stepsEl.className = 'detail-steps mode-single';
-    document.querySelectorAll('.detail-step-card').forEach(card => {
-      const isActive = card.dataset.step === stepKey;
-      card.style.display = isActive ? '' : 'none';
-      if (isActive) {
-        const body = document.getElementById('body-' + stepKey);
-        if (body) body.style.display = 'block';
-      }
-    });
-    history.replaceState(null, '', '#' + stepKey);
-  }
+  stepsEl.className = 'detail-steps mode-single';
+  document.querySelectorAll('.detail-step-card').forEach(card => {
+    const isActive = card.dataset.step === stepKey;
+    card.style.display = isActive ? '' : 'none';
+    if (isActive) {
+      const body = document.getElementById('body-' + stepKey);
+      if (body) body.style.display = 'block';
+    }
+  });
+  history.replaceState(null, '', '#' + stepKey);
 }
 
 document.addEventListener('DOMContentLoaded', function () {

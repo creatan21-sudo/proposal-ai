@@ -345,9 +345,20 @@ def _final_section(dna: ConceptDNA, r: dict) -> list:
     coverage = r.get("evaluation_coverage", {})
     if coverage:
         lines += _subheader("평가항목 커버 현황")
-        for item, covered in coverage.items():
-            mark = "✓" if covered else "✗"
-            lines.append(f"  {mark} {item}")
+        if isinstance(coverage, dict):
+            covered_list = coverage.get("covered", [])
+            missing_list = coverage.get("missing", [])
+            if covered_list or missing_list:
+                for item in covered_list:
+                    lines.append(f"  ✓ {item}")
+                for item in missing_list:
+                    lines.append(f"  ✗ {item}")
+            else:
+                for item, val in coverage.items():
+                    mark = "✓" if val else "✗"
+                    lines.append(f"  {mark} {item}")
+        elif isinstance(coverage, str):
+            lines.append(f"  {coverage}")
     issues = r.get("issues", [])
     if issues:
         lines += _list_block("개선 포인트", [str(i) for i in issues])
@@ -425,9 +436,15 @@ def _list_block(label: str, items: list) -> list:
     return lines
 
 
-def _dict_block(d: dict, indent: int = 4) -> list:
+def _dict_block(d, indent: int = 4) -> list:
     if not d:
         return []
+    # str이 들어오면 그대로 텍스트로 출력
+    if isinstance(d, str):
+        pad = " " * indent
+        return [f"{pad}{line}" for line in d.splitlines() if line.strip()] + [""]
+    if not isinstance(d, dict):
+        return [f"{' ' * indent}{d}", ""]
     pad = " " * indent
     lines = []
     for k, v in d.items():

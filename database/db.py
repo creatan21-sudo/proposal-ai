@@ -832,6 +832,21 @@ def get_case_detail(case_id: int) -> "dict | None":
                                    "dna_snapshot_json"])
             steps["final_proposal"] = row
 
+        # PT/Q&A 및 크리틱 탭: final_proposal에서 파생
+        if "final_proposal" in steps:
+            fp = steps["final_proposal"]
+            steps["pt_qa"] = {
+                "pt_script": fp.get("pt_script", {}),
+                "qa_prep":   fp.get("qa_prep", []),
+            }
+            steps["critic"] = {
+                "consistency_score":   fp.get("consistency_score", 0),
+                "evaluation_coverage": fp.get("evaluation_coverage", {}),
+                "issues":              fp.get("issues", []),
+                "company_profile":     fp.get("company_profile", {}),
+                "final_proposal":      fp.get("final_proposal", {}),
+            }
+
         return {"case": case, "steps": steps}
 
 
