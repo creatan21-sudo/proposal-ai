@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 load_dotenv(override=False)
 print(f"[startup] ANTHROPIC_API_KEY: {'SET' if os.environ.get('ANTHROPIC_API_KEY') else 'NOT SET'}", flush=True)
+print(f"[startup] OPENAI_API_KEY: {'SET' if os.environ.get('OPENAI_API_KEY') else 'NOT SET'}", flush=True)
 print(f"[startup] GAMMA_API_KEY: {'SET' if os.environ.get('GAMMA_API_KEY') else 'NOT SET'}", flush=True)
 
 import dataclasses

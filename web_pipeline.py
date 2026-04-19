@@ -14,11 +14,9 @@ from agents import (
     storyboard,
 )
 
-try:
-    from config import OPENAI_API_KEY as _OAI_KEY_STARTUP
-    print(f"[startup] OPENAI_API_KEY: {'SET' if _OAI_KEY_STARTUP else 'NOT SET'}", flush=True)
-except Exception:
-    pass
+import os as _os
+print(f"[web_pipeline] OPENAI_API_KEY: {'SET' if _os.environ.get('OPENAI_API_KEY') else 'NOT SET'}", flush=True)
+del _os
 
 _STEPS = [
     ("rfp_analysis",      "STEP 1   RFP 분석",         rfp_parser,   True),
