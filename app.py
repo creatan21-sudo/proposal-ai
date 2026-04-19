@@ -584,6 +584,8 @@ def start():
 
     # 대본 사전 설정 (기본 1편)
     script_preset_episodes   = int(request.form.get("script_preset_episodes") or 1)
+    if script_preset_episodes < 1:
+        script_preset_episodes = 1
     script_preset_storyboard = request.form.get("script_preset_storyboard", "auto").strip() or "auto"
     # 스토리보드 사전 설정
     _sb_style_raw = request.form.get("storyboard_style", "line").strip()

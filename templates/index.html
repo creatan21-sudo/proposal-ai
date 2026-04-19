@@ -217,10 +217,9 @@
             <div style="margin-top:10px;display:flex;align-items:center;gap:10px;font-size:.82rem;color:#374151;">
               <label>작성할 편 수:</label>
               <input type="number" name="script_preset_episodes" id="script-preset-ep"
-                     min="1" max="10" value="0"
-                     style="width:52px;padding:2px 6px;border:1px solid #d1d5db;border-radius:4px;"
-                     placeholder="전체">
-              <span style="color:#6b7280;">/ 전체 N편 (0=런타임 확인)</span>
+                     min="1" max="10" value="1"
+                     style="width:52px;padding:2px 6px;border:1px solid #d1d5db;border-radius:4px;">
+              <span style="color:#6b7280;">편 (최소 1편)</span>
             </div>
             <input type="hidden" name="script_preset_storyboard" id="script-storyboard-hidden" value="auto">
             <div id="cuts-over-warning"
