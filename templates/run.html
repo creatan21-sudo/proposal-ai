@@ -327,6 +327,10 @@ function handleEvent(ev) {
       showStoryboardStyleDialog(ev);
       playStepSound();
       break;
+    case 'pt_duration_needed':
+      showPtDurationDialog(ev);
+      playStepSound();
+      break;
     case 'slogan_selected':
       appendLog(`슬로건 확정: ${ev.slogan}`);
       break;
@@ -933,6 +937,73 @@ function submitStoryboardStyle() {
   const style = sel ? sel.value : 'line';
   hideConfirm();
   sendConfirm(style);
+}
+
+function showPtDurationDialog(ev) {
+  const panel = document.getElementById('confirm-panel');
+  const title = document.getElementById('confirm-title');
+  const body  = document.getElementById('confirm-body');
+  const def   = ev.default_min || 10;
+
+  title.innerHTML = 'STEP 11 PT/Q&A — 발표 시간 설정';
+
+  const presets = [3, 5, 7, 10, 15, 20, 30];
+  let html = `
+  <div style="margin-bottom:14px;">
+    <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:8px;">
+      PT 발표 시간을 선택하세요 (분)
+    </div>
+    <div style="font-size:11px;color:#6b7280;margin-bottom:10px;">
+      보통 10~15분이 일반적입니다. 분당 약 250자 분량으로 원고가 생성됩니다.
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;" id="pt-dur-btn-row">`;
+
+  presets.forEach(n => {
+    const active = n === def ? 'background:#2563eb;color:#fff;border-color:#2563eb;' : '';
+    html += `<button class="btn btn-secondary" style="min-width:54px;${active}"
+             onclick="selectPtDur(${n}, this)">${n}분</button>`;
+  });
+
+  html += `</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px;color:#374151;">
+      <label style="font-weight:500;">직접 입력:</label>
+      <input type="number" id="pt-dur-input" min="3" max="30" value="${def}"
+             style="width:64px;padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;"
+             oninput="syncPtDurInput(this.value)">
+      <span>분</span>
+    </div>
+  </div>
+  <div class="confirm-row" style="margin-top:8px;">
+    <button class="btn btn-primary" onclick="submitPtDuration()">PT 원고 생성 →</button>
+    <button class="btn btn-abort" onclick="hideConfirm();sendConfirm('__abort__')">중단</button>
+  </div>`;
+
+  body.innerHTML = html;
+  panel.classList.add('visible');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'end' });
+}
+
+let _ptDurSelected = 10;
+function selectPtDur(n, btn) {
+  _ptDurSelected = n;
+  document.querySelectorAll('#pt-dur-btn-row button').forEach(b => {
+    b.style.background = ''; b.style.color = ''; b.style.borderColor = '';
+  });
+  btn.style.background = '#2563eb'; btn.style.color = '#fff'; btn.style.borderColor = '#2563eb';
+  const inp = document.getElementById('pt-dur-input');
+  if (inp) inp.value = n;
+}
+function syncPtDurInput(val) {
+  _ptDurSelected = parseInt(val) || 10;
+  document.querySelectorAll('#pt-dur-btn-row button').forEach(b => {
+    b.style.background = ''; b.style.color = ''; b.style.borderColor = '';
+  });
+}
+function submitPtDuration() {
+  const inp = document.getElementById('pt-dur-input');
+  const dur = Math.max(3, Math.min(30, parseInt(inp?.value || _ptDurSelected) || 10));
+  hideConfirm();
+  sendConfirm(String(dur));
 }
 
 function confirmContinue() {

@@ -64,6 +64,31 @@ _DEFAULT_TOC = [
 ]
 
 
+def _build_pt_toc(pt_script: dict) -> list:
+    """PT 원고의 key_points 제목에서 TOC 구성 (1순위).
+
+    opening + key_points[*].title + closing → 중간 섹션으로 사용.
+    """
+    if not pt_script or not isinstance(pt_script, dict):
+        return []
+    key_points = pt_script.get("key_points", [])
+    if not key_points or not isinstance(key_points, list):
+        return []
+    fixed_front = ["표지", "목차", "사업 이해 및 분석", "추진 전략", "핵심 컨셉"]
+    fixed_back  = ["추진 일정", "예산 계획", "수행 실적", "회사 소개", "마무리"]
+    existing    = set(fixed_front + fixed_back)
+    middle = []
+    for kp in key_points:
+        if isinstance(kp, dict):
+            title = (kp.get("title") or kp.get("heading") or "").strip()
+            if title and title not in existing:
+                existing.add(title)
+                middle.append(title)
+    if not middle:
+        return []
+    return fixed_front + middle + fixed_back
+
+
 def _build_rfp_toc(rfp_data: dict) -> list:
     """RFP 분석 결과(rfp_analysis step)에서 제안서 목차 구성.
 
@@ -100,7 +125,7 @@ def _build_rfp_toc(rfp_data: dict) -> list:
 # ─────────────────────────────────────────────
 
 def build_pptx(dna: ConceptDNA, final_proposal: dict, output_dir: str = None,
-               rfp_data: dict = None) -> Path:
+               rfp_data: dict = None, pt_script: dict = None) -> Path:
     """제안서 전체를 PPTX로 생성.
 
     Args:
@@ -115,11 +140,14 @@ def build_pptx(dna: ConceptDNA, final_proposal: dict, output_dir: str = None,
     prs.slide_width  = _SLIDE_W
     prs.slide_height = _SLIDE_H
 
-    rfp_toc = _build_rfp_toc(rfp_data or {})
+    # TOC 우선순위: 1) PT 원고 key_points → 2) RFP core_tasks → 3) 기본 목차
+    _toc = (_build_pt_toc(pt_script or {})
+            or _build_rfp_toc(rfp_data or {})
+            or _DEFAULT_TOC[:])
 
     # 섹션별 슬라이드 추가
     _add_cover_slide(prs, dna, final_proposal.get("cover", {}))
-    _add_toc_slide(prs, dna, rfp_toc)
+    _add_toc_slide(prs, dna, _toc)
     _add_strategy_slide(prs, final_proposal.get("strategy", {}), dna)
     _add_concept_slide(prs, final_proposal.get("concept", {}), dna)
     _add_execution_slide(prs, final_proposal.get("episodes", {}), dna)
@@ -1126,9 +1154,13 @@ def _build_template_slides(detail: dict, target_pages: int = 20) -> list:
         "date":  datetime.now().strftime("%Y년 %m월"),
     })
 
-    # ── 2. 목차 (RFP 기반) ───────────────────────────────────
-    rfp_toc      = _build_rfp_toc(_s("rfp_analysis"))
-    toc_sections = [s for s in rfp_toc if s not in ("표지", "목차")]
+    # ── 2. 목차 (1순위: PT원고 → 2순위: RFP → 3순위: 기본) ──
+    _fp         = _s("final_proposal")
+    _pt_script  = _fp.get("pt_script", {}) if isinstance(_fp, dict) else {}
+    _toc_base   = (_build_pt_toc(_pt_script)
+                   or _build_rfp_toc(_s("rfp_analysis"))
+                   or _DEFAULT_TOC[:])
+    toc_sections = [s for s in _toc_base if s not in ("표지", "목차")]
 
     slides.append({
         "type":  "toc",

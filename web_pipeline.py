@@ -327,6 +327,27 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
         else:
             _max_ep = 0  # 제한 없음 (scripter 기본값)
 
+        # STEP 11(final_proposal) 시작 전 — PT 발표 시간 다이얼로그
+        if step_key == "final_proposal":
+            if auto_run:
+                push_event({"type": "log",
+                            "message": f"✓ PT 발표 시간: {getattr(dna, 'pt_duration_min', 10)}분 (자동)"})
+            else:
+                push_event({
+                    "type":        "pt_duration_needed",
+                    "step":        "final_proposal",
+                    "default_min": getattr(dna, "pt_duration_min", 10) or 10,
+                })
+                pt_input = wait_confirm("pt_duration")
+                if pt_input == "__abort__":
+                    push_event({"type": "pipeline_aborted", "step": step_key})
+                    results["__aborted_at__"] = step_key
+                    return results
+                try:
+                    dna.pt_duration_min = max(3, min(30, int(str(pt_input).strip())))
+                except (ValueError, TypeError):
+                    dna.pt_duration_min = 10
+
         # 장시간 스텝 킵얼라이브 (Railway 프록시 60s 타임아웃 방지)
         _ka_stop = _keepalive_start(push_event, step_key)
 
