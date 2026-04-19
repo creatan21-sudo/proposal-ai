@@ -348,17 +348,18 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
    스텝 정의 + 탭 아이콘
    ──────────────────────────────────────────────── #}
 {% set step_defs = [
-  ('rfp_analysis',   'STEP 0',   'RFP 분석',   '🔍'),
-  ('research',       'STEP 1',   '리서치',      '📊'),
-  ('narrative',      'STEP 1.5', '내러티브',    '💡'),
-  ('strategy',       'STEP 2',   '전략',        '🎯'),
-  ('creative',       'STEP 3',   '컨셉',        '✨'),
-  ('plan',           'STEP 4',   '기획',        '📋'),
-  ('script',         'STEP 5',   '대본',        '🎬'),
-  ('storyboard',     'STEP 5.5', '스토리보드',  '🖼️'),
-  ('marketing',      'STEP 6',   '마케팅',      '📣'),
-  ('pt_qa',          'STEP 6.5', 'PT/Q&A',      '📝'),
-  ('critic',         'STEP 7',  '크리틱',       '🔎'),
+  ('rfp_analysis',   'STEP 1',  'RFP 분석',        '🔍'),
+  ('research',       'STEP 2',  '리서치',           '📊'),
+  ('narrative',      'STEP 3',  '내러티브',         '💡'),
+  ('strategy',       'STEP 4',  '전략',             '🎯'),
+  ('creative',       'STEP 5',  '컨셉',             '✨'),
+  ('plan',           'STEP 6',  '기획',             '📋'),
+  ('script',         'STEP 7',  '대본',             '🎬'),
+  ('storyboard',     'STEP 8',  '스토리보드',       '🖼️'),
+  ('platform',       'STEP 9',  '플랫폼 운영전략',  '📡'),
+  ('marketing',      'STEP 10', '마케팅/홍보 전략', '📣'),
+  ('pt_qa',          'STEP 11', 'PT/Q&A',           '📝'),
+  ('critic',         'STEP 12', '크리틱',           '🔎'),
 ] %}
 
 {# 첫 번째 데이터 있는 스텝 계산 #}
@@ -525,7 +526,7 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
       </div>
       {% endfor %}
 
-    {# ── STEP 5.5 스토리보드 ── #}
+    {# ── STEP 8 스토리보드 ── #}
     {% elif step_key == 'storyboard' %}
       <div id="storyboard-container-{{ case_id }}" style="min-height:100px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:8px;">
@@ -567,7 +568,7 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
         function renderSb(frames) {
           const grid = document.getElementById(`sb-grid-${cid}`);
           if (!frames.length) {
-            grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#9ca3af;padding:40px;">스토리보드가 아직 없습니다.<br>파이프라인 실행 시 STEP 5.5에서 생성됩니다.</div>';
+            grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#9ca3af;padding:40px;">스토리보드가 아직 없습니다.<br>파이프라인 실행 시 STEP 8에서 생성됩니다.</div>';
             return;
           }
           let html = '';
@@ -727,7 +728,7 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
           <p class="dv-text">{{ pt }}</p>
         </div>
       {% else %}
-        <p class="detail-empty">PT 원고가 아직 없습니다. STEP 7 최종 검수 실행 후 생성됩니다.</p>
+        <p class="detail-empty">PT 원고가 아직 없습니다. STEP 11 PT/Q&A 실행 후 생성됩니다.</p>
       {% endif %}
 
       {# 예상 Q&A #}

@@ -57,41 +57,43 @@ def _build_content(dna: ConceptDNA, results: dict) -> list:
         f"목표 페이지: {dna.pages}페이지",
     ]
 
-    # ── STEP 0: RFP 분석 ──────────────────────
-    lines += _section_header("STEP 0  RFP 분석")
+    # ── STEP 1: RFP 분석 ──────────────────────
+    lines += _section_header("STEP 1  RFP 분석")
     lines += _rfp_section(dna, results.get("rfp_analysis", {}))
 
-    # ── STEP 0.5: 전략 내러티브 ───────────────
+    # ── STEP 3: 전략 내러티브 ─────────────────
     if dna.narrative:
-        lines += _section_header("STEP 0.5  전략 내러티브")
+        lines += _section_header("STEP 3  전략 내러티브")
         lines.append(dna.narrative)
 
-    # ── STEP 1: 발주처 리서치 ─────────────────
-    lines += _section_header("STEP 1  발주처 리서치")
+    # ── STEP 2: 발주처 리서치 ─────────────────
+    lines += _section_header("STEP 2  발주처 리서치")
     lines += _research_section(dna, results.get("research", {}))
 
-    # ── STEP 2: 전략 수립 ─────────────────────
-    lines += _section_header("STEP 2  전략 수립")
+    # ── STEP 4: 전략 수립 ─────────────────────
+    lines += _section_header("STEP 4  전략 수립")
     lines += _strategy_section(dna, results.get("strategy", {}))
 
-    # ── STEP 3: 컨셉 개발 ─────────────────────
-    lines += _section_header("STEP 3  컨셉 개발")
+    # ── STEP 5: 컨셉 개발 ─────────────────────
+    lines += _section_header("STEP 5  컨셉 개발")
     lines += _creative_section(dna, results.get("creative", {}))
 
-    # ── STEP 4: 실행 기획 ─────────────────────
-    lines += _section_header("STEP 4  실행 기획")
+    # ── STEP 6: 실행 기획 ─────────────────────
+    lines += _section_header("STEP 6  실행 기획")
     lines += _plan_section(dna, results.get("plan", {}))
 
-    # ── STEP 5: 대본 제작 ─────────────────────
-    lines += _section_header("STEP 5  대본 제작")
+    # ── STEP 7: 대본 제작 ─────────────────────
+    lines += _section_header("STEP 7  대본 제작")
     lines += _script_section(dna, results.get("script", {}))
 
-    # ── STEP 6: 마케팅 전략 ───────────────────
-    lines += _section_header("STEP 6  마케팅 전략")
+    # ── STEP 9~10: 플랫폼·마케팅 전략 ────────
+    lines += _section_header("STEP 9  플랫폼 운영전략")
+    lines += _marketing_section(dna, results.get("platform", {}))
+    lines += _section_header("STEP 10  마케팅/홍보 전략")
     lines += _marketing_section(dna, results.get("marketing", {}))
 
-    # ── STEP 7: 최종 제안서 ───────────────────
-    lines += _section_header("STEP 7  최종 제안서")
+    # ── STEP 11: PT/Q&A + 크리틱 ─────────────
+    lines += _section_header("STEP 11  PT/Q&A + 크리틱")
     lines += _final_section(dna, results.get("final_proposal", {}))
 
     # 마무리

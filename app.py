@@ -574,7 +574,7 @@ def start():
 
     # 고급 설정: 스텝 선택 (체크되지 않은 경우 None → 전체 실행)
     _all_steps = ["rfp_analysis","research","narrative","strategy",
-                  "creative","plan","script","storyboard","marketing","final_proposal"]
+                  "creative","plan","script","storyboard","platform","marketing","final_proposal"]
     selected_steps_raw = request.form.getlist("selected_steps")
     selected_steps = set(selected_steps_raw) if selected_steps_raw else None
 
@@ -1134,16 +1134,17 @@ def _build_history_txt(detail: dict) -> list:
     ]
 
     step_labels = {
-        "rfp_analysis":  "STEP 0  RFP 분석",
-        "research":      "STEP 1  리서치",
-        "narrative":     "STEP 1.5  내러티브",
-        "strategy":      "STEP 2  전략",
-        "creative":      "STEP 3  컨셉",
-        "plan":          "STEP 4  기획",
-        "script":        "STEP 5  대본",
-        "storyboard":    "STEP 5.5  스토리보드",
-        "marketing":     "STEP 6  마케팅",
-        "final_proposal":"STEP 6.5  PT/Q&A",
+        "rfp_analysis":  "STEP 1   RFP 분석",
+        "research":      "STEP 2   리서치",
+        "narrative":     "STEP 3   내러티브",
+        "strategy":      "STEP 4   전략",
+        "creative":      "STEP 5   컨셉",
+        "plan":          "STEP 6   기획",
+        "script":        "STEP 7   대본",
+        "storyboard":    "STEP 8   스토리보드",
+        "platform":      "STEP 9   플랫폼 운영전략",
+        "marketing":     "STEP 10  마케팅/홍보 전략",
+        "final_proposal":"STEP 11  PT/Q&A",
     }
 
     for key, label in step_labels.items():
@@ -1398,12 +1399,13 @@ def resume_case(case_id):
         ("plan",           "plan_results"),
         ("script",         "script_results"),
         ("storyboard",     "storyboard_results"),
+        ("platform",       "platform_results"),
         ("marketing",      "marketing_results"),
         ("final_proposal", "final_proposals"),
     ]
     PIPELINE_ORDER = [
         "rfp_analysis", "research", "narrative", "strategy",
-        "creative", "plan", "script", "storyboard", "marketing", "final_proposal",
+        "creative", "plan", "script", "storyboard", "platform", "marketing", "final_proposal",
     ]
     completed = set()
     with get_connection() as conn:
@@ -2689,7 +2691,7 @@ def rerun_from_step(case_id, step_key):
     VALID_STEPS = {
         "rfp_analysis", "research", "narrative", "strategy",
         "creative", "plan", "script", "storyboard",
-        "marketing", "final_proposal",
+        "platform", "marketing", "final_proposal",
     }
     if step_key not in VALID_STEPS:
         return jsonify({"ok": False, "error": f"유효하지 않은 step_key: {step_key}"}), 400
@@ -2724,13 +2726,14 @@ def rerun_from_step(case_id, step_key):
         "plan":           "plan_results",
         "script":         "script_results",
         "storyboard":     "storyboard_results",
+        "platform":       "platform_results",
         "marketing":      "marketing_results",
         "final_proposal": "final_proposals",
     }
     PIPELINE_ORDER = [
         "rfp_analysis", "research", "narrative", "strategy",
         "creative", "plan", "script", "storyboard",
-        "marketing", "final_proposal",
+        "platform", "marketing", "final_proposal",
     ]
     start_idx = PIPELINE_ORDER.index(step_key) if step_key in PIPELINE_ORDER else 0
     steps_to_clear = PIPELINE_ORDER[start_idx:]
@@ -2786,7 +2789,7 @@ def update_step_content(case_id, step_key):
     VALID_STEPS = {
         "rfp_analysis", "research", "narrative", "strategy",
         "creative", "plan", "script", "storyboard",
-        "marketing", "final_proposal",
+        "platform", "marketing", "final_proposal",
     }
     if step_key not in VALID_STEPS:
         return jsonify({"ok": False, "error": "유효하지 않은 step_key"}), 400

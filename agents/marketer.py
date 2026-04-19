@@ -1,5 +1,5 @@
 # agents/marketer.py
-# STEP 6: 유통/마케팅전략 에이전트
+# STEP 9: 플랫폼 운영전략 / STEP 10: 마케팅·홍보 전략 에이전트
 # 역할: 완성된 영상의 채널별 유통·확산 전략 수립
 #
 # 출력:
@@ -21,7 +21,7 @@ import concurrent.futures as _cf
 
 from core import claude_client
 from core.dna import ConceptDNA, update_dna, dna_to_context_string
-from database.db import save_marketing
+from database.db import save_marketing, save_platform
 
 _SONNET_MODEL = "claude-sonnet-4-6"
 
@@ -817,3 +817,132 @@ def _estimate_campaign_months(dna: ConceptDNA) -> int:
 
     months = max(1, round((end - datetime.today()).days / 30))
     return min(months, 12)
+
+
+# ─────────────────────────────────────────────
+# STEP 9: 플랫폼 운영전략 진입점
+# ─────────────────────────────────────────────
+
+def run_platform(dna: ConceptDNA, progress_fn=None) -> dict:
+    """STEP 9 — 유튜브/SNS 채널 운영 및 배포 전략."""
+
+    def _progress(msg: str):
+        if progress_fn:
+            try:
+                progress_fn({"type": "step_progress", "step": "platform", "message": msg})
+            except Exception:
+                pass
+
+    platforms     = _select_platforms(dna)
+    edit_versions = _build_edit_versions(dna)
+    dna_ctx       = _compact_dna_ctx(dna)
+    script_summary = _summarize_scripts(dna)
+
+    print(f"  [플랫폼 운영전략] 선정 플랫폼: {', '.join(platforms)}")
+    _progress(f"플랫폼 운영전략 수립 중... ({', '.join(platforms[:3])})")
+
+    youtube_text = sns_text = ""
+    with _cf.ThreadPoolExecutor(max_workers=2) as ex:
+        f1 = ex.submit(_gen_youtube_strategy_text, dna_ctx, platforms, edit_versions, script_summary)
+        f2 = ex.submit(_gen_sns_strategy_text, dna_ctx, platforms)
+        for label, future in [("youtube_strategy", f1), ("sns_strategy", f2)]:
+            try:
+                val = future.result(timeout=_FUTURE_TIMEOUT)
+                if label == "youtube_strategy":
+                    youtube_text = val
+                else:
+                    sns_text = val
+                _progress(f"{label} 완료")
+                print(f"  {label}: {len(val)}자")
+            except _cf.TimeoutError:
+                print(f"  [타임아웃] {label} {_FUTURE_TIMEOUT}초 초과")
+            except Exception as e:
+                print(f"  [오류] {label}: {type(e).__name__}: {e}")
+
+    result = {
+        "platforms":        platforms,
+        "edit_versions":    edit_versions,
+        "youtube_strategy": youtube_text,
+        "sns_strategy":     sns_text,
+    }
+
+    update_dna(dna, {
+        "distribution_channels":  platforms,
+        "youtube_strategy":       youtube_text,
+        "sns_strategy":           sns_text,
+        "distribution_strategy":  youtube_text[:200] if youtube_text else "",
+    })
+
+    try:
+        save_platform(dna.client_name, dna.project_name, result,
+                      case_id=getattr(dna, "case_id", 0) or 0)
+        print("  플랫폼 운영전략 DB 저장 완료")
+    except Exception as e:
+        print(f"  [경고] DB 저장 실패 (계속 진행): {e}")
+
+    return result
+
+
+# ─────────────────────────────────────────────
+# STEP 10: 마케팅/홍보 전략 진입점
+# ─────────────────────────────────────────────
+
+def run_marketing(dna: ConceptDNA, progress_fn=None) -> dict:
+    """STEP 10 — 광고/바이럴/인플루언서/KPI/성과 측정 전략."""
+
+    def _progress(msg: str):
+        if progress_fn:
+            try:
+                progress_fn({"type": "step_progress", "step": "marketing", "message": msg})
+            except Exception:
+                pass
+
+    platforms  = dna.distribution_channels or _select_platforms(dna)
+    rfp_kpis   = _extract_rfp_kpi(dna)
+    mkt_budget = _calc_marketing_budget(dna)
+    dna_ctx    = _compact_dna_ctx(dna)
+
+    if rfp_kpis:
+        print(f"  [마케팅/홍보] RFP KPI 힌트: {', '.join(rfp_kpis)}")
+    _progress(f"마케팅·홍보 전략 수립 중...")
+
+    influencer_text = kpi_text = ""
+    with _cf.ThreadPoolExecutor(max_workers=2) as ex:
+        f1 = ex.submit(_gen_influencer_strategy_text, dna_ctx, platforms)
+        f2 = ex.submit(_gen_kpi_targets_text, dna_ctx, platforms, rfp_kpis, mkt_budget)
+        for label, future in [("influencer_strategy", f1), ("kpi_targets", f2)]:
+            try:
+                val = future.result(timeout=_FUTURE_TIMEOUT)
+                if label == "influencer_strategy":
+                    influencer_text = val
+                else:
+                    kpi_text = val
+                _progress(f"{label} 완료")
+                print(f"  {label}: {len(val)}자")
+            except _cf.TimeoutError:
+                print(f"  [타임아웃] {label} {_FUTURE_TIMEOUT}초 초과")
+            except Exception as e:
+                print(f"  [오류] {label}: {type(e).__name__}: {e}")
+
+    result = {
+        "platforms":           platforms,
+        "marketing_budget":    mkt_budget,
+        "influencer_strategy": influencer_text,
+        "kpi_targets":         kpi_text,
+        "reporting_system":    "",
+    }
+
+    update_dna(dna, {
+        "influencer_strategy": influencer_text,
+        "kpi_targets":         [kpi_text] if kpi_text else [],
+        "marketing_budget":    mkt_budget,
+    })
+
+    try:
+        save_marketing(dna.client_name, dna.project_name, result,
+                       case_id=getattr(dna, "case_id", 0) or 0)
+        print("  마케팅/홍보 전략 DB 저장 완료")
+    except Exception as e:
+        print(f"  [경고] DB 저장 실패 (계속 진행): {e}")
+
+    return result

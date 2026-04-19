@@ -14,25 +14,32 @@ from agents import (
     storyboard,
 )
 
+try:
+    from config import OPENAI_API_KEY as _OAI_KEY_STARTUP
+    print(f"[startup] OPENAI_API_KEY: {'SET' if _OAI_KEY_STARTUP else 'NOT SET'}", flush=True)
+except Exception:
+    pass
+
 _STEPS = [
-    ("rfp_analysis",      "STEP 0    RFP 분석",       rfp_parser,   True),
-    ("research",          "STEP 1    리서치",           researcher,   False),
-    ("narrative",         "STEP 1.5  내러티브",         narrator,     False),
-    ("strategy",          "STEP 2    전략",             strategist,   True),
-    ("creative",          "STEP 3    컨셉",             creative,     True),
-    ("plan",              "STEP 4    기획",             planner,      True),
-    ("script",            "STEP 5    대본",             scripter,     False),
-    ("storyboard",        "STEP 5.5  스토리보드",       storyboard,   False),
-    ("marketing",         "STEP 6    마케팅",           marketer,     False),
-    ("final_proposal",    "STEP 6.5  PT/Q&A",          orchestrator, True),
-    ("improvement_report","STEP 7    크리틱",           None,         False),
+    ("rfp_analysis",      "STEP 1   RFP 분석",         rfp_parser,   True),
+    ("research",          "STEP 2   리서치",             researcher,   False),
+    ("narrative",         "STEP 3   내러티브",           narrator,     False),
+    ("strategy",          "STEP 4   전략",               strategist,   True),
+    ("creative",          "STEP 5   컨셉",               creative,     True),
+    ("plan",              "STEP 6   기획",               planner,      True),
+    ("script",            "STEP 7   대본",               scripter,     False),
+    ("storyboard",        "STEP 8   스토리보드",         storyboard,   False),
+    ("platform",          "STEP 9   플랫폼 운영전략",   marketer,     False),
+    ("marketing",         "STEP 10  마케팅/홍보 전략",  marketer,     False),
+    ("final_proposal",    "STEP 11  PT/Q&A",            orchestrator, True),
+    ("improvement_report","STEP 12  크리틱",             None,         False),
 ]
 
 # 컨펌 없이 자동 진행하는 스텝 (결과 표시 후 즉시 다음 스텝)
 _AUTO_CONTINUE_STEPS = {"improvement_report"}
 
 _STEP_INDEX          = {k: i for i, (k, *_) in enumerate(_STEPS)}
-_DOWNSTREAM_CREATIVE = ["plan", "script", "marketing", "final_proposal"]
+_DOWNSTREAM_CREATIVE = ["plan", "script", "platform", "marketing", "final_proposal"]
 
 # 파이프라인 레벨 재시도 (OverloadError 발생 시)
 _PIPE_RETRY_MAX  = 3     # OverloadError: 최대 3회 시도 (2회 재시도)
@@ -54,7 +61,8 @@ _STEP_TIMEOUT: dict = {
     "creative":       300,
     "plan":           300,
     "script":         300,
-    "marketing":      300,   # 3개 섹션 병렬 (각 80s 상한) + 여유분
+    "platform":       300,   # 2개 섹션 병렬 (youtube + sns)
+    "marketing":      300,   # 2개 섹션 병렬 (influencer + kpi)
     "final_proposal": 300,
 }
 
@@ -342,8 +350,10 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
                                               generate_ppt=getattr(dna, "generate_ppt", False))
                 elif step_key == "script":
                     _call = functools.partial(agent_mod.run, dna, progress_fn=push_event, max_episodes=_max_ep)
+                elif step_key == "platform":
+                    _call = functools.partial(agent_mod.run_platform, dna, push_event)
                 elif step_key == "marketing":
-                    _call = functools.partial(agent_mod.run, dna, push_event)
+                    _call = functools.partial(agent_mod.run_marketing, dna, push_event)
                 else:
                     _call = functools.partial(agent_mod.run, dna)
 
@@ -557,7 +567,8 @@ def _keepalive_start(push_event, step_key: str) -> threading.Event:
             "plan":         "기획 작성 중...",
             "script":       "대본 작성 중...",
             "storyboard":   "스토리보드 이미지 생성 중...",
-            "marketing":    "마케팅 플랜 수립 중...",
+            "platform":     "플랫폼 운영전략 수립 중...",
+            "marketing":    "마케팅/홍보 전략 수립 중...",
             "final_proposal": "PT/Q&A 완성 중...",
             "improvement_report": "크리틱 분석 중...",
         }

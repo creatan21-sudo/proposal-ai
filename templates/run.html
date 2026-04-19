@@ -43,6 +43,7 @@
     ('plan',              '기획'),
     ('script',            '대본'),
     ('storyboard',        '스토리보드'),
+    ('platform',          '플랫폼'),
     ('marketing',         '마케팅'),
     ('final_proposal',    'PT/Q&A'),
     ('improvement_report','크리틱'),
@@ -108,17 +109,18 @@ const evtSource = new EventSource(`/stream/${SID}`);
 
 // ── 스텝 정의
 const STEPS = [
-  { key: 'rfp_analysis',      label: 'RFP 분석',  num: 1 },
-  { key: 'research',          label: '리서치',     num: 2 },
-  { key: 'narrative',         label: '내러티브',   num: 3 },
-  { key: 'strategy',          label: '전략',       num: 4 },
-  { key: 'creative',          label: '컨셉',       num: 5 },
-  { key: 'plan',              label: '기획',       num: 6 },
-  { key: 'script',            label: '대본',       num: 7 },
-  { key: 'storyboard',        label: '스토리보드', num: 8 },
-  { key: 'marketing',         label: '마케팅',     num: 9 },
-  { key: 'final_proposal',    label: 'PT/Q&A',    num: 10 },
-  { key: 'improvement_report',label: '크리틱',    num: 11 },
+  { key: 'rfp_analysis',      label: 'RFP 분석',    num: 1 },
+  { key: 'research',          label: '리서치',       num: 2 },
+  { key: 'narrative',         label: '내러티브',     num: 3 },
+  { key: 'strategy',          label: '전략',         num: 4 },
+  { key: 'creative',          label: '컨셉',         num: 5 },
+  { key: 'plan',              label: '기획',         num: 6 },
+  { key: 'script',            label: '대본',         num: 7 },
+  { key: 'storyboard',        label: '스토리보드',   num: 8 },
+  { key: 'platform',          label: '플랫폼',       num: 9 },
+  { key: 'marketing',         label: '마케팅',       num: 10 },
+  { key: 'final_proposal',    label: 'PT/Q&A',      num: 11 },
+  { key: 'improvement_report',label: '크리틱',       num: 12 },
 ];
 const stepStatusMap = {};
 STEPS.forEach(s => { stepStatusMap[s.key] = 'pending'; });
@@ -886,7 +888,7 @@ function showStoryboardStyleDialog(ev) {
   const body  = document.getElementById('confirm-body');
   const def   = ev.default_style || 'line';
 
-  title.innerHTML = 'STEP 5.5 스토리보드 스타일 선택';
+  title.innerHTML = 'STEP 8 스토리보드 스타일 선택';
 
   const styles = [
     { value: 'line',  label: '라인 (펜 드로잉)', desc: '흑백 선 스케치 스타일' },

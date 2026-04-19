@@ -66,6 +66,18 @@ def init_db() -> None:
                 dna_snapshot_json        TEXT    DEFAULT '{}'
             );
 
+            CREATE TABLE IF NOT EXISTS platform_results (
+                id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at            TEXT    NOT NULL,
+                client_name           TEXT    NOT NULL,
+                project_name          TEXT    NOT NULL,
+                case_id               INTEGER DEFAULT 0,
+                platforms_json        TEXT    DEFAULT '[]',
+                youtube_strategy      TEXT    DEFAULT '',
+                sns_strategy          TEXT    DEFAULT '',
+                edit_versions_json    TEXT    DEFAULT '[]'
+            );
+
             CREATE TABLE IF NOT EXISTS marketing_results (
                 id                       INTEGER PRIMARY KEY AUTOINCREMENT,
                 created_at               TEXT    NOT NULL,
@@ -385,6 +397,28 @@ def save_final_proposal(client_name: str, project_name: str, result: dict,
         return cursor.lastrowid
 
 
+def save_platform(client_name: str, project_name: str, result: dict,
+                  case_id: int = 0) -> int:
+    """플랫폼 운영전략 결과 저장."""
+    import json
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """INSERT INTO platform_results
+               (created_at, client_name, project_name, case_id,
+                platforms_json, youtube_strategy, sns_strategy, edit_versions_json)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                datetime.now().isoformat(),
+                client_name, project_name, case_id,
+                json.dumps(result.get("platforms", []), ensure_ascii=False),
+                result.get("youtube_strategy", ""),
+                result.get("sns_strategy", ""),
+                json.dumps(result.get("edit_versions", []), ensure_ascii=False),
+            ),
+        )
+        return cursor.lastrowid
+
+
 def save_marketing(client_name: str, project_name: str, result: dict,
                    case_id: int = 0) -> int:
     """마케팅 전략 결과 저장."""
@@ -641,14 +675,14 @@ def get_case_detail(case_id: int) -> "dict | None":
 
         steps = {}
 
-        # STEP 0 RFP 분석
+        # STEP 1 RFP 분석
         row = _latest("rfp_analyses")
         if row:
             _parse_json_cols(row, ["evaluation_items_json", "top_keywords_json",
                                    "core_tasks_json", "forbidden_notes_json"])
             steps["rfp_analysis"] = row
 
-        # STEP 1 리서치
+        # STEP 2 리서치
         row = _latest("research_results")
         if row:
             # result_json에 전체 결과가 있으면 그것을 베이스로, 없으면 개별 컬럼 사용
@@ -671,19 +705,19 @@ def get_case_detail(case_id: int) -> "dict | None":
                     row["raw_search"] = {}
             steps["research"] = row
 
-        # STEP 1.5 내러티브 (DNA 필드에서)
+        # STEP 3 내러티브 (DNA 필드에서)
         narrative = case["dna"].get("narrative", "")
         if narrative:
             steps["narrative"] = {"narrative": narrative}
 
-        # STEP 2 전략
+        # STEP 4 전략
         row = _latest("strategy_results")
         if row:
             _parse_json_cols(row, ["expected_effects_json", "persuasion_structure_json",
                                    "high_priority_eval_json", "keyword_map_json"])
             steps["strategy"] = row
 
-        # STEP 3 컨셉
+        # STEP 5 컨셉
         row = _latest("creative_results")
         if row:
             _parse_json_cols(row, ["slogans_json", "tone_keywords_json", "forbidden_json"])
@@ -705,7 +739,7 @@ def get_case_detail(case_id: int) -> "dict | None":
                     "_from_dna":             True,  # DNA에서 복원됨을 표시
                 }
 
-        # STEP 4 기획
+        # STEP 6 기획
         row = _latest("plan_results")
         if row:
             _parse_json_cols(row, ["episodes_json", "production_schedule_json",
@@ -713,7 +747,7 @@ def get_case_detail(case_id: int) -> "dict | None":
                                    "series_plan_json"])
             steps["plan"] = row
 
-        # STEP 5 대본 (편별 복수)
+        # STEP 7 대본 (편별 복수)
         # 1순위: case_id 직접 매칭 (신규 파이프라인)
         # 2순위: case_ts 이후 저장된 것 (과거 구버그 호환)
         # 3순위: case_ts 이전 가장 최근 실행 (구 버전 데이터 — save_case가 마지막이었던 케이스)
@@ -776,7 +810,20 @@ def get_case_detail(case_id: int) -> "dict | None":
                 scripts.append(d)
             steps["script"] = scripts
 
-        # STEP 6 마케팅
+        # STEP 9 플랫폼 운영전략
+        plt_row = _latest("platform_results")
+        if plt_row:
+            try:
+                plt_row["platforms"] = json.loads(plt_row.pop("platforms_json", "[]") or "[]")
+            except Exception:
+                plt_row["platforms"] = []
+            try:
+                plt_row["edit_versions"] = json.loads(plt_row.pop("edit_versions_json", "[]") or "[]")
+            except Exception:
+                plt_row["edit_versions"] = []
+            steps["platform"] = plt_row
+
+        # STEP 10 마케팅
         # 1순위: case_id 매칭, 2순위: timestamp 이후, 3순위: timestamp 이전 최근
         mkt_row = None
         if case_id_val:
@@ -808,7 +855,7 @@ def get_case_detail(case_id: int) -> "dict | None":
                                                  "kpi_json"})
             steps["marketing"] = mkt_row
 
-        # STEP 5.5 스토리보드
+        # STEP 8 스토리보드
         sb_rows = conn.execute(
             "SELECT * FROM storyboard_results WHERE case_id=? ORDER BY scene_num",
             (case_id_val,),
@@ -823,7 +870,7 @@ def get_case_detail(case_id: int) -> "dict | None":
             # 스토리보드 탭은 항상 활성화 (동적 로딩)
             steps["storyboard"] = {"frames": [], "total_scenes": 0, "style": "line"}
 
-        # STEP 7 최종 제안서
+        # STEP 11 PT/Q&A (최종 제안서)
         row = _latest("final_proposals")
         if row:
             _parse_json_cols(row, ["evaluation_coverage_json", "issues_json",
