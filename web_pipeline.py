@@ -18,14 +18,14 @@ _STEPS = [
     ("rfp_analysis",      "STEP 0    RFP 분석",       rfp_parser,   True),
     ("research",          "STEP 1    리서치",           researcher,   False),
     ("narrative",         "STEP 1.5  내러티브",         narrator,     False),
-    ("strategy",          "STEP 2    전략 수립",        strategist,   True),
-    ("creative",          "STEP 3    컨셉 개발",        creative,     True),
-    ("plan",              "STEP 4    실행 기획",        planner,      True),
-    ("script",            "STEP 5    대본 제작",        scripter,     False),
+    ("strategy",          "STEP 2    전략",             strategist,   True),
+    ("creative",          "STEP 3    컨셉",             creative,     True),
+    ("plan",              "STEP 4    기획",             planner,      True),
+    ("script",            "STEP 5    대본",             scripter,     False),
     ("storyboard",        "STEP 5.5  스토리보드",       storyboard,   False),
-    ("marketing",         "STEP 6    마케팅 전략",      marketer,     False),
-    ("final_proposal",    "STEP 7    최종 검수·완성",   orchestrator, True),
-    ("improvement_report","STEP 7.5  개선 제안",        None,         False),
+    ("marketing",         "STEP 6    마케팅",           marketer,     False),
+    ("final_proposal",    "STEP 6.5  PT/Q&A",          orchestrator, True),
+    ("improvement_report","STEP 7    크리틱",           None,         False),
 ]
 
 # 컨펌 없이 자동 진행하는 스텝 (결과 표시 후 즉시 다음 스텝)
@@ -552,11 +552,12 @@ def _keepalive_start(push_event, step_key: str) -> threading.Event:
             "narrative":    "내러티브 작성 중...",
             "strategy":     "전략 수립 중...",
             "creative":     "컨셉 개발 중...",
-            "plan":         "실행 계획 작성 중...",
+            "plan":         "기획 작성 중...",
             "script":       "대본 작성 중...",
             "storyboard":   "스토리보드 이미지 생성 중...",
-            "marketing":    "마케팅 전략 수립 중...",
-            "final_proposal": "최종 제안서 완성 중...",
+            "marketing":    "마케팅 플랜 수립 중...",
+            "final_proposal": "PT/Q&A 완성 중...",
+            "improvement_report": "크리틱 분석 중...",
         }
         msg = msg_map.get(step_key, "처리 중...")
         while not stop_ev.wait(_KA_INTERVAL):

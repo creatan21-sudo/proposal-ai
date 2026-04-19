@@ -114,7 +114,7 @@
 
         <!-- 컨셉 직접 입력 -->
         <div class="form-group full">
-          <label>컨셉 직접 입력 <span class="optional-label">(선택 — 입력 시 STEP 3 컨셉 개발 스킵)</span></label>
+          <label>컨셉 직접 입력 <span class="optional-label">(선택 — 입력 시 STEP 3 컨셉 스킵)</span></label>
           <textarea name="concept" rows="2"
                     placeholder="예: '날씨가 삶을 바꾼다' — 기상정보→일상행동 전환 캠페인"></textarea>
         </div>
@@ -174,8 +174,9 @@
                 ('creative',       'STEP 3: 컨셉'),
                 ('plan',           'STEP 4: 기획'),
                 ('script',         'STEP 5: 대본'),
+                ('storyboard',     'STEP 5.5: 스토리보드'),
                 ('marketing',      'STEP 6: 마케팅'),
-                ('final_proposal', 'STEP 7: 최종검수'),
+                ('final_proposal', 'STEP 6.5~7: PT/Q&A·크리틱'),
               ] %}
               {% for key, label in step_defs %}
               <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;color:#374151;cursor:pointer;">
@@ -345,7 +346,7 @@
       <ul>
         <li>RFP 파일을 업로드하면 STEP 0에서 평가항목·예산·기한을 자동 추출합니다.</li>
         <li>각 STEP 완료 후 결과를 확인하고 수정 지시를 입력하면 해당 STEP을 재실행합니다.</li>
-        <li>STEP 3 컨셉 개발에서 슬로건 후보 중 번호를 선택하거나 직접 방향을 입력할 수 있습니다.</li>
+        <li>STEP 3 컨셉에서 슬로건 후보 중 번호를 선택하거나 직접 방향을 입력할 수 있습니다.</li>
         <li>컨셉을 미리 정한 경우 직접 입력란에 기재하면 STEP 3을 건너뜁니다.</li>
         <li>완료 후 TXT 파일로 다운로드할 수 있습니다.</li>
       </ul>
@@ -355,14 +356,16 @@
       <h3>파이프라인 구조</h3>
       <ul>
         <li><strong>STEP 0</strong> RFP 분석</li>
-        <li><strong>STEP 0.5</strong> 전략 내러티브</li>
-        <li><strong>STEP 1</strong> 발주처 리서치</li>
-        <li><strong>STEP 2</strong> 전략 수립</li>
-        <li><strong>STEP 3</strong> 컨셉 개발</li>
-        <li><strong>STEP 4</strong> 실행 기획</li>
-        <li><strong>STEP 5</strong> 대본 제작</li>
-        <li><strong>STEP 6</strong> 마케팅 전략</li>
-        <li><strong>STEP 7</strong> 최종 검수</li>
+        <li><strong>STEP 1</strong> 리서치</li>
+        <li><strong>STEP 1.5</strong> 내러티브</li>
+        <li><strong>STEP 2</strong> 전략</li>
+        <li><strong>STEP 3</strong> 컨셉</li>
+        <li><strong>STEP 4</strong> 기획</li>
+        <li><strong>STEP 5</strong> 대본</li>
+        <li><strong>STEP 5.5</strong> 스토리보드</li>
+        <li><strong>STEP 6</strong> 마케팅</li>
+        <li><strong>STEP 6.5</strong> PT/Q&A</li>
+        <li><strong>STEP 7</strong> 크리틱</li>
       </ul>
     </div>
   </div>

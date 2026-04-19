@@ -574,7 +574,7 @@ def start():
 
     # 고급 설정: 스텝 선택 (체크되지 않은 경우 None → 전체 실행)
     _all_steps = ["rfp_analysis","research","narrative","strategy",
-                  "creative","plan","script","marketing","final_proposal"]
+                  "creative","plan","script","storyboard","marketing","final_proposal"]
     selected_steps_raw = request.form.getlist("selected_steps")
     selected_steps = set(selected_steps_raw) if selected_steps_raw else None
 
@@ -1131,12 +1131,13 @@ def _build_history_txt(detail: dict) -> list:
         "rfp_analysis":  "STEP 0  RFP 분석",
         "research":      "STEP 1  리서치",
         "narrative":     "STEP 1.5  내러티브",
-        "strategy":      "STEP 2  전략 수립",
-        "creative":      "STEP 3  컨셉 개발",
-        "plan":          "STEP 4  실행 기획",
+        "strategy":      "STEP 2  전략",
+        "creative":      "STEP 3  컨셉",
+        "plan":          "STEP 4  기획",
         "script":        "STEP 5  대본",
-        "marketing":     "STEP 6  마케팅 전략",
-        "final_proposal":"STEP 7  최종 제안서",
+        "storyboard":    "STEP 5.5  스토리보드",
+        "marketing":     "STEP 6  마케팅",
+        "final_proposal":"STEP 6.5  PT/Q&A",
     }
 
     for key, label in step_labels.items():
@@ -1390,12 +1391,13 @@ def resume_case(case_id):
         ("creative",       "creative_results"),
         ("plan",           "plan_results"),
         ("script",         "script_results"),
+        ("storyboard",     "storyboard_results"),
         ("marketing",      "marketing_results"),
         ("final_proposal", "final_proposals"),
     ]
     PIPELINE_ORDER = [
         "rfp_analysis", "research", "narrative", "strategy",
-        "creative", "plan", "script", "marketing", "final_proposal",
+        "creative", "plan", "script", "storyboard", "marketing", "final_proposal",
     ]
     completed = set()
     with get_connection() as conn:
