@@ -10,17 +10,29 @@ from pathlib import Path
 from core.dna import ConceptDNA
 
 _CRITICAL_PREFIX = (
-    "CRITICAL RULES - MUST FOLLOW: "
-    "1. NO text of any kind anywhere in the image. "
-    "No letters, no words, no numbers, no captions, no subtitles, no labels, no watermarks, "
-    "no signs with text, no banners with text, no Korean text, no English text, "
-    "no any language text whatsoever. "
-    "2. Pure visual image only. Zero text. "
-    "3. NO historical Korean clothing. NO hanbok. NO joseon dynasty. "
-    "Modern contemporary setting only. "
-    "4. Single scene, single frame. No collage, no multiple panels. "
-    "5. Fill entire frame with one scene only. "
+    "ABSOLUTE RULES - NO EXCEPTIONS: "
+    "1. ZERO text in image. Not a single letter, number, or symbol. "
+    "No signs, no papers, no whiteboards, no screens with text, "
+    "no cue cards, no scripts, no documents, no books with visible text, "
+    "no name tags, no banners, no captions, no watermarks. "
+    "If an object would normally have text, show it without text. "
+    "2. No historical Korean elements. Modern only. "
+    "3. Single frame, single scene. No panels, no collage. "
+    "4. Pure visual storytelling. No text whatsoever. "
 )
+
+
+def _remove_text_props(scene_desc: str) -> str:
+    """씬 설명에서 텍스트가 생성될 수 있는 소품 관련 단어 제거."""
+    remove_words = [
+        '큐시트', '대본', '스크립트', '종이', '문서',
+        '칠판', '화이트보드', '현수막', '포스터', '간판',
+        'cue card', 'script', 'paper', 'whiteboard',
+        'sign', 'banner', 'poster', 'document',
+    ]
+    for word in remove_words:
+        scene_desc = scene_desc.replace(word, '')
+    return scene_desc.strip()
 
 _STYLE_TEMPLATES = {
     "line": (
@@ -64,6 +76,7 @@ def _generate_one(scene: dict, scene_num: int, style: str,
         or scene.get("narration_key", "")
         or f"씬 {scene_num}"
     )
+    scene_desc = _remove_text_props(scene_desc)
     template = _STYLE_TEMPLATES.get(style, _STYLE_TEMPLATES[_DEFAULT_STYLE])
     prompt = template.format(scene_description=scene_desc[:500])
 

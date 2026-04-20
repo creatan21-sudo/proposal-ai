@@ -59,10 +59,11 @@ _KPI_KEYWORD_MAP: dict[str, str] = {
 _MARKETING_BUDGET_RATIO = 0.15   # 전체 예산의 15%를 마케팅에 권장
 
 _MARKETING_BREAKDOWN = [
-    ("유튜브 광고",     0.35),
-    ("SNS 광고",        0.25),
-    ("인플루언서 협업", 0.25),
-    ("언론홍보",        0.15),
+    ("유튜브/메타 광고", 0.35),
+    ("SNS 운영비",       0.20),
+    ("인플루언서",       0.25),
+    ("콘텐츠 재편집",    0.10),
+    ("언론홍보",         0.10),
 ]
 
 
@@ -114,22 +115,33 @@ def _parse_budget_num(budget_str) -> int:
     return 0
 
 
+def _parse_budget(budget_str: str) -> int:
+    """예산 문자열에서 숫자 추출. 파싱 실패 시 기본값 50,000,000원 반환."""
+    result = _parse_budget_num(budget_str)
+    if result > 0:
+        return result
+    # 폴백: 첫 번째 숫자 연속 추출
+    numbers = re.findall(r'[\d,]+', str(budget_str))
+    if numbers:
+        cleaned = numbers[0].replace(',', '')
+        if cleaned.isdigit() and len(cleaned) >= 4:
+            return int(cleaned)
+    return 50_000_000  # 기본값 5천만원
+
+
 def _build_budget_block(budget_num: int) -> str:
-    """프롬프트용 예산 블록 문자열 생성."""
+    """프롬프트용 예산 블록 문자열 생성 (사용자 지정 형식)."""
     if budget_num <= 0:
-        return ""
+        budget_num = 50_000_000
     mkt = int(budget_num * _MARKETING_BUDGET_RATIO)
-    ub  = budget_num // 100_000_000
-    man = (budget_num % 100_000_000) // 10_000
     lines = [
-        f"【예산 기준 — 아래 금액을 그대로 사용할 것, 임의 변경 금지】",
-        f"총 사업 예산: {budget_num:,}원 ({ub}억 {man:,}만원)",
-        f"마케팅 예산 = 총 예산의 {int(_MARKETING_BUDGET_RATIO*100)}% = {mkt:,}원",
-        f"세부 배분:",
+        f"총 사업 예산: {budget_num:,}원",
+        f"마케팅 예산 (총예산의 15%): {mkt:,}원",
     ]
     for cat, ratio in _MARKETING_BREAKDOWN:
-        lines.append(f"  - {cat}: {int(mkt * ratio):,}원")
-    lines.append("위 금액보다 현저히 작거나 큰 금액을 제시하는 것은 금지.")
+        lines.append(f"- {cat}: {int(mkt * ratio):,}원")
+    lines.append("")
+    lines.append("위 금액을 그대로 사용하라. 절대 다른 금액 제시 금지.")
     return "\n".join(lines)
 
 
@@ -149,10 +161,11 @@ def run(dna: ConceptDNA, progress_fn=None) -> dict:
     mkt_budget    = _calc_marketing_budget(dna)
 
     # 예산 숫자 파싱 및 블록 생성 (모든 텍스트 생성 함수에 공유)
-    budget_num   = _parse_budget_num(dna.budget)
+    print(f"[DEBUG] budget raw value: {repr(dna.budget)}")
+    budget_num   = _parse_budget(dna.budget)
+    print(f"[DEBUG] budget_num: {budget_num:,}원")
     budget_block = _build_budget_block(budget_num)
-    if budget_num > 0:
-        print(f"  예산 파싱: {budget_num:,}원 → 마케팅 예산 {int(budget_num * _MARKETING_BUDGET_RATIO):,}원")
+    print(f"  예산 파싱: {budget_num:,}원 → 마케팅 예산 {int(budget_num * _MARKETING_BUDGET_RATIO):,}원")
 
     print(f"  선정 플랫폼: {', '.join(platforms)}")
     if rfp_kpis:
@@ -419,18 +432,17 @@ def _gen_platform_ops_text(
         f"{v['version']}({v['duration']})"
         for v in edit_versions[:3]
     )
-    budget_section = f"\n{budget_block}\n" if budget_block else ""
+    budget_section = f"\n【예산 기준 — 반드시 준수】\n{budget_block}\n" if budget_block else ""
     prompt = f"""【플랫폼 운영전략 — 구체적 수치와 실행 계획 필수】
-아래 내용만 작성. 마케팅/광고/홍보 내용 절대 포함 금지.
-개요나 나열식으로 작성 금지. 최소 2000자 이상 작성.
+아래 내용만 작성. 개요나 나열식으로 작성 금지. 최소 2000자 이상 작성.
 각 항목마다 구체적 수치, 실행 방법, 타임라인 포함.
-
+{budget_section}
 [프로젝트]
 {dna_ctx}
 [콘텐츠 요약] {script_summary}
 [운영플랫폼] {', '.join(platforms[:5])}
 [재편집버전] {edit_block}
-{budget_section}
+
 ### 유튜브 채널 전략 (상세)
 
 업로드 계획:
@@ -505,7 +517,7 @@ def _gen_marketing_promo_text(
     rfp_kpi_block = ", ".join(rfp_kpis) if rfp_kpis else "별도 미명시"
     campaign_months = _estimate_campaign_months_from_ctx(mkt_budget)
     if budget_block:
-        budget_section = budget_block
+        budget_section = f"【예산 기준 — 반드시 준수】\n{budget_block}"
     else:
         budget_breakdown = "\n".join(
             f"  - {b['category']}: {b['ratio']} ({b['amount']})"
@@ -523,12 +535,13 @@ def _gen_marketing_promo_text(
 아래 내용만 작성. 플랫폼 운영/채널 관리 내용 절대 포함 금지.
 개요나 나열식으로 작성 금지. 최소 2000자 이상 작성.
 
+{budget_section}
+
 [프로젝트]
 {dna_ctx}
 [RFP KPI] {rfp_kpi_block}
 [운영플랫폼] {', '.join(platforms[:4])}
 
-{budget_section}
 위 기준을 벗어나는 예산 절대 제시 금지. 모든 금액은 원 단위로 구체적으로 제시.
 
 ### 런칭 캠페인 전략
@@ -600,18 +613,17 @@ def _gen_kpi_targets_text(
     )
     campaign_months = _estimate_campaign_months_from_ctx(mkt_budget)
 
-    budget_section = (
-        f"\n{budget_block}\n"
-        if budget_block else
-        f"\n[마케팅예산] 권장 {mkt_budget['recommended_amount']} ({mkt_budget['total_ratio']})\n"
-    )
+    if budget_block:
+        budget_section = f"【예산 기준 — 반드시 준수】\n{budget_block}"
+    else:
+        budget_section = f"[마케팅예산] 권장 {mkt_budget['recommended_amount']} ({mkt_budget['total_ratio']})"
 
     prompt = (
         f"공공기관 캠페인 KPI 목표와 성과 보고 체계를 작성하라.\n\n"
+        f"{budget_section}\n\n"
         f"[프로젝트]\n{dna_ctx}\n"
         f"[RFP KPI] {rfp_kpi_block}\n"
-        f"[운영플랫폼] {', '.join(platforms[:4])}\n"
-        f"{budget_section}\n"
+        f"[운영플랫폼] {', '.join(platforms[:4])}\n\n"
         f"다음 3개 항목을 마크다운으로 작성하라 (각 3~5줄):\n"
         f"## 핵심 KPI 지표 (4~5개, 측정방법 포함)\n"
         f"## {campaign_months}개월 목표치 (런칭/중간/최종)\n"
