@@ -10,14 +10,16 @@ from pathlib import Path
 from core.dna import ConceptDNA
 
 _CRITICAL_PREFIX = (
-    "CRITICAL RULES — MUST FOLLOW: "
-    "(1) Absolutely NO English text, NO Latin alphabet, NO Roman characters anywhere in this image. "
-    "(2) If any text appears in the image, it MUST be Korean (한국어) only. "
-    "(3) Modern contemporary Korean setting only — present-day Korea (2020s). "
-    "(4) NO historical, traditional, or period Korean clothing. "
-    "NO joseon dynasty, NO hanbok, NO sageuk style, NO traditional Korean patterns. "
-    "(5) Single storyboard frame only — one scene, one image. "
-    "Do NOT create multiple panels, grid layouts, or collage. Fill entire frame with one scene. "
+    "CRITICAL RULES - MUST FOLLOW: "
+    "1. NO text of any kind anywhere in the image. "
+    "No letters, no words, no numbers, no captions, no subtitles, no labels, no watermarks, "
+    "no signs with text, no banners with text, no Korean text, no English text, "
+    "no any language text whatsoever. "
+    "2. Pure visual image only. Zero text. "
+    "3. NO historical Korean clothing. NO hanbok. NO joseon dynasty. "
+    "Modern contemporary setting only. "
+    "4. Single scene, single frame. No collage, no multiple panels. "
+    "5. Fill entire frame with one scene only. "
 )
 
 _STYLE_TEMPLATES = {

@@ -253,6 +253,18 @@ def init_db() -> None:
                 editor       TEXT    DEFAULT '',
                 UNIQUE(case_id, step_key)
             );
+
+            CREATE TABLE IF NOT EXISTS ppt_jobs (
+                task_id     TEXT    PRIMARY KEY,
+                case_id     INTEGER NOT NULL,
+                user_id     INTEGER NOT NULL DEFAULT 0,
+                status      TEXT    DEFAULT 'pending',
+                ppt_type    TEXT    DEFAULT '',
+                gamma_url   TEXT    DEFAULT '',
+                error_msg   TEXT    DEFAULT '',
+                created_at  TEXT    NOT NULL,
+                updated_at  TEXT    NOT NULL
+            );
         """)
         # ── 마이그레이션: 기존 DB에 누락된 컬럼 추가 ──
         for migration in [
@@ -1726,3 +1738,41 @@ def get_all_step_overrides(case_id: int) -> dict:
             except Exception:
                 result[step_key] = {"content": {}, "edited_at": row["edited_at"]}
         return result
+
+
+# ─────────────────────────────────────────────
+# PPT 작업 DB 영속화
+# ─────────────────────────────────────────────
+
+def save_ppt_job(task_id: str, case_id: int, user_id: int, ppt_type: str = "") -> None:
+    """PPT 작업 생성 시 DB에 저장."""
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT OR IGNORE INTO ppt_jobs
+               (task_id, case_id, user_id, status, ppt_type, created_at, updated_at)
+               VALUES (?, ?, ?, 'running', ?, ?, ?)""",
+            (task_id, case_id, user_id, ppt_type, now, now),
+        )
+
+
+def update_ppt_job(task_id: str, status: str,
+                   gamma_url: str = "", error_msg: str = "") -> None:
+    """PPT 작업 상태/결과 업데이트."""
+    now = datetime.now().isoformat()
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE ppt_jobs
+               SET status=?, gamma_url=?, error_msg=?, updated_at=?
+               WHERE task_id=?""",
+            (status, gamma_url, error_msg, now, task_id),
+        )
+
+
+def get_ppt_job(task_id: str) -> dict | None:
+    """task_id로 PPT 작업 조회. 없으면 None."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM ppt_jobs WHERE task_id=?", (task_id,)
+        ).fetchone()
+    return dict(row) if row else None

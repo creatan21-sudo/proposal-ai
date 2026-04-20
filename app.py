@@ -49,6 +49,8 @@ from database.db import (
     save_storyboard, get_storyboards,
     # 스텝 수정 오버라이드
     save_step_override, get_step_override, get_all_step_overrides,
+    # PPT 작업 영속화
+    save_ppt_job, update_ppt_job, get_ppt_job,
 )
 from output.txt_writer import write_txt
 from utils.telegram_notify import send_telegram
@@ -1745,6 +1747,22 @@ def _ppt_push(job_id: str, event: dict):
             job["sse_event"].set()
 
 
+def _ppt_db_done(job_id: str, gamma_url: str = ""):
+    """PPT 완료 시 DB 업데이트 (비동기 안전)."""
+    try:
+        update_ppt_job(job_id, "done", gamma_url=gamma_url)
+    except Exception as e:
+        print(f"[PPT/DB] done 업데이트 실패: {e}")
+
+
+def _ppt_db_error(job_id: str, error_msg: str = ""):
+    """PPT 오류 시 DB 업데이트 (비동기 안전)."""
+    try:
+        update_ppt_job(job_id, "error", error_msg=error_msg)
+    except Exception as e:
+        print(f"[PPT/DB] error 업데이트 실패: {e}")
+
+
 # 템플릿 업로드: /tmp/tmpl_uploads/ 에 파일 저장 (멀티워커 간 공유)
 _TMPL_UPLOAD_DIR = Path("/tmp/tmpl_uploads")
 _TMPL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
@@ -1864,6 +1882,11 @@ def ppt_start():
     fname   = f"{case['client_name']}_{case['project_name'][:20]}_제안서.pptx"
     # Gamma는 PDF 형식으로 제공 — 실제 파일명은 _worker_gamma에서 .pdf로 교체
 
+    try:
+        save_ppt_job(job_id, case_id, user_id, ppt_type=mode)
+    except Exception as _e:
+        print(f"[PPT/DB] 작업 저장 실패 (계속 진행): {_e}")
+
     with _ppt_jobs_lock:
         _ppt_jobs[job_id] = {
             "status":     "running",
@@ -1928,6 +1951,7 @@ def ppt_start():
                 job = _ppt_jobs.get(job_id)
                 if job:
                     job["status"] = "error"
+            _ppt_db_error(job_id, str(e))
 
     def _worker_gamma():
         """Gamma API로 PPT 생성 후 PPTX 파일 다운로드."""
@@ -1968,6 +1992,7 @@ def ppt_start():
                     job["is_pdf"]     = True
 
             _save_version(pdf_bytes, pdf_fname, is_pdf=True)
+            _ppt_db_done(job_id, gamma_url=result.get("url", ""))
 
             _ppt_push(job_id, {
                 "type":         "ppt_done",
@@ -1981,6 +2006,8 @@ def ppt_start():
                 job = _ppt_jobs.get(job_id)
                 if job:
                     job["status"] = "done"
+
+            _ppt_db_done(job_id, gamma_url=result.get("url", ""))
 
             _ppt_push(job_id, {
                 "type": "gamma_done",
@@ -2028,6 +2055,7 @@ def ppt_start():
                 job["pptx_bytes"] = pptx_bytes
 
         _save_version(pptx_bytes, fname, is_pdf=False)
+        _ppt_db_done(job_id)
 
         _ppt_push(job_id, {
             "type":         "ppt_done",
@@ -2088,6 +2116,7 @@ def ppt_start():
                 job["pptx_bytes"] = pptx_bytes
 
         _save_version(pptx_bytes, fname, is_pdf=False)
+        _ppt_db_done(job_id)
 
         _ppt_push(job_id, {
             "type":         "ppt_done",
@@ -2279,8 +2308,35 @@ def ppt_status(job_id):
     """폴링용 — SSE 대신 사용. Gamma 생성처럼 장시간 작업에 활용."""
     with _ppt_jobs_lock:
         job = _ppt_jobs.get(job_id)
+
     if not job:
-        return jsonify({"ok": False, "error": "job not found"}), 404
+        # 메모리에 없으면 DB 폴백
+        try:
+            db_job = get_ppt_job(job_id)
+        except Exception:
+            db_job = None
+
+        if not db_job:
+            return jsonify({
+                "ok": False,
+                "error": "생성 중이거나 만료된 작업입니다. 다시 시도해주세요.",
+            }), 404
+
+        if db_job["user_id"] != session["user_id"] and not session.get("is_admin"):
+            return jsonify({"ok": False, "error": "권한 없음"}), 403
+
+        db_status = db_job["status"]
+        resp = {"ok": True, "status": db_status, "from_db": True}
+        if db_status == "done":
+            if db_job.get("gamma_url"):
+                resp["gamma_url"] = db_job["gamma_url"]
+            else:
+                resp["status"] = "expired"
+                resp["error"]  = "파일이 만료되었습니다. PPT를 다시 생성해주세요."
+        elif db_status == "error":
+            resp["error"] = db_job.get("error_msg") or "알 수 없는 오류"
+        return jsonify(resp)
+
     if job["user_id"] != session["user_id"] and not session.get("is_admin"):
         return jsonify({"ok": False, "error": "권한 없음"}), 403
 
@@ -2454,6 +2510,11 @@ def ppt_gamma_start():
     job_id  = str(uuid.uuid4())
     user_id = session["user_id"]
 
+    try:
+        save_ppt_job(job_id, case_id, user_id, ppt_type="gamma2")
+    except Exception as _e:
+        print(f"[PPT/DB] 작업 저장 실패 (계속 진행): {_e}")
+
     with _ppt_jobs_lock:
         _ppt_jobs[job_id] = {
             "status":    "running",
@@ -2528,6 +2589,8 @@ def ppt_gamma_start():
                 if job:
                     job["status"] = "done"
 
+            _ppt_db_done(job_id, gamma_url=result.get("url", ""))
+
             _ppt_push(job_id, {
                 "type":         "gamma_done",
                 "url":          result.get("url", ""),
@@ -2542,6 +2605,7 @@ def ppt_gamma_start():
                 job = _ppt_jobs.get(job_id)
                 if job:
                     job["status"] = "error"
+            _ppt_db_error(job_id, str(e))
 
     threading.Thread(target=_worker, daemon=True).start()
     return jsonify({"ok": True, "job_id": job_id})
