@@ -103,7 +103,7 @@
   {%- if v is none or v == '' -%}
     {# 빈 값 생략 #}
   {%- elif v is string -%}
-    <p class="dv-text">{{ v }}</p>
+    <div class="dv-md-text">{{ v }}</div>
   {%- elif v is number -%}
     <p class="dv-text">{{ v }}</p>
   {%- elif v == true or v == false -%}
@@ -451,7 +451,7 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
 
     {# ── STEP 3 내러티브 ── #}
     {% elif step_key == 'narrative' %}
-      <div class="dv-text-lg">{{ data.narrative | default('') }}</div>
+      <div class="dv-text-lg dv-md-text">{{ data.narrative | default('') }}</div>
 
     {# ── STEP 7 시나리오 ── #}
     {% elif step_key == 'script' %}
@@ -1108,6 +1108,13 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
   font-size: 14px; line-height: 1.8; color: var(--text);
   white-space: pre-wrap; margin: 0 0 4px;
 }
+/* ── renderMd 처리 대상 (JS가 innerHTML 교체) ── */
+.dv-md-text {
+  font-size: 14px; line-height: 1.8;
+  white-space: pre-wrap; margin: 0 0 4px;
+}
+.dv-text-lg.dv-md-text { font-size: 15px; line-height: 1.9; }
+.dv-md-text.rendered { white-space: normal; }
 
 .dv-list {
   margin: 4px 0 4px 20px; padding: 0;
@@ -1194,12 +1201,61 @@ function switchTab(stepKey) {
   history.replaceState(null, '', '#' + stepKey);
 }
 
+// ── 마크다운 렌더러 (run.html 동일 스타일) ──
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                  .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+function renderMd(raw) {
+  if (!raw || typeof raw !== 'string') return esc(String(raw ?? ''));
+  const text = raw.replace(/\\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  const paras = text.split(/\n\n+/);
+  return paras.map(para => {
+    const lines = para.split('\n');
+    const renderedLines = lines.map(line => {
+      const t = line.trim();
+      if (!t) return '';
+      if (/^###\s+/.test(t)) {
+        const label = esc(t.replace(/^###\s+/, ''));
+        return `<h4 style="font-weight:700;margin:14px 0 4px;color:#4b5563;font-size:14px;line-height:1.4;">${label}</h4>`;
+      }
+      if (/^##\s+/.test(t) || /^【.*】/.test(t) || /^■/.test(t)) {
+        const label = esc(t.replace(/^##\s+/, '').replace(/^■\s*/, ''));
+        return `<h3 style="font-weight:700;margin:20px 0 8px;color:#2563eb;font-size:15px;line-height:1.4;border-left:3px solid #2563eb;padding-left:8px;">${label}</h3>`;
+      }
+      if (t.length <= 40 && /[:：]$/.test(t)) {
+        return `<h4 style="font-weight:700;margin:12px 0 4px;color:#4b5563;font-size:14px;">${esc(t)}</h4>`;
+      }
+      let inline = esc(t)
+        .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#ea580c;font-weight:700;">$1</strong>')
+        .replace(/(\d[\d,]*\.?\d*[%억만원회편배건])/g,
+          '<span style="color:#1d4ed8;font-weight:600;">$1</span>')
+        .replace(/\(([^)]{2,60},\s*\d{4}[^)]{0,20})\)/g,
+          '(<cite style="color:#9ca3af;font-style:italic;font-size:0.92em;">$1</cite>)')
+        .replace(/\[출처:\s*([^\]]+)\]/g,
+          '[<cite style="color:#9ca3af;font-style:italic;font-size:0.92em;">출처: $1</cite>]');
+      return inline;
+    });
+    const inner = renderedLines.filter(Boolean).join('<br>');
+    if (!inner) return '';
+    if (/<h[34]/.test(inner)) return inner;
+    return `<p style="margin:0 0 12px;line-height:1.7;color:#333;">${inner}</p>`;
+  }).join('');
+}
+
 document.addEventListener('DOMContentLoaded', function () {
   const hash = window.location.hash.replace('#', '');
   const tabEl = hash ? document.getElementById('tab-' + hash) : null;
   const isValidHash = tabEl && !tabEl.disabled;
   switchTab(isValidHash ? hash : _FIRST_STEP);
   loadStepOverrides();
+  // renderMd 적용
+  document.querySelectorAll('.dv-md-text').forEach(function(el) {
+    var raw = el.textContent;
+    if (!raw.trim()) return;
+    el.innerHTML = renderMd(raw);
+    el.classList.add('rendered');
+  });
 });
 
 // ── 스텝 재실행 ──
