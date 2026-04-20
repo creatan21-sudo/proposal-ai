@@ -56,14 +56,13 @@ _KPI_KEYWORD_MAP: dict[str, str] = {
 }
 
 # 마케팅 예산 배분 기준 (총 예산 대비 마케팅 예산 권장 비율)
-_MARKETING_BUDGET_RATIO = 0.20   # 전체 예산의 20%를 마케팅에 권장
+_MARKETING_BUDGET_RATIO = 0.15   # 전체 예산의 15%를 마케팅에 권장
 
 _MARKETING_BREAKDOWN = [
-    ("디지털 광고비 (유튜브·메타 등)",  0.45),
-    ("SNS 채널 운영비",                  0.20),
-    ("인플루언서 협업비",                0.15),
-    ("콘텐츠 재편집비 (숏폼 등)",        0.12),
-    ("모니터링·분석 도구",               0.08),
+    ("유튜브 광고",     0.35),
+    ("SNS 광고",        0.25),
+    ("인플루언서 협업", 0.25),
+    ("언론홍보",        0.15),
 ]
 
 
@@ -72,6 +71,66 @@ _MARKETING_BREAKDOWN = [
 # ─────────────────────────────────────────────
 
 _FUTURE_TIMEOUT = 80   # 섹션 1개 최대 대기 시간 (초)
+
+
+def _parse_budget_num(budget_str) -> int:
+    """예산 문자열에서 정수 추출.
+    지원: '184,000,000원 (부가세 포함)', '2억', '1억8400만원', '15000만원', '200000000'
+    """
+    if not budget_str:
+        return 0
+    s = str(budget_str).replace(',', '').replace(' ', '')
+
+    # '1억 5천만원' → N억 M천만
+    m = re.search(r'(\d+(?:\.\d+)?)억\s*(\d+)천만', s)
+    if m:
+        return int(float(m.group(1)) * 100_000_000 + int(m.group(2)) * 10_000_000)
+
+    # '1억8400만원' → N억 M만
+    m = re.search(r'(\d+(?:\.\d+)?)억\s*(\d+)만', s)
+    if m:
+        return int(float(m.group(1)) * 100_000_000 + int(m.group(2)) * 10_000)
+
+    # '1억' 단독
+    m = re.search(r'(\d+(?:\.\d+)?)억', s)
+    if m:
+        return int(float(m.group(1)) * 100_000_000)
+
+    # 'N천만원'
+    m = re.search(r'(\d+)천만', s)
+    if m:
+        return int(m.group(1)) * 10_000_000
+
+    # 숫자 6자리 이상 (원 단위 또는 콤마 제거된 숫자)
+    m = re.search(r'(\d{6,})', s)
+    if m:
+        return int(m.group(1))
+
+    # 'N만원'
+    m = re.search(r'(\d+)만', s)
+    if m:
+        return int(m.group(1)) * 10_000
+
+    return 0
+
+
+def _build_budget_block(budget_num: int) -> str:
+    """프롬프트용 예산 블록 문자열 생성."""
+    if budget_num <= 0:
+        return ""
+    mkt = int(budget_num * _MARKETING_BUDGET_RATIO)
+    ub  = budget_num // 100_000_000
+    man = (budget_num % 100_000_000) // 10_000
+    lines = [
+        f"【예산 기준 — 아래 금액을 그대로 사용할 것, 임의 변경 금지】",
+        f"총 사업 예산: {budget_num:,}원 ({ub}억 {man:,}만원)",
+        f"마케팅 예산 = 총 예산의 {int(_MARKETING_BUDGET_RATIO*100)}% = {mkt:,}원",
+        f"세부 배분:",
+    ]
+    for cat, ratio in _MARKETING_BREAKDOWN:
+        lines.append(f"  - {cat}: {int(mkt * ratio):,}원")
+    lines.append("위 금액보다 현저히 작거나 큰 금액을 제시하는 것은 금지.")
+    return "\n".join(lines)
 
 
 def run(dna: ConceptDNA, progress_fn=None) -> dict:
@@ -89,6 +148,12 @@ def run(dna: ConceptDNA, progress_fn=None) -> dict:
     edit_versions = _build_edit_versions(dna)
     mkt_budget    = _calc_marketing_budget(dna)
 
+    # 예산 숫자 파싱 및 블록 생성 (모든 텍스트 생성 함수에 공유)
+    budget_num   = _parse_budget_num(dna.budget)
+    budget_block = _build_budget_block(budget_num)
+    if budget_num > 0:
+        print(f"  예산 파싱: {budget_num:,}원 → 마케팅 예산 {int(budget_num * _MARKETING_BUDGET_RATIO):,}원")
+
     print(f"  선정 플랫폼: {', '.join(platforms)}")
     if rfp_kpis:
         print(f"  RFP KPI 힌트: {', '.join(rfp_kpis)}")
@@ -103,9 +168,9 @@ def run(dna: ConceptDNA, progress_fn=None) -> dict:
     youtube_text = sns_text = influencer_text = kpi_text = ""
 
     with _cf.ThreadPoolExecutor(max_workers=3) as ex:
-        f1 = ex.submit(_gen_youtube_strategy_text, dna_ctx, platforms, edit_versions, script_summary)
-        f2 = ex.submit(_gen_sns_strategy_text,     dna_ctx, platforms)
-        f3 = ex.submit(_gen_kpi_targets_text,      dna_ctx, platforms, rfp_kpis, mkt_budget)
+        f1 = ex.submit(_gen_youtube_strategy_text, dna_ctx, platforms, edit_versions, script_summary, budget_block)
+        f2 = ex.submit(_gen_sns_strategy_text,     dna_ctx, platforms, budget_block)
+        f3 = ex.submit(_gen_kpi_targets_text,      dna_ctx, platforms, rfp_kpis, mkt_budget, budget_block)
         # 인플루언서 전략은 선택 실행 (기본 제외 — 속도 우선)
 
         for label, future in [
@@ -280,9 +345,13 @@ def _calc_marketing_budget(dna: ConceptDNA) -> dict:
     Returns:
         {"total_ratio": str, "recommended_amount": str, "breakdown": [...]}
     """
-    from agents.planner import _parse_budget_won, _format_won
+    from agents.planner import _format_won
 
-    total_won = _parse_budget_won(dna.budget)
+    # 개선된 파서 우선 사용, 실패 시 planner 파서로 폴백
+    total_won = _parse_budget_num(dna.budget)
+    if not total_won:
+        from agents.planner import _parse_budget_won
+        total_won = _parse_budget_won(dna.budget)
     if total_won:
         mkt_won  = int(total_won * _MARKETING_BUDGET_RATIO)
         mkt_str  = _format_won(mkt_won)
@@ -343,12 +412,14 @@ def _gen_platform_ops_text(
     platforms: list[str],
     edit_versions: list[dict],
     script_summary: str,
+    budget_block: str = "",
 ) -> str:
     """【플랫폼 운영전략】 — 채널 운영·배포·알고리즘 전략만 작성. 광고/홍보 금지."""
     edit_block = ", ".join(
         f"{v['version']}({v['duration']})"
         for v in edit_versions[:3]
     )
+    budget_section = f"\n{budget_block}\n" if budget_block else ""
     prompt = f"""【플랫폼 운영전략 — 구체적 수치와 실행 계획 필수】
 아래 내용만 작성. 마케팅/광고/홍보 내용 절대 포함 금지.
 개요나 나열식으로 작성 금지. 최소 2000자 이상 작성.
@@ -359,7 +430,7 @@ def _gen_platform_ops_text(
 [콘텐츠 요약] {script_summary}
 [운영플랫폼] {', '.join(platforms[:5])}
 [재편집버전] {edit_block}
-
+{budget_section}
 ### 유튜브 채널 전략 (상세)
 
 업로드 계획:
@@ -428,16 +499,26 @@ def _gen_marketing_promo_text(
     platforms: list[str],
     rfp_kpis: list[str],
     mkt_budget: dict,
+    budget_block: str = "",
 ) -> str:
     """【마케팅/홍보 전략】 — 광고·바이럴·인플루언서·KPI만 작성. 플랫폼 운영 금지."""
     rfp_kpi_block = ", ".join(rfp_kpis) if rfp_kpis else "별도 미명시"
     campaign_months = _estimate_campaign_months_from_ctx(mkt_budget)
-    budget_breakdown = "\n".join(
-        f"  - {b['category']}: {b['ratio']} ({b['amount']})"
-        for b in mkt_budget.get("breakdown", [])
-    )
-    production_budget = mkt_budget.get("production_budget", "미지정")
-    mkt_total = mkt_budget.get("recommended_amount", "협의")
+    if budget_block:
+        budget_section = budget_block
+    else:
+        budget_breakdown = "\n".join(
+            f"  - {b['category']}: {b['ratio']} ({b['amount']})"
+            for b in mkt_budget.get("breakdown", [])
+        )
+        production_budget = mkt_budget.get("production_budget", "미지정")
+        mkt_total = mkt_budget.get("recommended_amount", "협의")
+        budget_section = (
+            f"【예산 기준】\n"
+            f"총 사업 예산: {production_budget}\n"
+            f"마케팅 권장 예산: {mkt_total} ({mkt_budget.get('total_ratio', '')})\n"
+            f"{budget_breakdown}"
+        )
     prompt = f"""【마케팅/홍보 전략 — 구체적 실행 계획 필수】
 아래 내용만 작성. 플랫폼 운영/채널 관리 내용 절대 포함 금지.
 개요나 나열식으로 작성 금지. 최소 2000자 이상 작성.
@@ -447,22 +528,8 @@ def _gen_marketing_promo_text(
 [RFP KPI] {rfp_kpi_block}
 [운영플랫폼] {', '.join(platforms[:4])}
 
-【예산 배분 현실적 기준 — 반드시 준수】
-총 사업 예산: {production_budget}
-마케팅 권장 예산: {mkt_total} ({mkt_budget.get('total_ratio', '')})
-[예산 배분]
-{budget_breakdown}
-
-공공기관 영상 제작 사업의 현실적 예산 비율:
-- 제작비 (촬영/편집/후반작업): 총 예산의 60~70%
-- 마케팅/홍보비: 총 예산의 10~20%
-마케팅 세부 배분 (마케팅 예산 내에서):
-- 유튜브 광고: 마케팅 예산의 30~40% (절대로 총 예산의 15% 초과 금지)
-- SNS 광고: 마케팅 예산의 20~30%
-- 인플루언서: 마케팅 예산의 20~30% (마이크로 인플루언서 10만 이하 우선)
-- 보도자료/언론홍보: 마케팅 예산의 10~20%
+{budget_section}
 위 기준을 벗어나는 예산 절대 제시 금지. 모든 금액은 원 단위로 구체적으로 제시.
-(예: 유튜브 광고: 2,400,000원, 마케팅 예산의 35%)
 
 ### 런칭 캠페인 전략
 - 런칭 D-30/D-14/D-7/D-day/D+7 단계별 구체적 계획
@@ -506,13 +573,12 @@ def _gen_youtube_strategy_text(
     platforms: list[str],
     edit_versions: list[dict],
     script_summary: str,
+    budget_block: str = "",
 ) -> str:
-    """레거시 — _gen_platform_ops_text 로 대체."""
-    return _gen_platform_ops_text(dna_ctx, platforms, edit_versions, script_summary)
+    return _gen_platform_ops_text(dna_ctx, platforms, edit_versions, script_summary, budget_block)
 
 
-def _gen_sns_strategy_text(dna_ctx: str, platforms: list[str]) -> str:
-    """레거시 — _gen_platform_ops_text 로 대체."""
+def _gen_sns_strategy_text(dna_ctx: str, platforms: list[str], budget_block: str = "") -> str:
     return ""
 
 
@@ -526,6 +592,7 @@ def _gen_kpi_targets_text(
     platforms: list[str],
     rfp_kpis: list[str],
     mkt_budget: dict,
+    budget_block: str = "",
 ) -> str:
     """KPI 목표 + 성과 보고 체계."""
     rfp_kpi_block = (
@@ -533,12 +600,18 @@ def _gen_kpi_targets_text(
     )
     campaign_months = _estimate_campaign_months_from_ctx(mkt_budget)
 
+    budget_section = (
+        f"\n{budget_block}\n"
+        if budget_block else
+        f"\n[마케팅예산] 권장 {mkt_budget['recommended_amount']} ({mkt_budget['total_ratio']})\n"
+    )
+
     prompt = (
         f"공공기관 캠페인 KPI 목표와 성과 보고 체계를 작성하라.\n\n"
         f"[프로젝트]\n{dna_ctx}\n"
         f"[RFP KPI] {rfp_kpi_block}\n"
         f"[운영플랫폼] {', '.join(platforms[:4])}\n"
-        f"[마케팅예산] 권장 {mkt_budget['recommended_amount']} ({mkt_budget['total_ratio']})\n\n"
+        f"{budget_section}\n"
         f"다음 3개 항목을 마크다운으로 작성하라 (각 3~5줄):\n"
         f"## 핵심 KPI 지표 (4~5개, 측정방법 포함)\n"
         f"## {campaign_months}개월 목표치 (런칭/중간/최종)\n"
