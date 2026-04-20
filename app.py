@@ -26,6 +26,7 @@ from flask import (
     Flask, Response, abort, flash, jsonify, redirect,
     render_template, request, send_file, session, url_for,
 )
+from werkzeug.middleware.proxy_fix import ProxyFix
 from werkzeug.utils import secure_filename
 
 from core.dna import create_dna
@@ -57,6 +58,8 @@ from utils.telegram_notify import send_telegram
 from config import GAMMA_API_KEY
 
 app = Flask(__name__)
+# Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.secret_key = os.environ.get("SECRET_KEY", "proposal-ai-web-secret-2024")
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB
 
@@ -470,6 +473,26 @@ def _run_pipeline_sync(sid: str, sess: dict):
                 s["status"]       = "error"
                 s["completed_at"] = time.time()
                 s["sse_event"].set()
+
+
+# ─────────────────────────────────────────────
+# 전역 인증 체크 (로그인 페이지·static은 예외)
+# ─────────────────────────────────────────────
+
+# 로그인 없이 접근 허용할 엔드포인트
+_PUBLIC_ENDPOINTS = frozenset({"login", "logout", "static"})
+
+@app.before_request
+def check_login():
+    """모든 요청에서 로그인 여부 확인. 로그인·static은 무조건 통과."""
+    if request.endpoint in _PUBLIC_ENDPOINTS:
+        return None
+    if not session.get("user_id"):
+        # API 엔드포인트(JSON 응답)는 401, 페이지는 로그인으로 리디렉션
+        if request.path.startswith("/api/") or request.is_json:
+            return jsonify({"ok": False, "error": "로그인이 필요합니다"}), 401
+        return redirect(url_for("login"))
+    return None
 
 
 # ─────────────────────────────────────────────
