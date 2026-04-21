@@ -16,7 +16,6 @@
 # 시리즈 (2편 이상): 편간 클리프행어/복선 후처리 패스
 
 import concurrent.futures
-import json
 import re
 import threading
 
@@ -125,8 +124,6 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
                 script = _fallback_script(idx, ep_plan)
 
         scripts.append(script)
-        scenes_count = len(script.get("scenes", []))
-        print(f"  [대본] {ep_num}편 scenes: {scenes_count}개")
 
         # 편별 DB 저장
         try:
@@ -203,26 +200,19 @@ def _generate_longform_outline(
     1편(샘플): 5씬까지, 나머지: 3씬
     씬 텍스트는 max_tokens=2000으로 실제 방송 대본 형식으로 작성
     """
-    duration_s     = _duration_to_seconds(dna.duration)
-    full_scenes    = _calc_scene_count(duration_s)
-    title          = ep_plan.get("title", f"{ep_num}편")
-    word_count     = _calc_word_count(duration_s)
-    requested_cuts = getattr(dna, "storyboard_cuts_per_ep", 10) or 10
+    duration_s  = _duration_to_seconds(dna.duration)
+    full_scenes = _calc_scene_count(duration_s)
+    title       = ep_plan.get("title", f"{ep_num}편")
+    word_count  = _calc_word_count(duration_s)
 
-    # 요청 컷 수 기반 씬 수 결정 (duration 기반 최대치 초과 불가)
-    scene_count = min(full_scenes, requested_cuts)
-
-    print(f"  [대본] {ep_num}편 목표 씬 수: {scene_count}개 (요청={requested_cuts}, duration 최대={full_scenes})")
+    # 1편 샘플은 5씬, 나머지는 3씬
+    scene_count = min(full_scenes, 5) if is_sample else min(full_scenes, 3)
 
     # 1단계: 메타데이터 JSON (작은 호출)
     meta_prompt = _build_meta_only_prompt(dna, ep_plan, ep_num, all_plans if is_sample else [], is_series)
     meta = claude_client.call_json(meta_prompt, max_tokens=250, _validate=False)
-    print(f"  [대본 raw] {json.dumps(meta, ensure_ascii=False)[:500]}")
     if meta.get("_parse_failed"):
         meta = {}
-    # 중첩 "script" 키 언래핑
-    if "script" in meta and isinstance(meta["script"], dict):
-        meta = meta["script"]
 
     # 2단계: 씬별 개별 텍스트 API 호출 (max_tokens=2000)
     scenes = []
@@ -234,31 +224,6 @@ def _generate_longform_outline(
         scene_obj  = _parse_scene_text_v2(scene_text, scene_num, duration_s, scene_count)
         scenes.append(scene_obj)
         print(f"  [씬] {ep_num}편 S#{scene_num}/{scene_count} 완료 ({len(scene_text)}자)")
-
-    # 씬 수 검증 — 부족하면 최대 2회 재시도로 나머지 보충
-    for _retry in range(2):
-        if len(scenes) >= scene_count:
-            break
-        missing_start = len(scenes) + 1
-        print(f"  [씬 재시도] {ep_num}편 씬 부족 ({len(scenes)}/{scene_count}) — S#{missing_start}~{scene_count} 보충 ({_retry+1}/2)")
-        for scene_num in range(missing_start, scene_count + 1):
-            scene_prompt = _build_scene_text_prompt_v2(
-                dna, ep_plan, ep_num, scene_num, scene_count, duration_s, word_count
-            )
-            scene_text = claude_client.call(scene_prompt, max_tokens=2000)
-            scene_obj  = _parse_scene_text_v2(scene_text, scene_num, duration_s, scene_count)
-            scenes.append(scene_obj)
-            print(f"  [씬 재시도] S#{scene_num} 보충 완료")
-
-    if len(scenes) < scene_count:
-        print(f"  [경고] {ep_num}편 씬 수 미달: {len(scenes)}/{scene_count} (재시도 소진)")
-
-    # meta에서 scenes가 직접 반환된 경우도 처리 (중첩 구조 방어)
-    if not scenes:
-        scenes = (meta.get("scenes")
-                  or meta.get("scene_list")
-                  or meta.get("cuts")
-                  or [])
 
     result = {
         "episode":             ep_num,
@@ -329,9 +294,7 @@ def _build_scene_text_prompt_v2(
         f"【필수 포함 항목 — 각 항목 실제 내용으로 작성】\n"
         f"▶ 나레이션: 나레이터가 실제로 읽을 완성된 문장 전문 (문어체 격식체, 2~4문장)\n"
         f"▶ 대사: 출연자 실제 대사 전문 (구어체, 감정지문 포함) — 없으면 '없음'\n"
-        f"▶ 화면: 카메라 앵글 + 피사체 위치 + 움직임 + 인물 표정 + 배경 + 조명·색감 묘사 (2~3문장)\n"
-        f"  - 나쁜 예: '클로즈업 얼굴'\n"
-        f"  - 좋은 예: '화면 중앙에 40대 여성 얼굴 클로즈업, 형광등 역광, 배경 흐릿한 사무실 풍경, 눈빛 지친 표정'\n"
+        f"▶ 화면: 카메라 앵글 + 피사체 + 움직임 + 인물 표정 묘사 (2~3문장)\n"
         f"▶ 자막: 화면에 표시될 자막 문구 그대로 (**핵심단어** 강조)\n\n"
         f"분량 기준: 최소 {min_chars}자 이상. 실제 촬영 가능한 수준으로 상세히 작성.\n"
         f"'설명한다', '보여준다', '삽입한다' 같은 메타 설명 절대 금지.\n\n"
@@ -396,15 +359,14 @@ def _parse_scene_text_v2(text: str, scene_num: int, duration_s: int, total_scene
     key_point = narration[:200] if narration else text.strip()[:200]
 
     return {
-        "scene_number":  scene_num,
-        "timecode":      timecode,
-        "location":      location or f"씬{scene_num} 촬영지",
-        "narration":     narration,
-        "dialogue":      dialogue if dialogue and "없음" not in dialogue else None,
-        "visual":        visual,
-        "visual_concept": visual,   # storyboard.py가 이 키를 우선 참조
-        "caption":       caption,
-        "key_point":     key_point,
+        "scene_number": scene_num,
+        "timecode":     timecode,
+        "location":     location or f"씬{scene_num} 촬영지",
+        "narration":    narration,
+        "dialogue":     dialogue if dialogue and "없음" not in dialogue else None,
+        "visual":       visual,
+        "caption":      caption,
+        "key_point":    key_point,
     }
 
 
@@ -520,54 +482,23 @@ def _generate_shortform_outline(
         f" {ep_num}편\"{title}\" 러닝타임:{dna.duration}\n\n"
         f'{{"episode":{ep_num},"title":"{title}","format":"shortform","duration":"{dna.duration}",'
         f'"versions":{{'
-        f'"15sec":{{"hook_line":"훅10자내","scenes":[{{"scene_number":1,"key_point":"핵심","visual":"카메라앵글·인물위치·배경·조명 구체묘사"}},{{"scene_number":2,"key_point":"CTA","visual":"카메라앵글·인물위치·배경·조명 구체묘사"}}]}},'
-        f'"30sec":{{"hook_line":"훅12자내","scenes":[{{"scene_number":1,"key_point":"문제","visual":"카메라앵글·인물위치·배경·조명 구체묘사"}},{{"scene_number":2,"key_point":"해결","visual":"카메라앵글·인물위치·배경·조명 구체묘사"}},{{"scene_number":3,"key_point":"CTA","visual":"카메라앵글·인물위치·배경·조명 구체묘사"}}]}},'
-        f'"60sec":{{"hook_line":"훅15자내","scenes":[{{"scene_number":1,"key_point":"훅","visual":"카메라앵글·인물위치·배경·조명 구체묘사"}},{{"scene_number":2,"key_point":"공감","visual":"카메라앵글·인물위치·배경·조명 구체묘사"}},{{"scene_number":3,"key_point":"해결","visual":"카메라앵글·인물위치·배경·조명 구체묘사"}},{{"scene_number":4,"key_point":"CTA","visual":"카메라앵글·인물위치·배경·조명 구체묘사"}}]}}'
+        f'"15sec":{{"hook_line":"훅10자내","scenes":[{{"scene_number":1,"key_point":"핵심"}},{{"scene_number":2,"key_point":"CTA"}}]}},'
+        f'"30sec":{{"hook_line":"훅12자내","scenes":[{{"scene_number":1,"key_point":"문제"}},{{"scene_number":2,"key_point":"해결"}},{{"scene_number":3,"key_point":"CTA"}}]}},'
+        f'"60sec":{{"hook_line":"훅15자내","scenes":[{{"scene_number":1,"key_point":"훅"}},{{"scene_number":2,"key_point":"공감"}},{{"scene_number":3,"key_point":"해결"}},{{"scene_number":4,"key_point":"CTA"}}]}}'
         f'}},'
         f'"closing_cta":{{"cta_direction":"CTA방향"}},'
         f'"series_hook":{{"cliffhanger_line":null,"callback_line":null}}}}'
     )
 
     raw = claude_client.call_json(prompt, max_tokens=500, _validate=False)
-    print(f"  [대본 raw] {json.dumps(raw, ensure_ascii=False)[:500]}")
-
-    # 중첩 "script" 키 언래핑
-    if "script" in raw and isinstance(raw["script"], dict):
-        raw = raw["script"]
-
     raw.setdefault("episode",  ep_num)
     raw.setdefault("title",    ep_plan.get("title", f"{ep_num}편"))
     raw.setdefault("format",   "shortform")
     raw.setdefault("duration", dna.duration)
     raw.setdefault("versions", {})
+    raw.setdefault("scenes",   [])
     raw.setdefault("closing_cta", {})
     raw.setdefault("series_hook", {})
-
-    # scenes: 여러 키 이름 시도
-    top_scenes = (raw.get("scenes")
-                  or raw.get("scene_list")
-                  or raw.get("cuts")
-                  or [])
-
-    # 숏폼은 scenes가 versions 안에 있으므로 플래튼
-    if not top_scenes:
-        versions = raw.get("versions") or {}
-        for ver_key in ("30sec", "60sec", "15sec"):
-            ver = versions.get(ver_key) or {}
-            candidate = (ver.get("scenes")
-                         or ver.get("scene_list")
-                         or ver.get("cuts")
-                         or [])
-            if candidate:
-                top_scenes = candidate
-                break
-
-    # visual_concept alias 보장 (storyboard가 우선 참조)
-    for sc in top_scenes:
-        if isinstance(sc, dict) and not sc.get("visual_concept"):
-            sc["visual_concept"] = sc.get("visual") or sc.get("key_point", "")
-
-    raw["scenes"] = top_scenes
 
     versions = raw.get("versions") or {}
     if versions:

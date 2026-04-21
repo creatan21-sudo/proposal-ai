@@ -72,16 +72,13 @@ def _generate_one(scene: dict, scene_num: int, style: str,
 
     scene_desc = (
         scene.get("visual_concept", "")
-        or scene.get("visual", "")
         or scene.get("key_point", "")
         or scene.get("narration_key", "")
         or f"씬 {scene_num}"
     )
     scene_desc = _remove_text_props(scene_desc)
-    # "cinematic still, ..., no text, no letters, photorealistic" 형식으로 래핑
-    enhanced_desc = f"cinematic still, {scene_desc[:380]}, no text, no letters, photorealistic"
     template = _STYLE_TEMPLATES.get(style, _STYLE_TEMPLATES[_DEFAULT_STYLE])
-    prompt = template.format(scene_description=enhanced_desc)
+    prompt = template.format(scene_description=scene_desc[:500])
 
     client = OpenAI(api_key=api_key)
     try:
@@ -131,25 +128,17 @@ def _generate_one(scene: dict, scene_num: int, style: str,
 
 def _extract_scenes(dna: ConceptDNA, max_cuts: int) -> list:
     """대본 스크립트에서 씬 목록 추출."""
-    scripts = dna.scripts or []
-    print(f"  [스토리보드] 파싱: scripts 항목 수={len(scripts)}")
     scenes = []
-    for idx, sc in enumerate(scripts):
+    for sc in (dna.scripts or []):
         if not isinstance(sc, dict):
-            print(f"  [스토리보드] scripts[{idx}] 타입 오류: {type(sc)}")
             continue
-        raw_scenes = sc.get("scenes", [])
-        print(f"  [스토리보드] scripts[{idx}] scenes 수={len(raw_scenes)}")
-        for scene in raw_scenes:
+        for scene in sc.get("scenes", []):
             if isinstance(scene, dict):
                 scenes.append(scene)
-            else:
-                print(f"  [스토리보드] 씬 타입 오류: {type(scene)}, 값={str(scene)[:80]}")
             if len(scenes) >= max_cuts:
                 break
         if len(scenes) >= max_cuts:
             break
-    print(f"  [스토리보드] 씬 파싱 완료: {len(scenes)}개 (max_cuts={max_cuts})")
     return scenes
 
 
@@ -180,13 +169,11 @@ def run(dna: ConceptDNA, style: str = "line", progress_fn=None) -> dict:
 
     scenes = _extract_scenes(dna, max_cuts)
     if not scenes:
-        print(f"  [스토리보드] 씬 없음 — dna.scripts={dna.scripts!r:.200}")
         return {"frames": [], "style": style, "total_scenes": 0,
                 "error": "씬 데이터 없음 — 대본 스텝 먼저 실행하세요"}
 
     total = min(len(scenes), max_cuts)
     case_id = getattr(dna, "case_id", 0) or 0
-    print(f"  [스토리보드] 이미지 생성 시작: {total}컷 (case_id={case_id}, style={style})")
     results = []
 
     with ThreadPoolExecutor(max_workers=3) as executor:
@@ -206,7 +193,7 @@ def run(dna: ConceptDNA, style: str = "line", progress_fn=None) -> dict:
                         "message": f"스토리보드 생성 중... ({done}/{total}컷)",
                     })
             except Exception as e:
-                print(f"  [스토리보드] future 오류: {e!r}")
+                print(f"  [스토리보드] future 오류: {e}")
 
     results.sort(key=lambda x: x.get("scene_num", 0))
 
