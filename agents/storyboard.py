@@ -72,13 +72,16 @@ def _generate_one(scene: dict, scene_num: int, style: str,
 
     scene_desc = (
         scene.get("visual_concept", "")
+        or scene.get("visual", "")
         or scene.get("key_point", "")
         or scene.get("narration_key", "")
         or f"씬 {scene_num}"
     )
     scene_desc = _remove_text_props(scene_desc)
+    # "cinematic still, ..., no text, no letters, photorealistic" 형식으로 래핑
+    enhanced_desc = f"cinematic still, {scene_desc[:380]}, no text, no letters, photorealistic"
     template = _STYLE_TEMPLATES.get(style, _STYLE_TEMPLATES[_DEFAULT_STYLE])
-    prompt = template.format(scene_description=scene_desc[:500])
+    prompt = template.format(scene_description=enhanced_desc)
 
     client = OpenAI(api_key=api_key)
     try:
