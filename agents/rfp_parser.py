@@ -20,6 +20,30 @@ _MAX_RFP_CHARS = 12000
 
 
 # ─────────────────────────────────────────────
+# JSON 파싱 헬퍼
+# ─────────────────────────────────────────────
+
+def _parse_json(text: str) -> dict:
+    """Claude 텍스트 응답에서 JSON 객체 추출."""
+    text = text.strip()
+    # 마크다운 코드블록 제거
+    text = re.sub(r'^```(?:json)?\s*', '', text)
+    text = re.sub(r'\s*```$', '', text)
+    text = text.strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        start = text.find('{')
+        end = text.rfind('}')
+        if start != -1 and end != -1:
+            try:
+                return json.loads(text[start:end + 1])
+            except json.JSONDecodeError:
+                pass
+    return {}
+
+
+# ─────────────────────────────────────────────
 # 진입점
 # ─────────────────────────────────────────────
 
@@ -156,22 +180,37 @@ def rfp_quick_extract(rfp_text: str) -> dict:
 - 특이사항: 감점 조건, 미제출 불이익, 자격 제한
 - 핵심 키워드: 발주처가 반복 강조하는 단어/개념 (10개 이내)
 
-아래 모든 필드를 반환하라:
-- client_name: 발주처 기관명 (문자열)
-- project_name: 사업명 (문자열)
-- budget: 예산 금액 (문자열)
-- deadline: 납품기한 (문자열)
-- video_type: 반드시 다음 중 하나 — 홍보영상 / 다큐멘터리 / 교육영상 / 캠페인영상 / 뉴스형영상
-- quantity: 납품 수량 (정수)
-- duration: 편당 러닝타임 (문자열)
-- core_keywords: 핵심 키워드 배열 (최대 10개)
-- core_tasks: 구체적 과업 항목 배열
-- prohibited: 금지 또는 제한 사항 배열
-- special_notes: 감점 조건, 자격 제한 등 특이사항 배열
-- evaluation_criteria: 평가배점표 배열 (없으면 빈 배열 []), 배점 높은 순 정렬.
-  각 항목은 다음 키를 포함: 구분(정성적/정량적/가격), 항목명, 배점(정수), 세부기준(문자열), 전략(2문장), 주의사항(문자열)
-- evaluation_strategy: 배점표 전략 분석 객체.
-  포함 키: 총점(정수), 핵심항목(배열), 정량체크리스트(배열), 집중공략(문자열)"""
+아래 JSON만 출력 (다른 텍스트 금지):
+{{
+  "client_name": "발주처 기관명",
+  "project_name": "사업명",
+  "budget": "예산 금액",
+  "deadline": "납품기한",
+  "video_type": "반드시 다음 중 하나: 홍보영상 / 다큐멘터리 / 교육영상 / 캠페인영상 / 뉴스형영상",
+  "quantity": 납품 수량 (정수),
+  "duration": "편당 러닝타임",
+  "core_keywords": ["핵심 키워드 (최대 10개)"],
+  "core_tasks": ["구체적 과업 항목"],
+  "prohibited": ["금지 또는 제한 사항"],
+  "special_notes": ["감점 조건, 자격 제한 등 특이사항"],
+  "evaluation_criteria": [
+    {{
+      "구분": "정성적 또는 정량적 또는 가격 중 하나",
+      "항목명": "평가 항목명",
+      "배점": 배점 숫자 (정수),
+      "세부기준": "단계별 점수 기준 (없으면 빈 문자열)",
+      "전략": "이 항목에서 높은 점수 받는 방법 (2문장)",
+      "주의사항": "특이사항 (없으면 빈 문자열)"
+    }}
+  ],
+  "evaluation_strategy": {{
+    "총점": 전체 배점 합계 숫자,
+    "핵심항목": ["배점 10점 이상 항목명"],
+    "정량체크리스트": ["항목명: 준비 서류/기준"],
+    "집중공략": "가장 점수 올리기 쉬운 항목과 공략법 (3문장)"
+  }}
+}}
+evaluation_criteria: 없으면 빈 배열 []. 배점 높은 순으로 정렬."""
 
     _empty = {"client_name": "", "project_name": "", "budget": "",
               "deadline": "", "video_type": "", "quantity": 0, "duration": "",
@@ -180,12 +219,15 @@ def rfp_quick_extract(rfp_text: str) -> dict:
               "evaluation_strategy": {"총점": 0, "핵심항목": [], "정량체크리스트": [], "집중공략": ""}}
 
     try:
-        result = claude_client.call_json(prompt, max_tokens=6000, _validate=False)
+        raw = claude_client.call(prompt, max_tokens=6000, _skip_citation=True)
+        result = _parse_json(raw)
+        if not result:
+            print("  [rfp_quick_extract] JSON 파싱 실패 — 빈 결과 반환")
+            return _empty
         print(f"  [rfp_quick_extract] 결과 키: {list(result.keys())}, "
-              f"parse_failed={result.get('_parse_failed')}, "
               f"evaluation_criteria={len(result.get('evaluation_criteria') or [])}")
     except Exception as e:
-        print(f"  [rfp_quick_extract] call_json 실패: {e}")
+        print(f"  [rfp_quick_extract] 호출 실패: {e}")
         return _empty
 
     # 타입 보정
@@ -535,7 +577,11 @@ def _format_evaluation_criteria(eval_items: list) -> str:
 def _analyze_with_claude(rfp_text: str, dna: ConceptDNA) -> dict:
     """추출된 텍스트 + 사용자 입력으로 RFP 분석."""
     prompt = _build_prompt(rfp_text, dna)
-    return claude_client.call_json(prompt, max_tokens=6000)
+    raw = claude_client.call(prompt, max_tokens=6000, _skip_citation=True)
+    result = _parse_json(raw)
+    if not result:
+        print("  [rfp_analyze] JSON 파싱 실패 — 빈 dict 반환")
+    return result
 
 
 def _build_prompt(rfp_text: str, dna: ConceptDNA) -> str:
@@ -602,15 +648,33 @@ def _build_prompt(rfp_text: str, dna: ConceptDNA) -> str:
 6. forbidden_notes — 금지/주의 사항 목록 (배열, 없으면 빈 배열)
 7. agency_tone_hint — 기관 특성 요약 및 톤앤매너 힌트 (2~3문장)
 
-아래 모든 필드를 반환하라:
-- basic_info: 객체 (client_name, project_name, budget, deadline)
-- agency_type: 중앙부처 / 지자체 / 의회 / 공공기관 / 기타 중 하나
-- core_tasks: 핵심 과업 배열
-- evaluation_items: 평가 배점표 배열 (각 항목: item, score, category, criteria, detail_criteria, strategic_hint, warning, required, importance)
-- evaluation_strategy: 객체 (총점, 핵심항목, 정량항목_체크리스트, 집중공략)
-- top_keywords: 핵심 키워드 배열 (최대 10개)
-- forbidden_notes: 금지/주의 사항 배열
-- agency_tone_hint: 기관 특성 및 톤앤매너 힌트 (문자열)"""
+반드시 아래 JSON 형식으로만 출력하세요. 다른 설명은 하지 마세요:
+{{
+  "basic_info": {{
+    "client_name": "...",
+    "project_name": "...",
+    "budget": "...",
+    "deadline": "..."
+  }},
+  "agency_type": "...",
+  "core_tasks": ["...", "..."],
+  "evaluation_items": [
+    {{
+      "item": "...", "score": "...", "category": "정성적/정량적/가격",
+      "criteria": "...", "detail_criteria": "...", "strategic_hint": "...",
+      "warning": "...", "required": "...", "importance": "high/medium/low"
+    }}
+  ],
+  "evaluation_strategy": {{
+    "총점": 0,
+    "핵심항목": ["..."],
+    "정량항목_체크리스트": ["항목명: 준비 사항"],
+    "집중공략": "..."
+  }},
+  "top_keywords": ["...", "..."],
+  "forbidden_notes": ["...", "..."],
+  "agency_tone_hint": "..."
+}}"""
 
 
 # ─────────────────────────────────────────────
@@ -670,16 +734,19 @@ def parse_reference_proposal(file_path: str) -> str:
 [제안서 텍스트]
 {text_excerpt}
 
-아래 6개 필드를 반환하라:
-- toc_structure: 목차 구성 (섹션 순서를 번호 목록으로)
-- persuasion_flow: 설득 흐름 설명 (어떤 논리 순서로 발주처를 설득하는지 3~4문장)
-- volume_distribution: 분량 배분 설명 (어느 섹션에 얼마나 할애했는지)
-- tone_and_style: 문체/톤앤매너 설명 (격식체/구어체, 수치 활용도, 시각화 방식 등)
-- differentiation_method: 차별화 포인트 제시 방식 (어떻게 경쟁사 대비 우위를 표현했는지)
-- evidence_method: 실적/증거 제시 방식 (포트폴리오, 수상실적, 레퍼런스 활용 방법)"""
+반드시 아래 JSON 형식으로만 출력하세요:
+{{
+  "toc_structure": "목차 구성 (섹션 순서를 번호 목록으로)",
+  "persuasion_flow": "설득 흐름 설명 (어떤 논리 순서로 발주처를 설득하는지 3~4문장)",
+  "volume_distribution": "분량 배분 설명 (어느 섹션에 얼마나 할애했는지)",
+  "tone_and_style": "문체/톤앤매너 설명 (격식체/구어체, 수치 활용도, 시각화 방식 등)",
+  "differentiation_method": "차별화 포인트 제시 방식 (어떻게 경쟁사 대비 우위를 표현했는지)",
+  "evidence_method": "실적/증거 제시 방식 (포트폴리오, 수상실적, 레퍼런스 활용 방법)"
+}}"""
 
     try:
-        result = claude_client.call_json(prompt, max_tokens=3000)
+        raw = claude_client.call(prompt, max_tokens=3000, _skip_citation=True)
+        result = _parse_json(raw)
         # 6개 항목을 읽기 쉬운 텍스트로 변환
         lines = [
             f"[목차 구성] {result.get('toc_structure', '')}",
