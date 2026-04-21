@@ -951,16 +951,9 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
     {% if data and step_key not in ('storyboard', 'pt_qa', 'critic') %}
     <div id="edit-overlay-{{ step_key }}"
          style="display:none;margin-top:20px;border-top:2px solid #4f46e5;padding-top:16px;">
-      <div style="font-size:13px;font-weight:600;color:#4f46e5;margin-bottom:8px;">✏️ 내용 수정 모드</div>
-      <div style="font-size:12px;color:#6b7280;margin-bottom:10px;">
-        JSON 형식으로 수정하세요. 저장 후 "(수정됨)" 표시가 나타납니다.
-      </div>
-      <textarea id="edit-textarea-{{ step_key }}"
-                style="width:100%;min-height:300px;padding:12px;border:1px solid #d1d5db;
-                       border-radius:8px;font-family:monospace;font-size:12px;
-                       line-height:1.6;resize:vertical;box-sizing:border-box;"
-                placeholder="JSON 데이터..."></textarea>
-      <div style="display:flex;gap:8px;margin-top:10px;">
+      <div style="font-size:13px;font-weight:600;color:#4f46e5;margin-bottom:12px;">✏️ 내용 수정</div>
+      <div id="ef-container-{{ step_key }}" class="ef-form-container"></div>
+      <div style="display:flex;gap:8px;margin-top:14px;">
         <button onclick="saveStepEdit('{{ step_key }}')"
                 style="padding:8px 18px;background:#4f46e5;color:#fff;border:none;
                        border-radius:6px;cursor:pointer;font-size:13px;font-weight:600;">
@@ -1166,10 +1159,78 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
 .dv-card .dv-row {
   grid-template-columns: 140px 1fr;
 }
+
+/* ── 수정 폼 (ef-*) ── */
+.ef-form-container {}
+.ef-field { margin-bottom:18px; }
+.ef-label {
+  display:block; font-size:11px; font-weight:700; letter-spacing:0.06em;
+  text-transform:uppercase; color:#4f46e5; margin-bottom:6px;
+}
+.ef-input {
+  width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:6px;
+  font-size:13px; color:#374151; box-sizing:border-box;
+}
+.ef-input:focus { outline:none; border-color:#4f46e5; box-shadow:0 0 0 2px #ede9fe; }
+.ef-textarea {
+  width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:6px;
+  font-size:13px; color:#374151; line-height:1.7; resize:vertical; box-sizing:border-box;
+}
+.ef-textarea:focus { outline:none; border-color:#4f46e5; box-shadow:0 0 0 2px #ede9fe; }
+.ef-json { font-family:monospace; font-size:12px; }
+.ef-list { display:flex; flex-direction:column; gap:6px; margin-bottom:6px; }
+.ef-li { display:flex; gap:8px; align-items:flex-start; }
+.ef-li .ef-textarea { flex:1; }
+.ef-del {
+  padding:5px 8px; background:#fee2e2; color:#dc2626;
+  border:1px solid #fca5a5; border-radius:6px; cursor:pointer;
+  font-size:12px; white-space:nowrap; flex-shrink:0;
+}
+.ef-del:hover { background:#fecaca; }
+.ef-add {
+  padding:5px 12px; background:#eff6ff; color:#2563eb;
+  border:1px solid #bfdbfe; border-radius:6px; cursor:pointer;
+  font-size:12px; font-weight:600; margin-top:4px;
+}
+.ef-add:hover { background:#dbeafe; }
+.ef-obj-item { border:1px solid #e5e7eb; border-radius:8px; margin-bottom:8px; overflow:hidden; }
+.ef-obj-hd {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:8px 12px; background:#f9fafb; border-bottom:1px solid #e5e7eb;
+  font-size:12px; font-weight:600; color:#374151;
+}
+.ef-obj-body { padding:12px; display:flex; flex-direction:column; gap:10px; }
+.ef-subfield {}
+.ef-sublabel { display:block; font-size:11px; font-weight:600; color:#6b7280; margin-bottom:4px; }
+.ef-scene-item {
+  border:1px solid #e5e7eb; border-radius:6px; padding:12px;
+  margin-bottom:8px; display:flex; flex-direction:column; gap:8px;
+}
+.ef-scene-num { font-size:11px; font-weight:700; color:#4f46e5; }
+.ef-ep-block { margin-bottom:24px; padding-bottom:20px; border-bottom:1px dashed #e5e7eb; }
+.ef-ep-block:last-child { border-bottom:none; margin-bottom:0; }
+.ef-ep-hd {
+  font-size:14px; font-weight:700; color:#1f2937; margin-bottom:12px;
+  padding:8px 12px; background:#f5f3ff; border-radius:6px;
+  border-left:4px solid #4f46e5;
+}
 </style>
 
 <script>
 const _FIRST_STEP = {{ _first.key | tojson }};
+
+// 원본 스텝 데이터 (수정 폼 초기값)
+const _STEP_DATA = {
+  narrative:    {{ detail.steps.get('narrative',    {}) | tojson }},
+  rfp_analysis: {{ detail.steps.get('rfp_analysis', {}) | tojson }},
+  research:     {{ detail.steps.get('research',     {}) | tojson }},
+  strategy:     {{ detail.steps.get('strategy',     {}) | tojson }},
+  creative:     {{ detail.steps.get('creative',     {}) | tojson }},
+  plan:         {{ detail.steps.get('plan',         {}) | tojson }},
+  script:       {{ detail.steps.get('script',       []) | tojson }},
+  platform:     {{ detail.steps.get('platform',     {}) | tojson }},
+  marketing:    {{ detail.steps.get('marketing',    {}) | tojson }},
+};
 
 // 아코디언 토글
 function toggleStep(key) {
@@ -1284,35 +1345,287 @@ async function rerunFromStep(stepKey) {
   }
 }
 
-// ── 스텝 수정 ──
+// ── 스텝 수정 (폼 기반) ──
 const _editMode = {};
 
-async function toggleEditMode(stepKey) {
-  const overlay  = document.getElementById(`edit-overlay-${stepKey}`);
-  const textarea = document.getElementById(`edit-textarea-${stepKey}`);
-  const btn      = document.getElementById(`edit-btn-${stepKey}`);
-  if (!overlay) return;
+// ── 스텝별 폼 스키마 ──
+const EF_SCHEMAS = {
+  narrative: [
+    {key:'narrative', label:'내러티브', type:'textarea', rows:12},
+  ],
+  rfp_analysis: [
+    {key:'agency_type',      label:'기관 유형',         type:'text'},
+    {key:'agency_tone_hint', label:'커뮤니케이션 힌트', type:'textarea', rows:3},
+    {key:'evaluation_items', label:'평가항목', type:'list-obj',
+     fields:[{key:'item',label:'항목명',type:'text'},{key:'score',label:'배점',type:'text'}]},
+    {key:'top_keywords',   label:'핵심 키워드', type:'list'},
+    {key:'core_tasks',     label:'핵심 과업',   type:'list'},
+    {key:'forbidden_notes',label:'금지 사항',   type:'list'},
+  ],
+  research: [
+    {key:'agency_characteristics',  label:'기관 특성',           type:'textarea', rows:4},
+    {key:'target_audience',         label:'타겟 오디언스',       type:'textarea', rows:3},
+    {key:'preferred_message_style', label:'선호 메시지 스타일', type:'textarea', rows:3},
+    {key:'real_needs',              label:'진짜 니즈',           type:'textarea', rows:3},
+    {key:'recent_issues',           label:'최근 이슈',           type:'list'},
+  ],
+  strategy: [
+    {key:'core_problem',       label:'핵심 문제',   type:'textarea', rows:4},
+    {key:'crisis_statement',   label:'위기 선언',   type:'textarea', rows:3},
+    {key:'current_situation',  label:'현황 분석',   type:'textarea', rows:4},
+    {key:'solution_direction', label:'해결 방향',   type:'textarea', rows:4},
+    {key:'expected_effects',   label:'기대 효과',   type:'list'},
+    {key:'persuasion_structure',label:'설득 구조',  type:'list'},
+  ],
+  creative: [
+    {key:'concept',           label:'컨셉명',        type:'text'},
+    {key:'concept_description',label:'컨셉 설명',   type:'textarea', rows:3},
+    {key:'confirmed_slogan',  label:'확정 슬로건',   type:'text'},
+    {key:'slogans',           label:'슬로건 후보',   type:'list'},
+    {key:'tone_keywords',     label:'톤 키워드',     type:'list'},
+    {key:'tone_description',  label:'톤앤매너 설명', type:'textarea', rows:3},
+    {key:'visual_direction',  label:'비주얼 방향',   type:'textarea', rows:3},
+    {key:'forbidden',         label:'금지 표현',     type:'list'},
+  ],
+  plan: [
+    {key:'episodes', label:'에피소드 기획', type:'list-obj', fields:[
+      {key:'title',           label:'제목',         type:'text'},
+      {key:'core_message',    label:'핵심 메시지',  type:'textarea', rows:2},
+      {key:'target_audience', label:'타겟',         type:'text'},
+      {key:'key_scene',       label:'핵심 장면',    type:'textarea', rows:2},
+      {key:'differentiation', label:'차별화 포인트',type:'textarea', rows:2},
+    ]},
+    {key:'series_plan', label:'시리즈 기획 (JSON)', type:'json', rows:4},
+    {key:'budget_plan', label:'예산 계획 (JSON)',   type:'json', rows:4},
+  ],
+  script: null, // 별도 처리
+  platform: [
+    {key:'platforms',        label:'플랫폼 목록', type:'list'},
+    {key:'youtube_strategy', label:'유튜브 전략', type:'textarea', rows:4},
+    {key:'sns_strategy',     label:'SNS 전략',    type:'textarea', rows:4},
+  ],
+  marketing: [
+    {key:'reporting_system', label:'보고 체계',   type:'textarea', rows:3},
+    {key:'platforms',        label:'플랫폼 목록', type:'list'},
+  ],
+};
 
-  if (_editMode[stepKey]) {
-    cancelStepEdit(stepKey);
-    return;
+// ── 헬퍼 ──
+function efEsc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function efListItem(val) {
+  return `<div class="ef-li"><textarea class="ef-textarea" rows="2">${efEsc(val)}</textarea><button type="button" class="ef-del" onclick="this.closest('.ef-li').remove()">✕</button></div>`;
+}
+
+function efObjItem(fields, data, idx) {
+  const inner = fields.map(f => {
+    const v = data ? String(data[f.key] ?? '') : '';
+    const inp = f.type === 'textarea'
+      ? `<textarea class="ef-textarea" rows="${f.rows||2}" data-k="${f.key}">${efEsc(v)}</textarea>`
+      : `<input type="text" class="ef-input" data-k="${f.key}" value="${efEsc(v)}">`;
+    return `<div class="ef-subfield"><label class="ef-sublabel">${f.label}</label>${inp}</div>`;
+  }).join('');
+  return `<div class="ef-obj-item">
+    <div class="ef-obj-hd"><span>${idx+1}번</span>
+      <button type="button" class="ef-del" onclick="this.closest('.ef-obj-item').remove()">✕ 삭제</button></div>
+    <div class="ef-obj-body">${inner}</div></div>`;
+}
+
+function addObjItem(listId, stepKey, fieldKey) {
+  const container = document.getElementById(listId);
+  if (!container) return;
+  const schema = EF_SCHEMAS[stepKey] || [];
+  const fd = schema.find(f => f.key === fieldKey);
+  if (!fd) return;
+  const idx = container.querySelectorAll('.ef-obj-item').length;
+  container.insertAdjacentHTML('beforeend', efObjItem(fd.fields, null, idx));
+}
+
+// ── 폼 빌더 ──
+function efBuildField(stepKey, f, data) {
+  const val = data != null ? (data[f.key] ?? '') : '';
+  let body = '';
+
+  if (f.type === 'text') {
+    body = `<input type="text" id="ef-${stepKey}-${f.key}" class="ef-input" value="${efEsc(String(val))}">`;
+  } else if (f.type === 'textarea') {
+    body = `<textarea id="ef-${stepKey}-${f.key}" class="ef-textarea" rows="${f.rows||4}">${efEsc(String(val))}</textarea>`;
+  } else if (f.type === 'json') {
+    const jv = (val && typeof val === 'object') ? JSON.stringify(val, null, 2) : String(val||'');
+    body = `<textarea id="ef-${stepKey}-${f.key}" class="ef-textarea ef-json" rows="${f.rows||4}">${efEsc(jv)}</textarea>`;
+  } else if (f.type === 'list') {
+    const items = Array.isArray(val) ? val : [];
+    const listId = `ef-list-${stepKey}-${f.key}`;
+    const listHtml = items.map(it => efListItem(typeof it === 'object' ? JSON.stringify(it) : String(it))).join('');
+    body = `<div class="ef-list" id="${listId}">${listHtml}</div>
+      <button type="button" class="ef-add"
+        onclick="document.getElementById('${listId}').insertAdjacentHTML('beforeend',efListItem(''))">+ 추가</button>`;
+  } else if (f.type === 'list-obj') {
+    const items = Array.isArray(val) ? val : [];
+    const listId = `ef-list-${stepKey}-${f.key}`;
+    const listHtml = items.map((it, i) => efObjItem(f.fields, it, i)).join('');
+    body = `<div class="ef-list" id="${listId}">${listHtml}</div>
+      <button type="button" class="ef-add"
+        onclick="addObjItem('${listId}','${stepKey}','${f.key}')">+ 추가</button>`;
   }
 
-  // 현재 오버라이드 또는 원본 데이터 로드
+  return `<div class="ef-field"><label class="ef-label">${f.label}</label>${body}</div>`;
+}
+
+function efBuildForm(stepKey, data) {
+  if (stepKey === 'script') return efBuildScriptForm(data);
+  const schema = EF_SCHEMAS[stepKey];
+  if (!schema) {
+    // JSON 폴백
+    const v = efEsc(JSON.stringify(data || {}, null, 2));
+    return `<div class="ef-field"><label class="ef-label">JSON 수정</label>
+      <textarea id="ef-${stepKey}-__json" class="ef-textarea ef-json" rows="16" style="font-family:monospace;font-size:12px;">${v}</textarea></div>`;
+  }
+  return schema.map(f => efBuildField(stepKey, f, data)).join('');
+}
+
+// 시나리오 전용 폼
+function efBuildScriptForm(rawData) {
+  const episodes = (() => {
+    if (!rawData) return [];
+    if (Array.isArray(rawData))
+      return rawData.map(ep => ({ep: ep.episode_number||1, title: ep.episode_title||'', sc: ep.script||{}}));
+    if (rawData.scripts)
+      return rawData.scripts.map(sc => ({ep: sc.episode||1, title: sc.title||'', sc}));
+    return [];
+  })();
+
+  if (!episodes.length) return '<p style="color:#9ca3af;font-size:13px;">시나리오 데이터가 없습니다.</p>';
+
+  return episodes.map(({ep, title, sc}) => {
+    const hookLine = (sc.opening_hook && sc.opening_hook.hook_line) || '';
+    const scenes = sc.scenes || [];
+    const scenesHtml = scenes.map((s, si) => `
+      <div class="ef-scene-item">
+        <div class="ef-scene-num">S#${s.scene_number||si+1}${s.timecode?' ('+s.timecode+')':''}</div>
+        <div class="ef-subfield"><label class="ef-sublabel">나레이션</label>
+          <textarea class="ef-textarea" data-k="narration" rows="3">${efEsc(s.narration||'')}</textarea></div>
+        <div class="ef-subfield"><label class="ef-sublabel">대사</label>
+          <textarea class="ef-textarea" data-k="dialogue" rows="2">${efEsc(s.dialogue||'')}</textarea></div>
+        <div class="ef-subfield"><label class="ef-sublabel">화면 묘사</label>
+          <textarea class="ef-textarea" data-k="visual" rows="2">${efEsc(s.visual||'')}</textarea></div>
+        <div class="ef-subfield"><label class="ef-sublabel">자막</label>
+          <input type="text" class="ef-input" data-k="caption" value="${efEsc(s.caption||'')}"></div>
+      </div>`).join('');
+
+    const iqItems = (sc.interview_questions||[]).map(q=>efListItem(q)).join('');
+    const ctaText = sc.closing_cta ? (sc.closing_cta.cta_direction||sc.closing_cta.cta_text||'') : '';
+
+    return `<div class="ef-ep-block" data-ep="${ep}">
+      <div class="ef-ep-hd">${ep}편</div>
+      <div class="ef-field"><label class="ef-label">제목</label>
+        <input type="text" class="ef-input" data-k="title" value="${efEsc(title)}"></div>
+      <div class="ef-field"><label class="ef-label">오프닝 훅</label>
+        <input type="text" class="ef-input" data-k="opening_hook" value="${efEsc(hookLine)}"></div>
+      <div class="ef-field"><label class="ef-label">씬 구성</label>${scenesHtml||'<p style="color:#9ca3af;font-size:12px;">씬 없음</p>'}</div>
+      <div class="ef-field"><label class="ef-label">인터뷰 질문</label>
+        <div class="ef-list" data-listk="interview_questions">${iqItems}</div>
+        <button type="button" class="ef-add"
+          onclick="this.previousElementSibling.insertAdjacentHTML('beforeend',efListItem(''))">+ 추가</button></div>
+      <div class="ef-field"><label class="ef-label">클로징 CTA</label>
+        <textarea class="ef-textarea" data-k="closing_cta" rows="2">${efEsc(ctaText)}</textarea></div>
+    </div>`;
+  }).join('');
+}
+
+// ── 폼 수집 ──
+function efCollect(stepKey, container) {
+  if (stepKey === 'script') return efCollectScript(container);
+  const schema = EF_SCHEMAS[stepKey];
+  if (!schema) {
+    const ta = container.querySelector('.ef-json');
+    if (ta) { try { return JSON.parse(ta.value); } catch { return {}; } }
+    return {};
+  }
+  const result = {};
+  for (const f of schema) {
+    if (f.type === 'text' || f.type === 'textarea') {
+      const el = container.querySelector(`#ef-${stepKey}-${f.key}`);
+      if (el) result[f.key] = el.value;
+    } else if (f.type === 'json') {
+      const el = container.querySelector(`#ef-${stepKey}-${f.key}`);
+      if (el && el.value.trim()) {
+        try { result[f.key] = JSON.parse(el.value); } catch { result[f.key] = el.value; }
+      }
+    } else if (f.type === 'list') {
+      const list = container.querySelector(`#ef-list-${stepKey}-${f.key}`);
+      if (list) result[f.key] = Array.from(list.querySelectorAll('.ef-li .ef-textarea')).map(t=>t.value.trim()).filter(Boolean);
+    } else if (f.type === 'list-obj') {
+      const list = container.querySelector(`#ef-list-${stepKey}-${f.key}`);
+      if (list) {
+        result[f.key] = Array.from(list.querySelectorAll('.ef-obj-item')).map(item => {
+          const obj = {};
+          item.querySelectorAll('[data-k]').forEach(el => { obj[el.dataset.k] = el.value; });
+          return obj;
+        });
+      }
+    }
+  }
+  return result;
+}
+
+function efCollectScript(container) {
+  const scripts = Array.from(container.querySelectorAll('.ef-ep-block')).map(epEl => {
+    const ep = parseInt(epEl.dataset.ep) || 1;
+    const titleEl = epEl.querySelector('[data-k="title"]');
+    const hookEl  = epEl.querySelector('[data-k="opening_hook"]');
+    const ctaEl   = epEl.querySelector('[data-k="closing_cta"]');
+    const scenes  = Array.from(epEl.querySelectorAll('.ef-scene-item')).map((sc, si) => {
+      const obj = {scene_number: si+1};
+      sc.querySelectorAll('[data-k]').forEach(el => { obj[el.dataset.k] = el.value; });
+      return obj;
+    });
+    const iqContainer = epEl.querySelector('[data-listk="interview_questions"]');
+    const iqList = iqContainer
+      ? Array.from(iqContainer.querySelectorAll('.ef-textarea')).map(t=>t.value.trim()).filter(Boolean)
+      : [];
+    return {
+      episode: ep,
+      title:   titleEl ? titleEl.value : '',
+      opening_hook: {hook_line: hookEl ? hookEl.value : ''},
+      scenes,
+      interview_questions: iqList,
+      closing_cta: {cta_direction: ctaEl ? ctaEl.value : ''},
+    };
+  });
+  return {scripts};
+}
+
+// ── 수정 모드 토글 ──
+async function toggleEditMode(stepKey) {
+  const overlay   = document.getElementById(`edit-overlay-${stepKey}`);
+  const container = document.getElementById(`ef-container-${stepKey}`);
+  const btn       = document.getElementById(`edit-btn-${stepKey}`);
+  if (!overlay) return;
+
+  if (_editMode[stepKey]) { cancelStepEdit(stepKey); return; }
+
+  // 오버라이드 또는 원본 데이터 로드
+  let data = _STEP_DATA[stepKey] || null;
   try {
     const r = await fetch(`/api/step_content/${_DETAIL_CASE_ID}/${stepKey}`);
     const d = await r.json();
-    const content = (d.override && d.override.content) ? d.override.content : {};
-    textarea.value = JSON.stringify(content, null, 2);
-  } catch(e) {
-    textarea.value = '{}';
-  }
+    if (d.override && d.override.content && Object.keys(d.override.content).length) {
+      data = d.override.content;
+    }
+  } catch(e) { /* 원본 사용 */ }
+
+  if (container) container.innerHTML = efBuildForm(stepKey, data);
 
   overlay.style.display = '';
-  btn.textContent = '✕ 취소';
-  btn.style.background = '#fee2e2';
-  btn.style.color = '#dc2626';
-  btn.style.border = '1px solid #fca5a5';
+  if (btn) {
+    btn.textContent = '✕ 취소';
+    btn.style.background = '#fee2e2';
+    btn.style.color = '#dc2626';
+    btn.style.border = '1px solid #fca5a5';
+  }
   _editMode[stepKey] = true;
 }
 
@@ -1330,19 +1643,15 @@ function cancelStepEdit(stepKey) {
 }
 
 async function saveStepEdit(stepKey) {
-  const textarea = document.getElementById(`edit-textarea-${stepKey}`);
-  let content;
-  try {
-    content = JSON.parse(textarea.value);
-  } catch(e) {
-    alert('JSON 형식 오류: ' + e.message);
-    return;
-  }
+  const container = document.getElementById(`ef-container-${stepKey}`);
+  if (!container) return;
+  const content = efCollect(stepKey, container);
+  if (!content || typeof content !== 'object') { alert('데이터 수집 오류'); return; }
   try {
     const r = await fetch(`/update_step_content/${_DETAIL_CASE_ID}/${stepKey}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({content}),
     });
     const d = await r.json();
     if (d.ok) {
