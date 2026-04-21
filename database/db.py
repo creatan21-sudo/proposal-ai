@@ -475,6 +475,18 @@ def save_script(client_name: str, project_name: str, script: dict,
                 case_id: int = 0) -> int:
     """편별 대본 저장. 편마다 한 행씩 저장."""
     import json
+
+    def _scalar(v, default=""):
+        """dict/list → JSON 문자열로 변환, 나머지는 원본 반환."""
+        if isinstance(v, (dict, list)):
+            return json.dumps(v, ensure_ascii=False)
+        return v if v is not None else default
+
+    ep_raw = script.get("episode", 0)
+    ep_num = ep_raw if isinstance(ep_raw, int) else (
+        int(ep_raw) if isinstance(ep_raw, str) and ep_raw.isdigit() else 0
+    )
+
     with get_connection() as conn:
         cursor = conn.execute(
             """INSERT INTO script_results
@@ -485,10 +497,10 @@ def save_script(client_name: str, project_name: str, script: dict,
                 datetime.now().isoformat(),
                 client_name,
                 project_name,
-                script.get("episode", 0),
-                script.get("title", ""),
-                script.get("format", "longform"),
-                script.get("duration", ""),
+                ep_num,
+                _scalar(script.get("title", "")),
+                _scalar(script.get("format", "longform")),
+                _scalar(script.get("duration", "")),
                 json.dumps(script, ensure_ascii=False),
                 case_id,
             ),

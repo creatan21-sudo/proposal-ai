@@ -126,6 +126,8 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
                 script = _fallback_script(idx, ep_plan)
 
         scripts.append(script)
+        scenes_count = len(script.get("scenes", []))
+        print(f"  [대본] {ep_num}편 scenes: {scenes_count}개")
 
         # 편별 DB 저장
         try:
