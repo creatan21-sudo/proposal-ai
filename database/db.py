@@ -241,7 +241,9 @@ def init_db() -> None:
                 image_url        TEXT    DEFAULT '',
                 scene_description TEXT   DEFAULT '',
                 style            TEXT    DEFAULT 'line',
-                created_at       TEXT    NOT NULL
+                created_at       TEXT    NOT NULL,
+                client_name      TEXT    DEFAULT '',
+                project_name     TEXT    DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS step_content_overrides (
@@ -281,6 +283,8 @@ def init_db() -> None:
             "ALTER TABLE plan_results ADD COLUMN case_id INTEGER DEFAULT 0",
             "ALTER TABLE final_proposals ADD COLUMN case_id INTEGER DEFAULT 0",
             "ALTER TABLE research_cache ADD COLUMN project_name TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE storyboard_results ADD COLUMN client_name TEXT DEFAULT ''",
+            "ALTER TABLE storyboard_results ADD COLUMN project_name TEXT DEFAULT ''",
         ]:
             try:
                 conn.execute(migration)
