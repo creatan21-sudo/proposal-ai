@@ -197,20 +197,8 @@ evaluation_criteria: 없으면 빈 배열 []. 배점 높은 순으로 정렬."""
     try:
         result = claude_client.call_json(prompt, max_tokens=3000, _validate=False)
     except Exception as e:
-        # call_json 3단계 폴백 모두 실패 → 원시 응답에서 {} 블록 직접 추출 시도
         print(f"  [rfp_quick_extract] call_json 실패: {e}")
-        raw = getattr(e, "__cause__", None)
-        raw_text = str(raw) if raw else ""
-        m = re.search(r"\{.*\}", raw_text, re.DOTALL)
-        if m:
-            try:
-                from json_repair import repair_json
-                result = json.loads(repair_json(m.group()))
-            except Exception as e2:
-                print(f"  [rfp_quick_extract] 중괄호 블록 파싱도 실패: {e2}")
-                return _empty
-        else:
-            return _empty
+        return _empty
 
     # 타입 보정
     if "quantity" in result:

@@ -1,15 +1,13 @@
 # core/claude_client.py
 # 역할: Claude API 호출 공통 래퍼
 # - 모든 에이전트가 이 모듈을 통해 API 호출
-# - JSON 파싱, 재시도, 오류처리 일괄 담당
+# - tool use(function calling)로 JSON 출력 강제 — 파싱 실패 없음
+# - 재시도, 오류처리 일괄 담당
 
-import json
 import os
-import re
 import threading
 import time
 import anthropic
-from json_repair import repair_json
 from config import DEFAULT_MODEL, MAX_TOKENS
 
 _client: anthropic.Anthropic | None = None
@@ -26,6 +24,21 @@ _CITATION_SYSTEM = """[출처 기재 규칙 — 절대 준수]
 • 출처 불명 정보는 (출처 불명 — 검증 필요) 로 명시하거나 해당 항목을 삭제하라.
 • '자체 분석', '자체 추정', '~로 알려진' 등 모호한 표현 단독 사용 금지.
 • 위 규칙을 위반한 수치·통계는 검수 단계에서 모두 제거된다."""
+
+# ── tool use에 사용할 공통 도구 정의 ──
+# 스키마를 비워두면 Claude가 프롬프트에서 요청한 필드를 자유롭게 반환
+_RESULT_TOOL = {
+    "name": "return_result",
+    "description": (
+        "작업 결과를 구조화된 JSON으로 반환합니다. "
+        "프롬프트에서 요청한 모든 필드를 빠짐없이 포함해야 합니다."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {}
+    },
+}
+_TOOL_CHOICE = {"type": "tool", "name": "return_result"}
 
 
 class OverloadError(RuntimeError):
@@ -75,14 +88,14 @@ def get_client() -> anthropic.Anthropic:
 def call(prompt: str, model: str = DEFAULT_MODEL, max_tokens: int = MAX_TOKENS,
          max_retries: int = _MAX_RETRIES, _skip_citation: bool = False,
          temperature: float | None = None) -> str:
-    """Claude API 호출 후 응답 텍스트 반환.
+    """Claude API 호출 후 응답 텍스트 반환 (비JSON 텍스트 전용).
 
     Args:
         prompt: 사용자 프롬프트
         model: 사용할 Claude 모델명
         max_tokens: 최대 토큰 수
         max_retries: 429/529 시 최대 재시도 횟수 (기본 3)
-        _skip_citation: 내부 재시도용 — True이면 출처 규칙 시스템 프롬프트 생략
+        _skip_citation: True이면 출처 규칙 시스템 프롬프트 생략
         temperature: API temperature (None이면 기본값 사용)
 
     Returns:
@@ -146,186 +159,124 @@ def call(prompt: str, model: str = DEFAULT_MODEL, max_tokens: int = MAX_TOKENS,
 def call_json(prompt: str, model: str = DEFAULT_MODEL, max_tokens: int = MAX_TOKENS,
               max_retries: int = _MAX_RETRIES, _validate: bool = True,
               progress_fn=None, label: str = "") -> dict:
-    """Claude API 호출 후 JSON 파싱 결과 반환.
+    """tool use(function calling)로 JSON 결과를 강제 반환.
 
-    파싱 전략 (최대 3회 시도):
-      각 시도에서:
-        1. 표준 json.loads
-        2. json_repair 라이브러리로 자동 복구
-        3. Claude에게 "JSON만 다시 출력해줘" 재요청
-      재시도마다 temperature 낮춤: 기본 → 0.5 → 0.1
-      재시도 시 "반드시 JSON만 출력, 한국어 설명 절대 금지" 강조 프롬프트 추가.
-    완전 실패 시: {"_raw": ..., "_parse_failed": True} 반환 (예외 없이 계속 진행).
+    tool_choice={"type":"tool","name":"return_result"}로 Claude가
+    반드시 구조화된 dict를 반환하게 강제합니다 — 파싱 실패 없음.
 
     Args:
-        prompt: JSON 응답을 요청하는 프롬프트
-        model: 사용할 Claude 모델명
-        max_tokens: 최대 토큰 수 (기본 8192)
-        max_retries: 429/529 시 최대 재시도 횟수 (기본 3)
-        _validate: 빈 필드 자동 재시도 활성화 (기본 True)
-        progress_fn: SSE 이벤트 콜백 (선택) — 재시도/실패 시 사용자에게 알림
-        label: SSE 메시지에 포함할 스텝 이름 (예: "시나리오", "기획")
+        prompt:      프롬프트 (원하는 JSON 구조를 설명)
+        model:       Claude 모델명
+        max_tokens:  최대 토큰 수 (기본 8192)
+        max_retries: 429/529 시 최대 재시도 횟수
+        _validate:   빈 필드 자동 보완 활성화 (기본 True)
+        progress_fn: SSE 콜백 — API 오류 시 사용자에게 알림
+        label:       SSE 메시지에 포함할 스텝 이름 (예: "시나리오", "기획")
 
     Returns:
-        파싱된 dict. 완전 실패 시 {"_raw": str, "_parse_failed": True}
+        Claude가 반환한 dict. API 완전 실패 시 {"_parse_failed": True}.
     """
     if max_tokens == MAX_TOKENS:
         max_tokens = 8192
 
     _pfx = f"[{label}] " if label else ""
 
-    def _notify(msg: str, is_error: bool = False):
+    def _notify(msg: str) -> None:
         print(msg)
         if progress_fn:
             try:
-                progress_fn({
-                    "type": "log",
-                    "message": msg,
-                })
+                progress_fn({"type": "log", "message": msg})
             except Exception:
                 pass
 
-    _JSON_RETRY_NOTE = (
-        "\n\n⚠️ 이전 응답을 JSON으로 파싱할 수 없었습니다. "
-        "반드시 JSON만 출력하세요. "
-        "한국어 설명·안내문·사과문 절대 금지. "
-        "마크다운 코드블록(```json ```) 절대 금지. "
-        "첫 글자는 반드시 { 이어야 하고 마지막 글자는 반드시 } 이어야 합니다. "
-        "JSON 외 어떤 문자도 출력하지 마세요."
-    )
-    _TEMPS = [None, 0.5, 0.1]   # None = API 기본값
+    client = get_client()
+    last_exc = None
 
-    last_raw = ""
-
-    for attempt in range(3):
-        cur_prompt = prompt if attempt == 0 else (prompt + _JSON_RETRY_NOTE)
-        cur_temp   = _TEMPS[attempt]
-
+    for attempt in range(1, max_retries + 1):
         try:
-            raw = call(cur_prompt, model=model, max_tokens=max_tokens,
-                       max_retries=max_retries, temperature=cur_temp)
-            last_raw = raw
-            result = _extract_json(raw, prompt=prompt, model=model, max_tokens=max_tokens)
+            resp = client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                system=_CITATION_SYSTEM,
+                tools=[_RESULT_TOOL],
+                tool_choice=_TOOL_CHOICE,
+                messages=[{"role": "user", "content": prompt}],
+            )
+
+            result = None
+            for block in resp.content:
+                if getattr(block, "type", None) == "tool_use" \
+                        and getattr(block, "name", None) == "return_result":
+                    result = block.input
+                    break
+
+            if result is None:
+                raise ValueError("tool_use 응답 블록 없음")
+            if not isinstance(result, dict):
+                result = {"_raw": result}
+
             if _validate:
                 result = _validate_and_retry(result, prompt, model, max_tokens)
-            return result
-        except (ValueError, json.JSONDecodeError):
-            if attempt < 2:
-                next_t = _TEMPS[attempt + 1]
-                _notify(f"  [JSON] {_pfx}파싱 실패 (시도 {attempt+1}/3) — 재시도 중... (temperature={next_t})")
-            else:
-                _notify(f"  [JSON] {_pfx}3회 모두 실패 — raw 텍스트로 대체 (파이프라인 계속)")
-        except Exception:
-            raise  # OverloadError 등은 그대로 전파
 
-    _notify(f"  [JSON] {_pfx}경고: raw 저장됨 (앞 200자): {last_raw[:200]}")
+            return result
+
+        except anthropic.RateLimitError as e:
+            last_exc = e
+            if attempt < max_retries:
+                _notify(f"  [Rate Limit] {_pfx}{attempt}/{max_retries}회 — {_RETRY_WAIT_SEC}초 후 재시도...")
+                _fire_retry_cb(attempt, max_retries, 429, _RETRY_WAIT_SEC)
+                time.sleep(_RETRY_WAIT_SEC)
+            else:
+                _notify(f"  [Rate Limit] {_pfx}최대 재시도 횟수 초과")
+
+        except anthropic.APIStatusError as e:
+            if e.status_code in (424, 429, 529):
+                last_exc = e
+                wait = 10 if e.status_code == 424 else _RETRY_WAIT_SEC
+                if attempt < max_retries:
+                    _notify(f"  [API {e.status_code}] {_pfx}{attempt}/{max_retries}회 — {wait}초 후 재시도...")
+                    _fire_retry_cb(attempt, max_retries, e.status_code, wait)
+                    time.sleep(wait)
+                else:
+                    _notify(f"  [API {e.status_code}] {_pfx}최대 재시도 횟수 초과")
+            elif e.status_code == 400:
+                body = getattr(e, "body", None) or {}
+                msg = body.get("error", {}).get("message", str(e)) if isinstance(body, dict) else str(e)
+                if "credit balance" in msg.lower() or "billing" in msg.lower():
+                    raise RuntimeError(
+                        f"Anthropic API 크레딧 부족 — 충전 후 재시도하세요.\n"
+                        f"충전: https://console.anthropic.com/settings/billing\n"
+                        f"원본 오류: {msg}"
+                    ) from e
+                raise
+            else:
+                raise
+
+        except ValueError as e:
+            # tool_use 블록 구조 오류 (거의 발생 안 함)
+            _notify(f"  [tool_use] {_pfx}응답 구조 오류 (시도 {attempt}/{max_retries}): {e}")
+            last_exc = e
+            if attempt >= max_retries:
+                break
+
+    code = getattr(last_exc, "status_code", 0) if last_exc else 0
+    if code in (429, 529):
+        raise OverloadError(code, max_retries) from last_exc
+
     if progress_fn and label:
         try:
             progress_fn({
                 "type": "log",
-                "message": f"❌ {label} 생성 실패 — JSON 응답을 받지 못했습니다. 재실행을 시도하세요.",
+                "message": f"❌ {label} 생성 실패 — API 오류. 재실행을 시도하세요.",
             })
         except Exception:
             pass
-    return {"_raw": last_raw, "_parse_failed": True}
+    return {"_parse_failed": True}
 
 
-def _extract_json(
-    raw: str,
-    prompt: str = None,
-    model: str = DEFAULT_MODEL,
-    max_tokens: int = 8192,
-) -> dict:
-    """응답 텍스트에서 JSON 객체 추출 및 파싱 (3단계 폴백).
-
-    1단계: 표준 json.loads
-    2단계: json_repair 자동 복구
-    3단계: Claude 재요청
-    """
-    if not raw:
-        raise ValueError("API 응답이 비어 있습니다.")
-
-    # ── 공통 전처리: 마크다운 코드블록 제거, JSON 객체 범위 추출 ──
-    cleaned = _strip_markdown(raw)
-    json_str = _extract_object(cleaned)
-
-    if not json_str:
-        # 중괄호가 아예 없는 경우 → 바로 3단계로
-        return _fallback_ask_claude(raw, prompt, model, max_tokens)
-
-    # ── 전처리: 문자열 내 닫히지 않은 괄호 보정 ──
-    json_str = _close_unclosed_parens(json_str)
-
-    # ── 1단계: 표준 파싱 ──
-    try:
-        return json.loads(json_str)
-    except json.JSONDecodeError:
-        pass
-
-    # ── 2단계: json_repair 복구 ──
-    try:
-        repaired = repair_json(json_str, return_objects=True)
-        if isinstance(repaired, dict) and repaired:
-            print("  [JSON] json_repair로 복구 성공")
-            return repaired
-    except Exception:
-        pass
-
-    # repair_json이 문자열 반환한 경우 재파싱
-    try:
-        repaired_str = repair_json(json_str)
-        result = json.loads(repaired_str)
-        if isinstance(result, dict) and result:
-            print("  [JSON] json_repair로 복구 성공")
-            return result
-    except Exception:
-        pass
-
-    # ── 3단계: Claude 재요청 ──
-    return _fallback_ask_claude(raw, prompt, model, max_tokens)
-
-
-def _fallback_ask_claude(
-    raw: str,
-    prompt: str | None,
-    model: str,
-    max_tokens: int,
-) -> dict:
-    """Claude에게 JSON만 다시 출력해달라고 재요청."""
-    print("  [JSON] 파싱 실패 → Claude에게 JSON 재출력 요청 중...")
-
-    retry_prompt = (
-        "아래 텍스트에서 JSON 객체만 정확히 추출해서 출력해줘.\n"
-        "마크다운 코드블록, 설명 텍스트 없이 순수 JSON만 출력해야 해.\n"
-        "특수문자(—, ·, «», 등)가 있다면 안전한 유니코드로 유지해줘.\n\n"
-        f"[원본 텍스트]\n{raw[:6000]}"
-    )
-
-    try:
-        retry_raw = call(retry_prompt, model=model, max_tokens=max_tokens, _skip_citation=True)
-        cleaned   = _strip_markdown(retry_raw)
-        json_str  = _extract_object(cleaned) or cleaned
-
-        result = json.loads(json_str)
-        print("  [JSON] Claude 재요청으로 복구 성공")
-        return result
-    except json.JSONDecodeError:
-        pass
-
-    # 재요청 결과도 json_repair로 한 번 더 시도
-    try:
-        repaired = repair_json(json_str, return_objects=True)
-        if isinstance(repaired, dict) and repaired:
-            print("  [JSON] Claude 재요청 + json_repair로 복구 성공")
-            return repaired
-    except Exception:
-        pass
-
-    raise ValueError(
-        f"JSON 파싱 3단계 폴백 모두 실패.\n"
-        f"응답 미리보기:\n{raw[:400]}"
-    )
-
+# ─────────────────────────────────────────────
+# 내부 유틸리티
+# ─────────────────────────────────────────────
 
 def _validate_and_retry(
     result: dict,
@@ -334,7 +285,7 @@ def _validate_and_retry(
     max_tokens: int,
     max_retries: int = 2,
 ) -> dict:
-    """JSON 결과에서 빈 문자열 필드를 찾아 재시도. 100자 미만 필드는 경고만."""
+    """JSON 결과에서 빈 문자열 필드를 찾아 tool use로 재시도."""
     empty_fields = _find_empty_fields(result)
     if not empty_fields:
         return result
@@ -347,9 +298,8 @@ def _validate_and_retry(
             f"원본 요청:\n{prompt[:4000]}"
         )
         try:
-            raw = call(retry_prompt, model=model, max_tokens=max_tokens, _skip_citation=True)
-            new_result = _extract_json(raw, model=model, max_tokens=max_tokens)
-            # 빈 필드를 새 결과로 보충
+            new_result = call_json(retry_prompt, model=model, max_tokens=max_tokens,
+                                   _validate=False)
             for field in empty_fields:
                 keys = field.split(".")
                 _deep_set(result, keys, _deep_get(new_result, keys))
@@ -358,15 +308,13 @@ def _validate_and_retry(
 
         remaining = _find_empty_fields(result)
         if not remaining:
-            print(f"  [품질검사] 재시도 성공 — 모든 빈 필드 채움")
+            print("  [품질검사] 재시도 성공 — 모든 빈 필드 채움")
             break
         empty_fields = remaining
 
-    # 재시도 후에도 남은 빈 필드 로그
     for field in _find_empty_fields(result):
         print(f"  [품질검사] 경고: {field} 비어있음 (재시도 소진)")
 
-    # 100자 미만 문자열 필드 경고
     _warn_short_fields(result)
     return result
 
@@ -416,53 +364,3 @@ def _deep_set(obj: dict, keys: list, value) -> None:
     last = keys[-1]
     if last in obj and obj[last] == "":
         obj[last] = value
-
-
-def _close_unclosed_parens(text: str) -> str:
-    """JSON 문자열 값 내 닫히지 않은 괄호 자동 보정.
-
-    Claude가 (출처, 2025 처럼 닫는 괄호 없이 문자열을 끝내면
-    json_repair가 해당 지점에서 내용을 잘라낼 수 있다.
-    패턴: ( ... ) 없이 " 로 닫히는 경우 → ) 자동 삽입.
-    """
-    return re.sub(r'\(([^)"]{1,100})(?=")', r'(\1)', text)
-
-
-def _strip_markdown(text: str) -> str:
-    """마크다운 코드블록 및 앞뒤 공백 제거."""
-    text = re.sub(r"```(?:json)?\s*", "", text)
-    text = text.replace("```", "")
-    return text.strip()
-
-
-def _extract_object(text: str) -> str | None:
-    """가장 바깥쪽 { } 범위를 추출. 중첩 괄호 정확히 처리."""
-    start = text.find("{")
-    if start == -1:
-        return None
-
-    depth = 0
-    in_string = False
-    escape_next = False
-
-    for i, ch in enumerate(text[start:], start):
-        if escape_next:
-            escape_next = False
-            continue
-        if ch == "\\" and in_string:
-            escape_next = True
-            continue
-        if ch == '"' and not escape_next:
-            in_string = not in_string
-            continue
-        if in_string:
-            continue
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return text[start: i + 1]
-
-    # 닫는 괄호 없이 끝남 → 마지막까지 반환 (repair_json이 처리)
-    return text[start:]
