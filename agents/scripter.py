@@ -16,6 +16,7 @@
 # 시리즈 (2편 이상): 편간 클리프행어/복선 후처리 패스
 
 import concurrent.futures
+import json
 import re
 import threading
 
@@ -213,8 +214,12 @@ def _generate_longform_outline(
     # 1단계: 메타데이터 JSON (작은 호출)
     meta_prompt = _build_meta_only_prompt(dna, ep_plan, ep_num, all_plans if is_sample else [], is_series)
     meta = claude_client.call_json(meta_prompt, max_tokens=250, _validate=False)
+    print(f"  [대본 raw] {json.dumps(meta, ensure_ascii=False)[:500]}")
     if meta.get("_parse_failed"):
         meta = {}
+    # 중첩 "script" 키 언래핑
+    if "script" in meta and isinstance(meta["script"], dict):
+        meta = meta["script"]
 
     # 2단계: 씬별 개별 텍스트 API 호출 (max_tokens=2000)
     scenes = []
@@ -226,6 +231,13 @@ def _generate_longform_outline(
         scene_obj  = _parse_scene_text_v2(scene_text, scene_num, duration_s, scene_count)
         scenes.append(scene_obj)
         print(f"  [씬] {ep_num}편 S#{scene_num}/{scene_count} 완료 ({len(scene_text)}자)")
+
+    # meta에서 scenes가 직접 반환된 경우도 처리 (중첩 구조 방어)
+    if not scenes:
+        scenes = (meta.get("scenes")
+                  or meta.get("scene_list")
+                  or meta.get("cuts")
+                  or [])
 
     result = {
         "episode":             ep_num,
@@ -493,14 +505,40 @@ def _generate_shortform_outline(
     )
 
     raw = claude_client.call_json(prompt, max_tokens=500, _validate=False)
+    print(f"  [대본 raw] {json.dumps(raw, ensure_ascii=False)[:500]}")
+
+    # 중첩 "script" 키 언래핑
+    if "script" in raw and isinstance(raw["script"], dict):
+        raw = raw["script"]
+
     raw.setdefault("episode",  ep_num)
     raw.setdefault("title",    ep_plan.get("title", f"{ep_num}편"))
     raw.setdefault("format",   "shortform")
     raw.setdefault("duration", dna.duration)
     raw.setdefault("versions", {})
-    raw.setdefault("scenes",   [])
     raw.setdefault("closing_cta", {})
     raw.setdefault("series_hook", {})
+
+    # scenes: 여러 키 이름 시도
+    top_scenes = (raw.get("scenes")
+                  or raw.get("scene_list")
+                  or raw.get("cuts")
+                  or [])
+
+    # 숏폼은 scenes가 versions 안에 있으므로 플래튼
+    if not top_scenes:
+        versions = raw.get("versions") or {}
+        for ver_key in ("30sec", "60sec", "15sec"):
+            ver = versions.get(ver_key) or {}
+            candidate = (ver.get("scenes")
+                         or ver.get("scene_list")
+                         or ver.get("cuts")
+                         or [])
+            if candidate:
+                top_scenes = candidate
+                break
+
+    raw["scenes"] = top_scenes
 
     versions = raw.get("versions") or {}
     if versions:
