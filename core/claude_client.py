@@ -144,7 +144,8 @@ def call(prompt: str, model: str = DEFAULT_MODEL, max_tokens: int = MAX_TOKENS,
 
 
 def call_json(prompt: str, model: str = DEFAULT_MODEL, max_tokens: int = MAX_TOKENS,
-              max_retries: int = _MAX_RETRIES, _validate: bool = True) -> dict:
+              max_retries: int = _MAX_RETRIES, _validate: bool = True,
+              progress_fn=None, label: str = "") -> dict:
     """Claude API 호출 후 JSON 파싱 결과 반환.
 
     파싱 전략 (최대 3회 시도):
@@ -153,7 +154,7 @@ def call_json(prompt: str, model: str = DEFAULT_MODEL, max_tokens: int = MAX_TOK
         2. json_repair 라이브러리로 자동 복구
         3. Claude에게 "JSON만 다시 출력해줘" 재요청
       재시도마다 temperature 낮춤: 기본 → 0.5 → 0.1
-      재시도 시 "순수 JSON만 반환하라" 프롬프트 추가.
+      재시도 시 "반드시 JSON만 출력, 한국어 설명 절대 금지" 강조 프롬프트 추가.
     완전 실패 시: {"_raw": ..., "_parse_failed": True} 반환 (예외 없이 계속 진행).
 
     Args:
@@ -162,6 +163,8 @@ def call_json(prompt: str, model: str = DEFAULT_MODEL, max_tokens: int = MAX_TOK
         max_tokens: 최대 토큰 수 (기본 8192)
         max_retries: 429/529 시 최대 재시도 횟수 (기본 3)
         _validate: 빈 필드 자동 재시도 활성화 (기본 True)
+        progress_fn: SSE 이벤트 콜백 (선택) — 재시도/실패 시 사용자에게 알림
+        label: SSE 메시지에 포함할 스텝 이름 (예: "시나리오", "기획")
 
     Returns:
         파싱된 dict. 완전 실패 시 {"_raw": str, "_parse_failed": True}
@@ -169,11 +172,26 @@ def call_json(prompt: str, model: str = DEFAULT_MODEL, max_tokens: int = MAX_TOK
     if max_tokens == MAX_TOKENS:
         max_tokens = 8192
 
+    _pfx = f"[{label}] " if label else ""
+
+    def _notify(msg: str, is_error: bool = False):
+        print(msg)
+        if progress_fn:
+            try:
+                progress_fn({
+                    "type": "log",
+                    "message": msg,
+                })
+            except Exception:
+                pass
+
     _JSON_RETRY_NOTE = (
-        "\n\n[이전 응답이 JSON 파싱에 실패했습니다. "
-        "반드시 순수 JSON만 반환하세요. "
-        "텍스트 설명, 마크다운, 코드블록 없이 "
-        "{ }로 시작하고 끝나는 JSON만 반환하세요.]"
+        "\n\n⚠️ 이전 응답을 JSON으로 파싱할 수 없었습니다. "
+        "반드시 JSON만 출력하세요. "
+        "한국어 설명·안내문·사과문 절대 금지. "
+        "마크다운 코드블록(```json ```) 절대 금지. "
+        "첫 글자는 반드시 { 이어야 하고 마지막 글자는 반드시 } 이어야 합니다. "
+        "JSON 외 어떤 문자도 출력하지 마세요."
     )
     _TEMPS = [None, 0.5, 0.1]   # None = API 기본값
 
@@ -194,13 +212,21 @@ def call_json(prompt: str, model: str = DEFAULT_MODEL, max_tokens: int = MAX_TOK
         except (ValueError, json.JSONDecodeError):
             if attempt < 2:
                 next_t = _TEMPS[attempt + 1]
-                print(f"  [JSON] 파싱 실패 (시도 {attempt+1}/3) — temperature={next_t}로 재시도")
+                _notify(f"  [JSON] {_pfx}파싱 실패 (시도 {attempt+1}/3) — 재시도 중... (temperature={next_t})")
             else:
-                print(f"  [JSON] 3회 모두 실패 — raw 텍스트로 대체 (파이프라인 계속)")
+                _notify(f"  [JSON] {_pfx}3회 모두 실패 — raw 텍스트로 대체 (파이프라인 계속)")
         except Exception:
             raise  # OverloadError 등은 그대로 전파
 
-    print(f"  [JSON] 경고: raw 저장됨 (앞 200자): {last_raw[:200]}")
+    _notify(f"  [JSON] {_pfx}경고: raw 저장됨 (앞 200자): {last_raw[:200]}")
+    if progress_fn and label:
+        try:
+            progress_fn({
+                "type": "log",
+                "message": f"❌ {label} 생성 실패 — JSON 응답을 받지 못했습니다. 재실행을 시도하세요.",
+            })
+        except Exception:
+            pass
     return {"_raw": last_raw, "_parse_failed": True}
 
 

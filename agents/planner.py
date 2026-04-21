@@ -59,7 +59,7 @@ _DURATION_BY_QUANTITY = {1: 35, 2: 49, 3: 63, 4: 77, 5: 84}
 # 진입점
 # ─────────────────────────────────────────────
 
-def run(dna: ConceptDNA) -> dict:
+def run(dna: ConceptDNA, progress_fn=None) -> dict:
     """제작 실행 계획 수립.
 
     Args:
@@ -91,7 +91,8 @@ def run(dna: ConceptDNA) -> dict:
     # 3. Claude API로 전체 계획 생성
     print("  제작 계획 생성 중...")
     prompt = _build_prompt(dna, is_youtube, schedule_skeleton, budget_skeleton)
-    result = claude_client.call_json(prompt, max_tokens=8000)
+    result = claude_client.call_json(prompt, max_tokens=8000,
+                                     progress_fn=progress_fn, label="기획")
 
     # DNA 잠금 검증 — 슬로건 미포함 시 재시도 1회
     _locked = getattr(dna, "locked_slogan", "")
