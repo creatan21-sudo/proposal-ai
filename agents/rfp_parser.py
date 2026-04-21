@@ -20,30 +20,6 @@ _MAX_RFP_CHARS = 12000
 
 
 # ─────────────────────────────────────────────
-# JSON 파싱 헬퍼
-# ─────────────────────────────────────────────
-
-def _parse_json(text: str) -> dict:
-    """Claude 텍스트 응답에서 JSON 객체 추출."""
-    text = text.strip()
-    # 마크다운 코드블록 제거
-    text = re.sub(r'^```(?:json)?\s*', '', text)
-    text = re.sub(r'\s*```$', '', text)
-    text = text.strip()
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        start = text.find('{')
-        end = text.rfind('}')
-        if start != -1 and end != -1:
-            try:
-                return json.loads(text[start:end + 1])
-            except json.JSONDecodeError:
-                pass
-    return {}
-
-
-# ─────────────────────────────────────────────
 # 진입점
 # ─────────────────────────────────────────────
 
@@ -219,16 +195,22 @@ evaluation_criteria: 없으면 빈 배열 []. 배점 높은 순으로 정렬."""
               "evaluation_strategy": {"총점": 0, "핵심항목": [], "정량체크리스트": [], "집중공략": ""}}
 
     try:
-        raw = claude_client.call(prompt, max_tokens=6000, _skip_citation=True)
-        result = _parse_json(raw)
-        if not result:
-            print("  [rfp_quick_extract] JSON 파싱 실패 — 빈 결과 반환")
-            return _empty
-        print(f"  [rfp_quick_extract] 결과 키: {list(result.keys())}, "
-              f"evaluation_criteria={len(result.get('evaluation_criteria') or [])}")
+        result = claude_client.call_json(prompt, max_tokens=3000, _validate=False)
     except Exception as e:
-        print(f"  [rfp_quick_extract] 호출 실패: {e}")
-        return _empty
+        # call_json 3단계 폴백 모두 실패 → 원시 응답에서 {} 블록 직접 추출 시도
+        print(f"  [rfp_quick_extract] call_json 실패: {e}")
+        raw = getattr(e, "__cause__", None)
+        raw_text = str(raw) if raw else ""
+        m = re.search(r"\{.*\}", raw_text, re.DOTALL)
+        if m:
+            try:
+                from json_repair import repair_json
+                result = json.loads(repair_json(m.group()))
+            except Exception as e2:
+                print(f"  [rfp_quick_extract] 중괄호 블록 파싱도 실패: {e2}")
+                return _empty
+        else:
+            return _empty
 
     # 타입 보정
     if "quantity" in result:
@@ -577,11 +559,7 @@ def _format_evaluation_criteria(eval_items: list) -> str:
 def _analyze_with_claude(rfp_text: str, dna: ConceptDNA) -> dict:
     """추출된 텍스트 + 사용자 입력으로 RFP 분석."""
     prompt = _build_prompt(rfp_text, dna)
-    raw = claude_client.call(prompt, max_tokens=6000, _skip_citation=True)
-    result = _parse_json(raw)
-    if not result:
-        print("  [rfp_analyze] JSON 파싱 실패 — 빈 dict 반환")
-    return result
+    return claude_client.call_json(prompt, max_tokens=4096)
 
 
 def _build_prompt(rfp_text: str, dna: ConceptDNA) -> str:
@@ -745,8 +723,7 @@ def parse_reference_proposal(file_path: str) -> str:
 }}"""
 
     try:
-        raw = claude_client.call(prompt, max_tokens=3000, _skip_citation=True)
-        result = _parse_json(raw)
+        result = claude_client.call_json(prompt, max_tokens=3000)
         # 6개 항목을 읽기 쉬운 텍스트로 변환
         lines = [
             f"[목차 구성] {result.get('toc_structure', '')}",

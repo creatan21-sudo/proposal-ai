@@ -75,11 +75,9 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
     def _generate_one(idx: int, ep_plan: dict) -> dict:
         ep_num = idx + 1
         if is_short:
-            return _generate_shortform_outline(dna, ep_plan, ep_num, ep_plans, is_series,
-                                               progress_fn=progress_fn)
+            return _generate_shortform_outline(dna, ep_plan, ep_num, ep_plans, is_series)
         is_sample = (ep_num == 1)
-        return _generate_longform_outline(dna, ep_plan, ep_num, ep_plans, is_series, is_sample,
-                                          progress_fn=progress_fn)
+        return _generate_longform_outline(dna, ep_plan, ep_num, ep_plans, is_series, is_sample)
 
     def _fallback_script(idx: int, ep_plan: dict) -> dict:
         ep_num = idx + 1
@@ -197,7 +195,6 @@ def _generate_longform_outline(
     all_plans: list,
     is_series: bool,
     is_sample: bool,
-    progress_fn=None,
 ) -> dict:
     """제안서 개요용 대본 생성.
 
@@ -215,8 +212,7 @@ def _generate_longform_outline(
 
     # 1단계: 메타데이터 JSON (작은 호출)
     meta_prompt = _build_meta_only_prompt(dna, ep_plan, ep_num, all_plans if is_sample else [], is_series)
-    meta = claude_client.call_json(meta_prompt, max_tokens=250, _validate=False,
-                                   progress_fn=progress_fn, label=f"시나리오 {ep_num}편 메타")
+    meta = claude_client.call_json(meta_prompt, max_tokens=250, _validate=False)
     if meta.get("_parse_failed"):
         meta = {}
 
@@ -478,7 +474,6 @@ def _generate_shortform_outline(
     ep_num: int,
     all_plans: list,
     is_series: bool,
-    progress_fn=None,
 ) -> dict:
     """숏폼 제안서 개요 — 15/30/60초 각 버전 핵심 포인트만 (속도 최우선)."""
     title = ep_plan.get("title", f"{ep_num}편")
@@ -497,8 +492,7 @@ def _generate_shortform_outline(
         f'"series_hook":{{"cliffhanger_line":null,"callback_line":null}}}}'
     )
 
-    raw = claude_client.call_json(prompt, max_tokens=500, _validate=False,
-                                  progress_fn=progress_fn, label=f"시나리오 {ep_num}편 숏폼")
+    raw = claude_client.call_json(prompt, max_tokens=500, _validate=False)
     raw.setdefault("episode",  ep_num)
     raw.setdefault("title",    ep_plan.get("title", f"{ep_num}편"))
     raw.setdefault("format",   "shortform")

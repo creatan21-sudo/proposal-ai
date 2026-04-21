@@ -369,8 +369,6 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
                                               generate_ppt=getattr(dna, "generate_ppt", False))
                 elif step_key == "script":
                     _call = functools.partial(agent_mod.run, dna, progress_fn=push_event, max_episodes=_max_ep)
-                elif step_key == "plan":
-                    _call = functools.partial(agent_mod.run, dna, progress_fn=push_event)
                 elif step_key == "platform":
                     _call = functools.partial(agent_mod.run_platform, dna, push_event)
                 elif step_key == "marketing":
