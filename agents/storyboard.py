@@ -158,14 +158,12 @@ def run(dna: ConceptDNA, style: str = "line", progress_fn=None) -> dict:
         return {"frames": [], "style": style, "total_scenes": 0,
                 "error": "OPENAI_API_KEY 미설정"}
 
-    # dna에서 max_cuts 결정 (step_instruction에 cuts:N 형태로 기록)
-    step_inst = getattr(dna, "step_instruction", "") or ""
-    max_cuts = 30
-    if "cuts:" in step_inst:
-        try:
-            max_cuts = int(step_inst.split("cuts:")[1].split()[0])
-        except Exception:
-            pass
+    # 사용자 설정 storyboard_cuts_per_ep 최우선 적용 (1~20 범위 강제)
+    cuts_per_ep = getattr(dna, "storyboard_cuts_per_ep", 0) or 0
+    if cuts_per_ep > 0:
+        max_cuts = min(max(1, cuts_per_ep), 20)
+    else:
+        max_cuts = 20
 
     scenes = _extract_scenes(dna, max_cuts)
     if not scenes:

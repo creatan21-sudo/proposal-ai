@@ -212,7 +212,7 @@ def _generate_longform_outline(
 
     cuts = getattr(dna, "storyboard_cuts_per_ep", 0) or 0
     if cuts > 0:
-        scene_count = cuts
+        scene_count = min(max(1, cuts), 20)
     else:
         full_scenes = _calc_scene_count(duration_s)
         scene_count = min(full_scenes, 5) if is_sample else min(full_scenes, 3)
@@ -224,14 +224,20 @@ def _generate_longform_outline(
     if meta.get("_parse_failed"):
         meta = {}
 
-    # 2단계: 씬별 개별 텍스트 API 호출 (max_tokens=2000)
+    # 2단계: 씬별 개별 텍스트 API 호출 (max_tokens=2000), 씬당 최대 2회 재시도
     scenes = []
     for scene_num in range(1, scene_count + 1):
-        scene_prompt = _build_scene_text_prompt_v2(
-            dna, ep_plan, ep_num, scene_num, scene_count, duration_s, word_count
-        )
-        scene_text = claude_client.call(scene_prompt, max_tokens=2000)
-        scene_obj  = _parse_scene_text_v2(scene_text, scene_num, duration_s, scene_count)
+        scene_obj = None
+        for attempt in range(3):
+            scene_prompt = _build_scene_text_prompt_v2(
+                dna, ep_plan, ep_num, scene_num, scene_count, duration_s, word_count
+            )
+            scene_text = claude_client.call(scene_prompt, max_tokens=2000)
+            scene_obj  = _parse_scene_text_v2(scene_text, scene_num, duration_s, scene_count)
+            if scene_obj.get("narration") or scene_obj.get("visual"):
+                break
+            if attempt < 2:
+                print(f"  [씬] {ep_num}편 S#{scene_num} 내용 부족, 재시도 {attempt+1}/2")
         scenes.append(scene_obj)
         print(f"  [씬] {ep_num}편 S#{scene_num}/{scene_count} 완료 ({len(scene_text)}자)")
 
@@ -486,39 +492,55 @@ def _generate_shortform_outline(
     """숏폼 제안서 개요 — 15/30/60초 각 버전 핵심 포인트만 (속도 최우선)."""
     title = ep_plan.get("title", f"{ep_num}편")
 
-    # storyboard_cuts_per_ep 기반 씬 수 (없으면 기존 기본값)
     cuts = getattr(dna, "storyboard_cuts_per_ep", 0) or 0
-    n15  = cuts if cuts > 0 else 2
-    n30  = cuts if cuts > 0 else 3
-    n60  = cuts if cuts > 0 else 4
+    n = min(max(1, cuts), 20) if cuts > 0 else 4
+    print(f"  [대본] {ep_num}편 숏폼 씬 수 결정: {n}개 (storyboard_cuts_per_ep={cuts})")
 
-    def _scene_tmpl(n):
+    def _scene_tmpl(count):
         labels = ["훅","문제","공감","해결","전환","강조","CTA","마무리","엔딩","추가"]
         return ",".join(
             f'{{"scene_number":{i+1},"key_point":"{labels[i] if i < len(labels) else f"씬{i+1}"}"}}'
-            for i in range(n)
+            for i in range(count)
         )
 
     prompt = (
         f"숏폼대본개요JSON만출력(설명없이).\n"
+        f"반드시 각 버전마다 정확히 {n}개 씬을 생성하세요.\n"
         f"발주처:{dna.client_name} 사업:{dna.project_name} 컨셉:{dna.concept or '미정'}"
         f" {ep_num}편\"{title}\" 러닝타임:{dna.duration}\n\n"
         f'{{"episode":{ep_num},"title":"{title}","format":"shortform","duration":"{dna.duration}",'
         f'"versions":{{'
-        f'"15sec":{{"hook_line":"훅10자내","scenes":[{_scene_tmpl(n15)}]}},'
-        f'"30sec":{{"hook_line":"훅12자내","scenes":[{_scene_tmpl(n30)}]}},'
-        f'"60sec":{{"hook_line":"훅15자내","scenes":[{_scene_tmpl(n60)}]}}'
+        f'"15sec":{{"hook_line":"훅10자내","scenes":[{_scene_tmpl(n)}]}},'
+        f'"30sec":{{"hook_line":"훅12자내","scenes":[{_scene_tmpl(n)}]}},'
+        f'"60sec":{{"hook_line":"훅15자내","scenes":[{_scene_tmpl(n)}]}}'
         f'}},'
         f'"closing_cta":{{"cta_direction":"CTA방향"}},'
         f'"series_hook":{{"cliffhanger_line":null,"callback_line":null}}}}'
     )
 
-    raw = claude_client.call_json(prompt, max_tokens=500, _validate=False)
-    _ver_scenes = sum(len((raw.get("versions") or {}).get(v, {}).get("scenes", []))
-                      for v in ("15sec", "30sec", "60sec"))
-    if _ver_scenes == 0:
-        print(f"  [대본 raw키] {list(raw.keys())}")
-        print(f"  [대본 raw내용] {str(raw)[:300]}")
+    raw = None
+    scenes = []
+    for attempt in range(3):
+        raw = claude_client.call_json(prompt, max_tokens=max(500, n * 60), _validate=False)
+        _ver_scenes = sum(len((raw.get("versions") or {}).get(v, {}).get("scenes", []))
+                          for v in ("15sec", "30sec", "60sec"))
+        if _ver_scenes == 0:
+            print(f"  [대본 raw키] {list(raw.keys())}")
+            print(f"  [대본 raw내용] {str(raw)[:300]}")
+
+        versions_tmp = raw.get("versions") or {}
+        for ver_key in ("60sec", "30sec", "15sec"):
+            ver_data = versions_tmp.get(ver_key)
+            if isinstance(ver_data, dict):
+                ver_scenes = ver_data.get("scenes", [])
+                if len(ver_scenes) >= n:
+                    scenes = ver_scenes
+                    break
+        if scenes:
+            break
+        if attempt < 2:
+            print(f"  [대본] {ep_num}편 숏폼 씬 부족({len(scenes)}/{n}), 재시도 {attempt+1}/2")
+
     raw.setdefault("episode",  ep_num)
     raw.setdefault("title",    ep_plan.get("title", f"{ep_num}편"))
     raw.setdefault("format",   "shortform")
@@ -527,20 +549,20 @@ def _generate_shortform_outline(
     raw.setdefault("closing_cta", {})
     raw.setdefault("series_hook", {})
 
-    # versions 안의 씬을 top-level scenes로 추출 (가장 긴 버전 우선)
-    scenes = []
-    versions = raw.get("versions") or {}
-    for ver_key in ("60sec", "30sec", "15sec"):
-        ver_data = versions.get(ver_key)
-        if isinstance(ver_data, dict):
-            ver_scenes = ver_data.get("scenes", [])
-            if ver_scenes:
-                scenes = ver_scenes
-                print(f"  [대본] {ep_num}편 숏폼 scenes 추출: {ver_key} → {len(scenes)}개")
-                break
+    # retry 루프에서 scenes를 못 채운 경우 fallback 추출
+    if not scenes:
+        versions = raw.get("versions") or {}
+        for ver_key in ("60sec", "30sec", "15sec"):
+            ver_data = versions.get(ver_key)
+            if isinstance(ver_data, dict):
+                ver_scenes = ver_data.get("scenes", [])
+                if ver_scenes:
+                    scenes = ver_scenes
+                    break
     if not scenes:
         scenes = raw.get("scenes", [])
 
+    print(f"  [대본] {ep_num}편 숏폼 scenes 최종: {len(scenes)}개 (목표 {n}개)")
     raw["scenes"] = scenes
 
     if versions:
