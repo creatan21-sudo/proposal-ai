@@ -201,12 +201,17 @@ def _generate_longform_outline(
     씬 텍스트는 max_tokens=2000으로 실제 방송 대본 형식으로 작성
     """
     duration_s  = _duration_to_seconds(dna.duration)
-    full_scenes = _calc_scene_count(duration_s)
     title       = ep_plan.get("title", f"{ep_num}편")
     word_count  = _calc_word_count(duration_s)
 
-    # 1편 샘플은 5씬, 나머지는 3씬
-    scene_count = min(full_scenes, 5) if is_sample else min(full_scenes, 3)
+    cuts = getattr(dna, "storyboard_cuts_per_ep", 0) or 0
+    if cuts > 0:
+        # storyboard_cuts_per_ep가 설정된 경우: 그 값을 씬 수로 직접 사용
+        scene_count = cuts
+    else:
+        # 미설정 시: duration 기반 계산 후 기존 캡(1편=5, 나머지=3) 적용
+        full_scenes = _calc_scene_count(duration_s)
+        scene_count = min(full_scenes, 5) if is_sample else min(full_scenes, 3)
 
     # 1단계: 메타데이터 JSON (작은 호출)
     meta_prompt = _build_meta_only_prompt(dna, ep_plan, ep_num, all_plans if is_sample else [], is_series)
@@ -476,15 +481,28 @@ def _generate_shortform_outline(
     """숏폼 제안서 개요 — 15/30/60초 각 버전 핵심 포인트만 (속도 최우선)."""
     title = ep_plan.get("title", f"{ep_num}편")
 
+    # storyboard_cuts_per_ep 기반 씬 수 (없으면 기존 기본값)
+    cuts = getattr(dna, "storyboard_cuts_per_ep", 0) or 0
+    n15  = cuts if cuts > 0 else 2
+    n30  = cuts if cuts > 0 else 3
+    n60  = cuts if cuts > 0 else 4
+
+    def _scene_tmpl(n):
+        labels = ["훅","문제","공감","해결","전환","강조","CTA","마무리","엔딩","추가"]
+        return ",".join(
+            f'{{"scene_number":{i+1},"key_point":"{labels[i] if i < len(labels) else f"씬{i+1}"}"}}'
+            for i in range(n)
+        )
+
     prompt = (
         f"숏폼대본개요JSON만출력(설명없이).\n"
         f"발주처:{dna.client_name} 사업:{dna.project_name} 컨셉:{dna.concept or '미정'}"
         f" {ep_num}편\"{title}\" 러닝타임:{dna.duration}\n\n"
         f'{{"episode":{ep_num},"title":"{title}","format":"shortform","duration":"{dna.duration}",'
         f'"versions":{{'
-        f'"15sec":{{"hook_line":"훅10자내","scenes":[{{"scene_number":1,"key_point":"핵심"}},{{"scene_number":2,"key_point":"CTA"}}]}},'
-        f'"30sec":{{"hook_line":"훅12자내","scenes":[{{"scene_number":1,"key_point":"문제"}},{{"scene_number":2,"key_point":"해결"}},{{"scene_number":3,"key_point":"CTA"}}]}},'
-        f'"60sec":{{"hook_line":"훅15자내","scenes":[{{"scene_number":1,"key_point":"훅"}},{{"scene_number":2,"key_point":"공감"}},{{"scene_number":3,"key_point":"해결"}},{{"scene_number":4,"key_point":"CTA"}}]}}'
+        f'"15sec":{{"hook_line":"훅10자내","scenes":[{_scene_tmpl(n15)}]}},'
+        f'"30sec":{{"hook_line":"훅12자내","scenes":[{_scene_tmpl(n30)}]}},'
+        f'"60sec":{{"hook_line":"훅15자내","scenes":[{_scene_tmpl(n60)}]}}'
         f'}},'
         f'"closing_cta":{{"cta_direction":"CTA방향"}},'
         f'"series_hook":{{"cliffhanger_line":null,"callback_line":null}}}}'
