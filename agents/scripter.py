@@ -524,13 +524,27 @@ def _generate_shortform_outline(
     raw.setdefault("format",   "shortform")
     raw.setdefault("duration", dna.duration)
     raw.setdefault("versions", {})
-    raw.setdefault("scenes",   [])
     raw.setdefault("closing_cta", {})
     raw.setdefault("series_hook", {})
 
+    # versions 안의 씬을 top-level scenes로 추출 (가장 긴 버전 우선)
+    scenes = []
     versions = raw.get("versions") or {}
+    for ver_key in ("60sec", "30sec", "15sec"):
+        ver_data = versions.get(ver_key)
+        if isinstance(ver_data, dict):
+            ver_scenes = ver_data.get("scenes", [])
+            if ver_scenes:
+                scenes = ver_scenes
+                print(f"  [대본] {ep_num}편 숏폼 scenes 추출: {ver_key} → {len(scenes)}개")
+                break
+    if not scenes:
+        scenes = raw.get("scenes", [])
+
+    raw["scenes"] = scenes
+
     if versions:
-        print(f"  [확인] {ep_num}편 숏폼 개요 완료: {list(versions.keys())}")
+        print(f"  [확인] {ep_num}편 숏폼 개요 완료: {list(versions.keys())}, scenes={len(scenes)}개")
     else:
         print(f"  [경고] {ep_num}편 숏폼 개요: versions 비어있음!")
     return raw
