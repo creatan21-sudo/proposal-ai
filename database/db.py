@@ -267,6 +267,17 @@ def init_db() -> None:
                 created_at  TEXT    NOT NULL,
                 updated_at  TEXT    NOT NULL
             );
+
+            CREATE TABLE IF NOT EXISTS ppt_narratives (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_id        INTEGER NOT NULL UNIQUE,
+                target_slides  INTEGER DEFAULT 30,
+                slides_json    TEXT    DEFAULT '[]',
+                rfp_coverage_json TEXT DEFAULT '{}',
+                content_chars  INTEGER DEFAULT 0,
+                created_at     TEXT    NOT NULL,
+                updated_at     TEXT    NOT NULL
+            );
         """)
         # ── 마이그레이션: 기존 DB에 누락된 컬럼 추가 ──
         for migration in [
@@ -1759,6 +1770,52 @@ def get_all_step_overrides(case_id: int) -> dict:
 # ─────────────────────────────────────────────
 # PPT 작업 DB 영속화
 # ─────────────────────────────────────────────
+
+def save_ppt_narrative(case_id: int, slides: list, rfp_coverage: dict,
+                       target_slides: int, content_chars: int) -> None:
+    """PPT 설계안 저장 (case_id당 1건, UPSERT)."""
+    import json
+    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO ppt_narratives
+               (case_id, target_slides, slides_json, rfp_coverage_json, content_chars, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(case_id) DO UPDATE SET
+                 target_slides=excluded.target_slides,
+                 slides_json=excluded.slides_json,
+                 rfp_coverage_json=excluded.rfp_coverage_json,
+                 content_chars=excluded.content_chars,
+                 updated_at=excluded.updated_at""",
+            (case_id,
+             target_slides,
+             json.dumps(slides, ensure_ascii=False),
+             json.dumps(rfp_coverage, ensure_ascii=False),
+             content_chars,
+             now, now),
+        )
+
+
+def get_ppt_narrative(case_id: int) -> "dict | None":
+    """PPT 설계안 조회. 없으면 None."""
+    import json
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM ppt_narratives WHERE case_id=?", (case_id,)
+        ).fetchone()
+        if not row:
+            return None
+        d = dict(row)
+        try:
+            d["slides"] = json.loads(d.pop("slides_json", "[]") or "[]")
+        except Exception:
+            d["slides"] = []
+        try:
+            d["rfp_coverage"] = json.loads(d.pop("rfp_coverage_json", "{}") or "{}")
+        except Exception:
+            d["rfp_coverage"] = {}
+        return d
+
 
 def save_ppt_job(task_id: str, case_id: int, user_id: int, ppt_type: str = "") -> None:
     """PPT 작업 생성 시 DB에 저장."""

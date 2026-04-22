@@ -93,6 +93,7 @@ class ConceptDNA:
 
     # PPT 생성 옵션 (app.py에서 주입)
     generate_ppt: bool = False                                 # True면 orchestrator PASS 4(PT원고) 포함
+    ppt_target_slides: int = 30                                # PPT 설계 목표 슬라이드 수 (10~60)
 
     # 케이스 추적용 (파이프라인 시작 전 app.py에서 주입)
     case_id: int = 0                                           # rfp_cases.id (결과 테이블 연결용)

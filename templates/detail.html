@@ -403,6 +403,13 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
     <span class="detail-tab-icon">📄</span>
     <span class="detail-tab-label">전체 보기</span>
   </button>
+  <button id="tab-ppt-design"
+          class="detail-tab"
+          onclick="showPptDesign()"
+          title="PPT 슬라이드 설계안 생성 및 편집">
+    <span class="detail-tab-icon">🗂</span>
+    <span class="detail-tab-label">PPT 설계</span>
+  </button>
 </div>
 
 {# ── 전체 보기 툴바 (showAllView 시 노출) ── #}
@@ -422,6 +429,79 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
             style="padding:6px 14px;font-size:12px;font-weight:600;
                    background:#2563eb;color:#fff;border:none;border-radius:6px;
                    cursor:pointer;">◀ 탭으로 보기</button>
+  </div>
+</div>
+
+{# ── PPT 설계 패널 ── #}
+<div id="ppt-design-panel" style="display:none;">
+  <div style="background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:24px;margin-bottom:20px;">
+
+    {# 헤더 + 설계 생성 컨트롤 #}
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
+      <div>
+        <h3 style="margin:0 0 4px;font-size:1.05rem;font-weight:700;color:#1e1b4b;">🗂 PPT 슬라이드 설계안</h3>
+        <p style="margin:0;font-size:.82rem;color:#6b7280;" id="ppt-design-desc">
+          전체 제안서 내용을 지정한 장 수로 압축 설계합니다.
+        </p>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div style="display:flex;align-items:center;gap:6px;font-size:.82rem;color:#374151;">
+          <label for="ppt-target-slides" style="font-weight:600;">목표 장 수:</label>
+          <input type="number" id="ppt-target-slides" min="10" max="60" value="30"
+                 style="width:56px;padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:.82rem;">
+          <span style="color:#6b7280;">장 (10~60)</span>
+        </div>
+        <button onclick="generatePptDesign()"
+                id="btn-generate-design"
+                style="padding:8px 18px;font-size:.85rem;font-weight:700;
+                       background:#4f46e5;color:#fff;border:none;border-radius:8px;cursor:pointer;">
+          ✨ 설계 생성
+        </button>
+      </div>
+    </div>
+
+    {# 상태 / 로딩 메시지 #}
+    <div id="ppt-design-status" style="display:none;padding:16px;background:#eff6ff;
+         border-radius:8px;font-size:.85rem;color:#1e40af;margin-bottom:16px;text-align:center;">
+      ⏳ 설계안 생성 중... (30초~2분 소요) 잠시 기다려 주세요.
+    </div>
+
+    {# RFP 커버리지 뱃지 #}
+    <div id="ppt-coverage-wrap" style="display:none;margin-bottom:16px;">
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;font-size:.82rem;">
+        <span style="font-weight:600;color:#374151;">RFP 커버리지:</span>
+        <span id="ppt-covered-badge"
+              style="background:#dcfce7;color:#166534;padding:3px 10px;border-radius:99px;font-weight:600;"></span>
+        <span id="ppt-missing-badge" style="display:none;
+              background:#fee2e2;color:#991b1b;padding:3px 10px;border-radius:99px;font-weight:600;"></span>
+      </div>
+    </div>
+
+    {# 슬라이드 목록 #}
+    <div id="ppt-slide-list"></div>
+
+    {# PPT 생성 버튼 (설계안 있을 때만 표시) #}
+    <div id="ppt-from-design-wrap" style="display:none;margin-top:20px;
+         padding-top:16px;border-top:1px solid #e5e7eb;
+         display:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+      <div style="font-size:.85rem;color:#374151;">
+        <strong>설계안 검토 완료?</strong>
+        <span style="color:#6b7280;"> 위 설계안대로 PPTX 파일을 생성합니다.</span>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button onclick="savePptDesign()"
+                style="padding:8px 16px;font-size:.82rem;font-weight:600;
+                       background:#fff;border:1px solid #d1d5db;border-radius:8px;cursor:pointer;color:#374151;">
+          💾 설계안 저장
+        </button>
+        <button onclick="buildPptFromDesign()"
+                style="padding:8px 20px;font-size:.9rem;font-weight:700;
+                       background:#059669;color:#fff;border:none;border-radius:8px;cursor:pointer;">
+          📊 이 설계안으로 PPT 생성
+        </button>
+      </div>
+    </div>
+
   </div>
 </div>
 
@@ -1339,8 +1419,205 @@ function toggleStep(key) {
 }
 
 // 전체 보기 모드
+// ── PPT 설계 패널 ──────────────────────────────────────
+const _PPT_DESIGN_CID = {{ case_id }};
+let   _pptDesignSlides = [];
+let   _pptDesignPollTimer = null;
+
+function showPptDesign() {
+  document.querySelectorAll('.detail-tab').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-ppt-design').classList.add('active');
+  document.getElementById('all-view-toolbar').style.display = 'none';
+  document.getElementById('ppt-design-panel').style.display = 'block';
+  document.getElementById('detail-steps').style.display     = 'none';
+  history.replaceState(null, '', '#ppt-design');
+  _loadPptNarrative();
+}
+
+async function _loadPptNarrative() {
+  try {
+    const r = await fetch(`/api/ppt_narrative/${_PPT_DESIGN_CID}`);
+    const d = await r.json();
+    if (d.ok && d.narrative && d.narrative.slides && d.narrative.slides.length) {
+      _renderPptDesign(d.narrative);
+    } else {
+      document.getElementById('ppt-slide-list').innerHTML =
+        '<div style="text-align:center;color:#9ca3af;padding:40px;">' +
+        '설계안이 없습니다. 목표 장 수를 설정하고 <strong>✨ 설계 생성</strong>을 클릭하세요.</div>';
+    }
+  } catch(e) {
+    console.error('PPT 설계 로드 오류:', e);
+  }
+}
+
+async function generatePptDesign() {
+  const target = parseInt(document.getElementById('ppt-target-slides').value) || 30;
+  const btn = document.getElementById('btn-generate-design');
+  btn.disabled = true;
+  btn.textContent = '생성 중...';
+  document.getElementById('ppt-design-status').style.display = 'block';
+  document.getElementById('ppt-slide-list').innerHTML = '';
+  document.getElementById('ppt-coverage-wrap').style.display = 'none';
+  document.getElementById('ppt-from-design-wrap').style.display = 'none';
+
+  try {
+    await fetch(`/api/ppt_narrative/${_PPT_DESIGN_CID}/generate`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({target_slides: target}),
+    });
+    // 폴링으로 완료 감지
+    _pptDesignPollTimer = setInterval(async () => {
+      const r2 = await fetch(`/api/ppt_narrative/${_PPT_DESIGN_CID}`);
+      const d2 = await r2.json();
+      if (d2.ok && d2.narrative && d2.narrative.slides && d2.narrative.slides.length) {
+        clearInterval(_pptDesignPollTimer);
+        document.getElementById('ppt-design-status').style.display = 'none';
+        btn.disabled = false;
+        btn.textContent = '✨ 설계 생성';
+        _renderPptDesign(d2.narrative);
+      }
+    }, 5000);
+    // 3분 후 타임아웃
+    setTimeout(() => {
+      clearInterval(_pptDesignPollTimer);
+      document.getElementById('ppt-design-status').innerHTML =
+        '⚠️ 설계 생성이 지연되고 있습니다. 페이지를 새로고침해 주세요.';
+      btn.disabled = false; btn.textContent = '✨ 설계 생성';
+    }, 180000);
+  } catch(e) {
+    document.getElementById('ppt-design-status').innerHTML = '❌ 오류: ' + e;
+    btn.disabled = false; btn.textContent = '✨ 설계 생성';
+  }
+}
+
+function _renderPptDesign(narrative) {
+  _pptDesignSlides = narrative.slides || [];
+  const target = narrative.target_slides || _pptDesignSlides.length;
+  const chars  = narrative.content_chars || 0;
+
+  document.getElementById('ppt-design-desc').textContent =
+    `전체 ${chars.toLocaleString()}자 → ${target}장으로 압축 설계됨`;
+
+  // RFP 커버리지
+  const cov = narrative.rfp_coverage || {};
+  const covered = cov.covered || [];
+  const missing = cov.missing || [];
+  const covWrap = document.getElementById('ppt-coverage-wrap');
+  covWrap.style.display = 'block';
+  document.getElementById('ppt-covered-badge').textContent =
+    `✅ 커버 ${covered.length}항목`;
+  const missBadge = document.getElementById('ppt-missing-badge');
+  if (missing.length) {
+    missBadge.style.display = '';
+    missBadge.textContent = `⚠️ 누락 ${missing.length}항목: ${missing.slice(0,3).join(', ')}`;
+  } else {
+    missBadge.style.display = 'none';
+  }
+
+  // 슬라이드 목록 렌더링
+  const list = document.getElementById('ppt-slide-list');
+  list.innerHTML = '';
+  _pptDesignSlides.forEach((sl, idx) => {
+    const div = document.createElement('div');
+    div.className = 'ppt-slide-card';
+    div.dataset.idx = idx;
+    div.style.cssText = 'border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;margin-bottom:10px;background:#fff;';
+    div.innerHTML = `
+      <div style="display:flex;gap:10px;align-items:flex-start;">
+        <div style="min-width:28px;height:28px;background:#4f46e5;color:#fff;border-radius:6px;
+                    display:flex;align-items:center;justify-content:center;font-size:.75rem;font-weight:700;flex-shrink:0;">
+          ${sl.number || idx+1}
+        </div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px;flex-wrap:wrap;">
+            <span style="font-size:.72rem;font-weight:600;background:#f3f4f6;color:#374151;
+                         padding:2px 8px;border-radius:99px;">${sl.section || ''}</span>
+            <span style="font-size:.7rem;background:#ede9fe;color:#6d28d9;
+                         padding:2px 8px;border-radius:99px;">${sl.slide_type || 'content'}</span>
+            ${(sl.rfp_tags||[]).slice(0,2).map(t =>
+              `<span style="font-size:.68rem;background:#fef3c7;color:#92400e;padding:2px 7px;border-radius:99px;">${t}</span>`
+            ).join('')}
+          </div>
+          <div contenteditable="true" data-field="head_copy" data-idx="${idx}"
+               onblur="onSlideFieldEdit(this)"
+               style="font-size:.9rem;font-weight:700;color:#1f2937;margin-bottom:4px;
+                      border:1px dashed transparent;border-radius:4px;padding:2px 4px;
+                      cursor:text;outline:none;"
+               onfocus="this.style.borderColor='#a5b4fc'"
+               onblur2="this.style.borderColor='transparent'"
+               title="헤드카피 (클릭하여 편집)">${sl.head_copy || ''}</div>
+          <div contenteditable="true" data-field="key_message" data-idx="${idx}"
+               onblur="onSlideFieldEdit(this)"
+               style="font-size:.8rem;color:#6b7280;line-height:1.5;white-space:pre-wrap;
+                      border:1px dashed transparent;border-radius:4px;padding:2px 4px;
+                      cursor:text;outline:none;"
+               onfocus="this.style.borderColor='#a5b4fc'"
+               title="핵심 메시지 (클릭하여 편집)">${sl.key_message || ''}</div>
+          ${sl.evidence ? `<div style="font-size:.75rem;color:#9ca3af;margin-top:4px;">📎 ${sl.evidence}</div>` : ''}
+        </div>
+      </div>`;
+    list.appendChild(div);
+  });
+
+  document.getElementById('ppt-from-design-wrap').style.display = 'flex';
+}
+
+function onSlideFieldEdit(el) {
+  el.style.borderColor = 'transparent';
+  const idx   = parseInt(el.dataset.idx);
+  const field = el.dataset.field;
+  if (_pptDesignSlides[idx]) {
+    _pptDesignSlides[idx][field] = el.innerText.trim();
+  }
+}
+
+async function savePptDesign() {
+  try {
+    const r = await fetch(`/api/ppt_narrative/${_PPT_DESIGN_CID}/save`, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({slides: _pptDesignSlides}),
+    });
+    const d = await r.json();
+    if (d.ok) alert(`설계안 저장됨 (${d.saved}장)`);
+    else      alert('저장 실패: ' + (d.error || ''));
+  } catch(e) { alert('오류: ' + e); }
+}
+
+async function buildPptFromDesign() {
+  await savePptDesign();
+  if (typeof openPptModal === 'function') {
+    openPptModal();
+    // narrative 모드 자동 선택
+    setTimeout(() => {
+      if (typeof selectPptOpt === 'function') selectPptOpt('narrative');
+      startPpt('narrative');
+    }, 300);
+  } else {
+    // 직접 호출 폴백
+    startPpt('narrative');
+  }
+}
+
+async function startPpt(mode) {
+  const pages = parseInt(document.getElementById('ppt-pages')?.value) || _pptDesignSlides.length || 30;
+  try {
+    const r = await fetch('/ppt/start', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({case_id: _PPT_DESIGN_CID, pages, mode}),
+    });
+    const d = await r.json();
+    if (!d.ok) alert('PPT 생성 오류: ' + (d.error || '알 수 없음'));
+  } catch(e) { alert('오류: ' + e); }
+}
+
+// ── 전체보기 ──────────────────────────────────────────
 function showAllView() {
   const stepsEl = document.getElementById('detail-steps');
+  stepsEl.style.display = '';
+  document.getElementById('ppt-design-panel').style.display = 'none';
   // 탭 active 해제
   document.querySelectorAll('.detail-tab').forEach(btn => btn.classList.remove('active'));
   const allBtn = document.getElementById('btn-view-all');
@@ -1364,11 +1641,15 @@ function showAllView() {
 // 탭 보기로 복귀
 function showTabView(stepKey) {
   document.getElementById('all-view-toolbar').style.display = 'none';
+  document.getElementById('ppt-design-panel').style.display = 'none';
+  document.getElementById('detail-steps').style.display = '';
   switchTab(stepKey || _FIRST_STEP);
 }
 
 // 탭 전환 (단독 탭 모드만 사용)
 function switchTab(stepKey) {
+  document.getElementById('ppt-design-panel').style.display = 'none';
+  document.getElementById('detail-steps').style.display = '';
   const stepsEl = document.getElementById('detail-steps');
 
   document.querySelectorAll('.detail-tab').forEach(btn => {

@@ -678,6 +678,77 @@ def build_pptx(slide_data: dict, case: dict, progress_cb=None) -> bytes:
     return buf.getvalue()
 
 
+def _narrative_to_slide(ns: dict, idx: int) -> dict:
+    """ppt_narrator 설계안 슬라이드 → ppt_generator 슬라이드 dict 변환."""
+    sl_type = ns.get("slide_type", "content")
+    num     = ns.get("number", idx + 1)
+    head    = ns.get("head_copy", "")
+    msg     = ns.get("key_message", "")
+    ev      = ns.get("evidence", "")
+
+    if sl_type == "cover":
+        return {"number": num, "type": "cover", "title": head,
+                "client": "", "date": ""}
+
+    if sl_type == "toc":
+        items = [line.lstrip("—-•· \t") for line in msg.splitlines() if line.strip()]
+        return {"number": num, "type": "toc", "title": head, "items": items}
+
+    if sl_type == "message":
+        return {"number": num, "type": "message", "title": "",
+                "message": head, "note": msg or ev}
+
+    if sl_type == "number":
+        lines = [l.strip() for l in msg.splitlines() if l.strip()]
+        return {"number": num, "type": "number", "title": head,
+                "number": lines[0] if lines else "",
+                "label":  lines[1] if len(lines) > 1 else "",
+                "description": ev or (lines[2] if len(lines) > 2 else "")}
+
+    if sl_type == "process":
+        lines = [l.strip().lstrip("—-•· \t") for l in msg.splitlines() if l.strip()]
+        steps = [{"label": l, "desc": ""} for l in lines[:5]]
+        if not steps:
+            steps = [{"label": head, "desc": ev}]
+        return {"number": num, "type": "process", "title": head, "steps": steps}
+
+    if sl_type == "compare":
+        lines = [l.strip() for l in msg.splitlines() if l.strip()]
+        mid   = len(lines) // 2
+        left  = [l.lstrip("—-•· \t") for l in lines[:mid]] or ["(내용 없음)"]
+        right = [l.lstrip("—-•· \t") for l in lines[mid:]] or ["(내용 없음)"]
+        return {"number": num, "type": "compare", "title": head,
+                "left_title":  "현재 문제",
+                "left_items":  left,
+                "right_title": "해결 방향 / INTERZ",
+                "right_items": right}
+
+    # content (기본)
+    bullets = [l.strip().lstrip("—-•· \t") for l in msg.splitlines() if l.strip()]
+    if not bullets and ev:
+        bullets = [ev]
+    return {"number": num, "type": "content", "title": head, "bullets": bullets or [msg]}
+
+
+def build_pptx_from_narrative(narrative_slides: list, case: dict,
+                               progress_cb=None) -> bytes:
+    """ppt_narrator 설계안 → PPTX bytes (Claude 재호출 없음)."""
+    import datetime
+    today = datetime.date.today().strftime("%Y년 %m월")
+    client = case.get("client_name", "")
+
+    converted = []
+    for i, ns in enumerate(narrative_slides):
+        sl = _narrative_to_slide(ns, i)
+        if sl["type"] == "cover":
+            sl["client"] = client
+            sl["date"]   = today
+        converted.append(sl)
+
+    slide_data = {"slides": converted}
+    return build_pptx(slide_data, case, progress_cb)
+
+
 # ─────────────────────────────────────────────
 # 메인 진입점
 # ─────────────────────────────────────────────

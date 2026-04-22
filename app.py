@@ -52,6 +52,8 @@ from database.db import (
     save_step_override, get_step_override, get_all_step_overrides,
     # PPT 작업 영속화
     save_ppt_job, update_ppt_job, get_ppt_job,
+    # PPT 설계 내러티브
+    save_ppt_narrative, get_ppt_narrative,
 )
 from output.txt_writer import write_txt
 from utils.telegram_notify import send_telegram
@@ -2051,7 +2053,7 @@ def ppt_start():
                 pass
 
     def _worker_pptx():
-        """python-pptx로 PPT 생성 (폴백)."""
+        """python-pptx로 PPT 생성."""
         def progress_cb(message, current, total):
             _ppt_push(job_id, {"type": "ppt_progress",
                                 "message": message, "current": current, "total": total})
@@ -2063,18 +2065,36 @@ def ppt_start():
             _tb.print_exc()
             raise RuntimeError(f"ppt_generator 임포트 실패: {imp_err}")
 
-        _ppt_push(job_id, {"type": "ppt_progress",
-                            "message": "PPT 슬라이드 구성 중 (Claude AI)...",
-                            "current": 1, "total": 3})
-        try:
-            pptx_bytes = ppt_generator.run(detail, pages, progress_cb)
-        except Exception as run_err:
-            import traceback as _tb
-            tb_str = _tb.format_exc()
-            print(f"[PPT/basic] 생성 오류:\n{tb_str}")
+        # narrative 모드: 저장된 설계안 → 직접 PPTX 빌드 (Claude 재호출 없음)
+        if mode == "narrative":
             _ppt_push(job_id, {"type": "ppt_progress",
-                                "message": f"오류 발생: {run_err}", "current": 0, "total": 3})
-            raise
+                                "message": "PPT 설계안 불러오는 중...", "current": 1, "total": 2})
+            narrative = get_ppt_narrative(case_id)
+            if narrative and narrative.get("slides"):
+                try:
+                    pptx_bytes = ppt_generator.build_pptx_from_narrative(
+                        narrative["slides"], detail["case"], progress_cb)
+                except Exception as run_err:
+                    import traceback as _tb
+                    _tb.print_exc()
+                    _ppt_push(job_id, {"type": "ppt_progress",
+                                        "message": f"오류 발생: {run_err}", "current": 0, "total": 2})
+                    raise
+            else:
+                raise RuntimeError("저장된 PPT 설계안이 없습니다. 먼저 설계안을 생성해 주세요.")
+        else:
+            _ppt_push(job_id, {"type": "ppt_progress",
+                                "message": "PPT 슬라이드 구성 중 (Claude AI)...",
+                                "current": 1, "total": 3})
+            try:
+                pptx_bytes = ppt_generator.run(detail, pages, progress_cb)
+            except Exception as run_err:
+                import traceback as _tb
+                _tb.print_exc()
+                print(f"[PPT/basic] 생성 오류: {run_err}")
+                _ppt_push(job_id, {"type": "ppt_progress",
+                                    "message": f"오류 발생: {run_err}", "current": 0, "total": 3})
+                raise
 
         with _ppt_jobs_lock:
             job = _ppt_jobs.get(job_id)
@@ -2728,6 +2748,84 @@ def queue_status(sid):
         sess = _sessions.get(sid)
     status = sess["status"] if sess else "unknown"
     return jsonify({"position": pos, "total": len(queue_list), "status": status})
+
+
+# ─────────────────────────────────────────────
+# PPT 설계 내러티브 API
+# ─────────────────────────────────────────────
+
+@app.route("/api/ppt_narrative/<int:case_id>")
+@login_required
+def api_ppt_narrative_get(case_id):
+    """저장된 PPT 설계안 조회."""
+    detail = get_case_detail(case_id)
+    if not detail:
+        return jsonify({"ok": False, "error": "케이스 없음"}), 404
+    if detail["case"].get("user_id") != session["user_id"] and not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    narrative = get_ppt_narrative(case_id)
+    return jsonify({"ok": True, "narrative": narrative})
+
+
+@app.route("/api/ppt_narrative/<int:case_id>/generate", methods=["POST"])
+@login_required
+def api_ppt_narrative_generate(case_id):
+    """PPT 설계안 생성 (Claude AI 호출 — 백그라운드)."""
+    detail = get_case_detail(case_id)
+    if not detail:
+        return jsonify({"ok": False, "error": "케이스 없음"}), 404
+    if detail["case"].get("user_id") != session["user_id"] and not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+
+    data          = request.get_json(force=True) or {}
+    target_slides = max(10, min(60, int(data.get("target_slides", 30))))
+
+    def _generate():
+        try:
+            from agents.ppt_narrator import run as narrator_run
+            result = narrator_run(detail, target_slides)
+            save_ppt_narrative(
+                case_id       = case_id,
+                slides        = result["slides"],
+                rfp_coverage  = result["rfp_coverage"],
+                target_slides = target_slides,
+                content_chars = result["content_chars"],
+            )
+            print(f"  [PPT설계] case={case_id} {result['total_slides']}장 저장 완료")
+        except Exception as e:
+            import traceback as _tb
+            _tb.print_exc()
+            print(f"  [PPT설계] 생성 오류: {e}")
+
+    t = threading.Thread(target=_generate, daemon=True)
+    t.start()
+    return jsonify({"ok": True, "message": "설계 시작됨", "target_slides": target_slides})
+
+
+@app.route("/api/ppt_narrative/<int:case_id>/save", methods=["POST"])
+@login_required
+def api_ppt_narrative_save(case_id):
+    """사용자 편집 설계안 저장."""
+    detail = get_case_detail(case_id)
+    if not detail:
+        return jsonify({"ok": False, "error": "케이스 없음"}), 404
+    if detail["case"].get("user_id") != session["user_id"] and not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+
+    data   = request.get_json(force=True) or {}
+    slides = data.get("slides", [])
+    if not isinstance(slides, list):
+        return jsonify({"ok": False, "error": "slides 형식 오류"}), 400
+
+    existing = get_ppt_narrative(case_id) or {}
+    save_ppt_narrative(
+        case_id       = case_id,
+        slides        = slides,
+        rfp_coverage  = existing.get("rfp_coverage", {}),
+        target_slides = existing.get("target_slides", len(slides)),
+        content_chars = existing.get("content_chars", 0),
+    )
+    return jsonify({"ok": True, "saved": len(slides)})
 
 
 # ─────────────────────────────────────────────
