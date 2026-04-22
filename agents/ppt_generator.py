@@ -331,59 +331,142 @@ def _draw_message(slide, sl, num, total):
 def _build_case_summary(case_detail: dict) -> str:
     case  = case_detail.get("case", {})
     steps = case_detail.get("steps", {})
+    dna   = case.get("dna", {})
+
     lines = [
         f"# {case.get('client_name','')} / {case.get('project_name','')}",
         f"영상 종류: {case.get('video_type','')} | 예산: {case.get('budget','')} | 납품기한: {case.get('deadline','')}",
         "",
     ]
 
+    # ── 컨셉 & 슬로건 (핵심 관통 메시지)
+    cr = steps.get("creative", {})
+    concept = cr.get("concept", "") or dna.get("concept", "")
+    slogan  = cr.get("confirmed_slogan", "") or dna.get("slogan", "")
+    if concept or slogan:
+        lines.append("## 핵심 컨셉 & 슬로건")
+        if concept:
+            lines.append(f"컨셉: {concept[:300]}")
+            desc = cr.get("concept_description", "") or dna.get("concept_description", "")
+            if desc:
+                lines.append(f"컨셉 설명: {str(desc)[:300]}")
+        if slogan:
+            lines.append(f"슬로건: {slogan}")
+        tone = cr.get("tone_description", "") or dna.get("tone_and_manner", "")
+        if tone:
+            lines.append(f"톤앤매너: {str(tone)[:200]}")
+        lines.append("")
+
+    # ── 평가 배점표
+    rfp = steps.get("rfp_analysis", {})
+    eval_criteria = dna.get("evaluation_criteria", "") or rfp.get("evaluation_criteria", "")
+    if not eval_criteria:
+        eval_items = rfp.get("evaluation_items", []) or dna.get("evaluation_items", [])
+        if eval_items:
+            eval_criteria = "\n".join(
+                f"  - {it.get('item','') if isinstance(it, dict) else str(it)}"
+                + (f" ({it['score']}점)" if isinstance(it, dict) and it.get('score') else "")
+                for it in eval_items[:12]
+            )
+    if eval_criteria:
+        lines.append("## 평가 배점표 (배점 높은 순 — 슬라이드 분량 배분 기준)")
+        lines.append(str(eval_criteria)[:1200])
+        lines.append("")
+
+    # ── 핵심 과업 & 키워드
+    core_tasks = rfp.get("core_tasks", []) or dna.get("core_tasks", [])
+    top_kw     = rfp.get("top_keywords", []) or dna.get("evaluation_keywords", [])
+    if core_tasks:
+        lines.append("## 핵심 과업")
+        lines += [f"  - {str(t)[:150]}" for t in core_tasks[:8]]
+        lines.append("")
+    if top_kw:
+        lines.append("## 평가 핵심 키워드")
+        lines.append("  " + ", ".join(str(k)[:40] for k in top_kw[:12]))
+        lines.append("")
+
+    # ── 전략
     strat = steps.get("strategy", {})
     if strat:
         lines.append("## 전략")
         for k, lbl in [("core_problem","핵심문제"), ("crisis_statement","위기제시"),
                         ("current_situation","현황진단"), ("solution_direction","해결방향")]:
             if strat.get(k):
-                lines.append(f"{lbl}: {str(strat[k])[:220]}")
+                lines.append(f"{lbl}: {str(strat[k])[:280]}")
         effects = strat.get("expected_effects", [])
         if effects:
-            lines.append("기대효과: " + " / ".join(str(e)[:80] for e in effects[:4]))
+            lines.append("기대효과: " + " / ".join(str(e)[:100] for e in effects[:5]))
+
+        # 설득 구조 (4단계)
+        ps = strat.get("persuasion_structure", [])
+        if ps:
+            lines.append("설득 구조:")
+            for stage in ps[:5]:
+                if isinstance(stage, dict):
+                    sname = stage.get("stage", "")
+                    sbody = stage.get("body", "") or stage.get("description", "")
+                    lines.append(f"  [{sname}] {str(sbody)[:180]}")
+                elif isinstance(stage, str):
+                    lines.append(f"  - {stage[:180]}")
+
+        # 배점 상위 평가항목
+        hi = strat.get("high_priority_eval", []) or strat.get("high_priority_eval_items", [])
+        if hi:
+            lines.append("배점 상위 항목: " + " / ".join(
+                (it.get("item","") if isinstance(it, dict) else str(it))[:60]
+                for it in hi[:5]
+            ))
         lines.append("")
 
-    cr = steps.get("creative", {})
-    if cr:
-        lines.append("## 크리에이티브")
-        for k, lbl in [("concept","컨셉"), ("concept_description","설명"),
-                        ("confirmed_slogan","슬로건"), ("tone_description","톤앤매너")]:
-            if cr.get(k):
-                lines.append(f"{lbl}: {str(cr[k])[:220]}")
+    # ── 리서치 인사이트
+    research = steps.get("research", {})
+    if research:
+        lines.append("## 리서치 인사이트")
+        issues = research.get("recent_issues", [])
+        if issues:
+            lines.append("최근 이슈:")
+            for iss in issues[:4]:
+                if isinstance(iss, dict):
+                    lines.append(f"  - {str(iss.get('title','') or iss.get('issue',''))[:150]}")
+                elif isinstance(iss, str):
+                    lines.append(f"  - {iss[:150]}")
+        sim = research.get("similar_cases", [])
+        if sim:
+            lines.append("유사 사례:")
+            for sc in sim[:3]:
+                if isinstance(sc, dict):
+                    lines.append(f"  - {str(sc.get('title','') or sc.get('case',''))[:150]}")
         lines.append("")
 
+    # ── 제작 계획
     plan = steps.get("plan", {})
     if plan:
         lines.append("## 제작 계획")
         for ep in plan.get("episodes", [])[:6]:
             if isinstance(ep, dict):
                 lines.append(
-                    f"- {ep.get('episode_number','')}편: {ep.get('title','')} "
-                    f"— {str(ep.get('core_message',''))[:100]}"
+                    f"  {ep.get('episode_number','')}편: {ep.get('title','')} "
+                    f"— {str(ep.get('core_message',''))[:120]}"
                 )
+        sched = plan.get("production_schedule", [])
+        if sched:
+            lines.append("제작 일정:")
+            for ph in sched[:4]:
+                if isinstance(ph, dict):
+                    lines.append(f"  [{ph.get('phase','')}] {str(ph.get('tasks',''))[:120]}")
         lines.append("")
 
+    # ── 마케팅
     mkt = steps.get("marketing", {})
     if mkt:
-        lines.append("## 마케팅")
+        lines.append("## 마케팅 전략")
         pl = mkt.get("platforms", [])
         if pl:
-            lines.append("채널: " + ", ".join(str(p)[:30] for p in pl[:5]))
+            lines.append("채널: " + ", ".join(str(p)[:40] for p in pl[:6]))
+        for k, lbl in [("target_audience","타겟"), ("kpi","KPI"), ("budget_allocation","예산배분")]:
+            if mkt.get(k):
+                lines.append(f"{lbl}: {str(mkt[k])[:200]}")
         lines.append("")
-
-    final = steps.get("final_proposal", {})
-    if final:
-        sc = final.get("consistency_score", 0)
-        if sc:
-            lines.append(
-                f"일관성점수: {sc:.0%}" if isinstance(sc, float) else f"일관성점수: {sc}"
-            )
 
     return "\n".join(lines)
 
@@ -398,24 +481,76 @@ def generate_slides(case_detail: dict, pages: int, progress_cb=None) -> dict:
 
     summary  = _build_case_summary(case_detail)
     case     = case_detail.get("case", {})
+    dna      = case.get("dna", {})
+    steps    = case_detail.get("steps", {})
     client   = case.get("client_name", "")
+
+    cr      = steps.get("creative", {})
+    concept = cr.get("concept", "") or dna.get("concept", "")
+    slogan  = cr.get("confirmed_slogan", "") or dna.get("slogan", "")
 
     import datetime
     today = datetime.date.today().strftime("%Y년 %m월")
 
-    prompt = f"""당신은 정부기관 제안 PT 전문 기획자입니다.
-아래 제안서 내용을 {pages}페이지 PPT로 구성하세요.
+    prompt = f"""당신은 정부 제안 PT 전문 기획자입니다. 아래 제안서 데이터를 분석해 {pages}페이지 PPT 슬라이드 구성을 JSON으로 출력하세요.
 
-[제안서 내용]
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+[제안서 데이터]
 {summary}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-반드시 아래 JSON만 출력하세요 (설명 텍스트 없이 순수 JSON만):
+【핵심 관통 메시지 — 표지·목차·마지막 슬라이드에 반드시 반영】
+컨셉: {concept or '(데이터에서 추출)'}
+슬로건: {slogan or '(데이터에서 추출)'}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【슬라이드 작성 5원칙】
+
+1. HEAD COPY + SUB COPY + 데이터/출처 구조
+   · title(헤드카피): 해당 슬라이드의 핵심 주장을 직관적 한 문장으로 (동사 포함, 15자 이내)
+     예시 ✗ "전략 방향"  ✓ "선택과 집중으로 예산 효율 30% 확보"
+   · bullets / steps / message(서브카피): 헤드카피를 뒷받침하는 구체적 근거 3~5개
+   · note / desc 필드: 수치·출처·데이터 명시 (가능한 경우)
+
+2. 내러티브 연속성
+   · 전체 슬라이드가 하나의 스토리를 형성: 문제 제시 → 근거 → 해결책 → 실행 → 기대효과 → 마무리
+   · 각 슬라이드 헤드카피를 순서대로 읽으면 논리적 흐름이 형성되어야 함
+
+3. 평가 배점 기반 슬라이드 분량 배분
+   · 평가 배점표의 배점이 높은 항목일수록 더 많은 슬라이드 페이지 할당
+   · 배점 상위 3개 항목은 각각 최소 2페이지 이상 구성
+   · 배점이 낮은 항목은 1페이지로 압축
+
+4. 컨셉·슬로건 관통
+   · 표지(cover) title에 슬로건 또는 컨셉 핵심어 반영
+   · 목차(toc) 마지막 줄에 슬로건 배치
+   · 마지막 슬라이드(message) message 필드에 슬로건 전문 배치
+
+5. INTERZ 차별화 전략 3가지 명시
+   · 경쟁사 대비 차별점을 제안서 중반부에 슬라이드 1장으로 구성
+   · type: compare 사용 — left: 일반적 접근, right: INTERZ(인터즈)만의 접근
+   · INTERZ의 강점(크리에이티브·전략·데이터 기반 실행력)을 근거로 작성
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【슬라이드 타입 7종 스펙】
+  · cover  : title(헤드카피·슬로건 반영), client, date
+  · toc    : title, items(섹션 목록, 마지막에 슬로건 1줄)
+  · content: title(헤드카피), bullets(서브카피 3~5개)
+  · process: title(헤드카피), steps=[{{label, desc}}] (3~5단계)
+  · compare: title(헤드카피), left_title, left_items(3~5개), right_title, right_items(3~5개)
+  · number : title(헤드카피), number(수치), label(단위/지표명), description(출처·맥락)
+  · message: title(선택), message(슬로건·핵심문장 1~2줄), note(보조설명)
+
+【필수 흐름 (이 순서를 지킬 것)】
+표지 → 목차 → 현황/문제 → 전략방향 → 크리에이티브컨셉 → INTERZ차별화 → 제작계획 → 마케팅 → 기대효과 → 마무리
+
+반드시 아래 JSON만 출력하세요 (설명 텍스트·마크다운 없이 순수 JSON만):
 {{
   "slides": [
     {{
       "number": 1,
       "type": "cover",
-      "title": "제안서 메인 타이틀",
+      "title": "슬로건 또는 컨셉 반영 제안서 타이틀",
       "client": "{client}",
       "date": "{today}"
     }},
@@ -423,64 +558,76 @@ def generate_slides(case_detail: dict, pages: int, progress_cb=None) -> dict:
       "number": 2,
       "type": "toc",
       "title": "목차",
-      "items": ["전략 방향", "크리에이티브 컨셉", "제작 계획", "마케팅 전략", "기대 효과"]
+      "items": ["01. 현황 진단 및 문제 정의", "02. 전략 방향", "03. 크리에이티브 컨셉", "04. 인터즈만의 차별화", "05. 제작 계획", "06. 마케팅 전략", "07. 기대 효과", "{slogan or '슬로건'}"]
     }},
     {{
       "number": 3,
-      "type": "content",
-      "title": "슬라이드 제목",
-      "bullets": ["핵심 내용 1", "핵심 내용 2", "핵심 내용 3"]
+      "type": "compare",
+      "title": "헤드카피: 현황과 해결 방향 한 문장",
+      "left_title": "현재 문제",
+      "left_items": ["문제 근거 1 (수치 포함)", "문제 근거 2", "문제 근거 3"],
+      "right_title": "해결 방향",
+      "right_items": ["해결책 1", "해결책 2", "해결책 3"]
     }},
     {{
       "number": 4,
+      "type": "content",
+      "title": "헤드카피: 전략 핵심 주장 한 문장",
+      "bullets": ["전략 서브포인트 1", "전략 서브포인트 2", "전략 서브포인트 3"]
+    }},
+    {{
+      "number": 5,
+      "type": "message",
+      "title": "크리에이티브 컨셉",
+      "message": "컨셉 핵심 문장 (슬로건 반영)",
+      "note": "컨셉 설명 보조 문구"
+    }},
+    {{
+      "number": 6,
+      "type": "compare",
+      "title": "일반 대행사 vs INTERZ: 무엇이 다른가",
+      "left_title": "일반적 접근",
+      "left_items": ["차별화 포인트 1 반대 사례", "차별화 포인트 2 반대 사례", "차별화 포인트 3 반대 사례"],
+      "right_title": "INTERZ만의 방식",
+      "right_items": ["INTERZ 차별점 1 (크리에이티브)", "INTERZ 차별점 2 (전략)", "INTERZ 차별점 3 (데이터 기반 실행)"]
+    }},
+    {{
+      "number": 7,
       "type": "process",
-      "title": "프로세스 제목",
+      "title": "헤드카피: 제작 프로세스 핵심 메시지",
       "steps": [
+        {{"label": "단계명", "desc": "단계 설명"}},
         {{"label": "단계명", "desc": "단계 설명"}},
         {{"label": "단계명", "desc": "단계 설명"}},
         {{"label": "단계명", "desc": "단계 설명"}}
       ]
     }},
     {{
-      "number": 5,
-      "type": "compare",
-      "title": "비교 제목",
-      "left_title": "현재 문제",
-      "left_items": ["문제 1", "문제 2", "문제 3"],
-      "right_title": "해결 방향",
-      "right_items": ["해결 1", "해결 2", "해결 3"]
-    }},
-    {{
-      "number": 6,
+      "number": 8,
       "type": "number",
-      "title": "성과 지표",
-      "number": "300%",
-      "label": "ROI 기대치",
-      "description": "3개월 집중 캠페인 기준 예상 수익률"
+      "title": "헤드카피: 기대 효과 수치 핵심 주장",
+      "number": "수치",
+      "label": "지표명 (단위 포함)",
+      "description": "수치 출처 또는 달성 조건"
     }},
     {{
-      "number": 7,
+      "number": 9,
       "type": "message",
-      "title": "핵심 메시지",
-      "message": "슬라이드에서 전달할 핵심 한 문장",
-      "note": "보조 설명 또는 출처"
+      "title": "",
+      "message": "{slogan or '슬로건 전문'}",
+      "note": "제안사: INTERZ(인터즈)"
     }}
   ]
 }}
 
-슬라이드 구성 규칙:
-- slides 배열은 정확히 {pages}개
-- 슬라이드 타입 7종: cover / toc / content / process / compare / number / message
-  · cover: 1번 표지 (반드시 1장)
-  · toc: 목차 (보통 2번)
-  · content: 제목 + 불릿 3~5개 (일반 내용 슬라이드)
-  · process: 단계 흐름도 (steps 3~5개, 각 label+desc 필수)
-  · compare: 좌/우 비교 (left_items, right_items 각 3~5개)
-  · number: 핵심 수치 강조 (number, label, description 필수)
-  · message: 핵심 문장 전달 (message 1~2문장, note 선택)
-- content 타입 bullets는 3~5개, 핵심만 간결하게
-- 마지막 슬라이드는 message 타입으로 마무리 메시지
-- 슬라이드 흐름: 표지 → 목차 → 전략 content/compare/number → 크리에이티브 content/message → 제작계획 process/content → 마케팅 content/number → 마무리 message"""
+【최종 검증 체크리스트 — 출력 전 반드시 확인】
+□ slides 배열이 정확히 {pages}개인가?
+□ 1번은 cover, 2번은 toc인가?
+□ 마지막은 message 타입이며 슬로건이 포함되어 있는가?
+□ INTERZ 차별화 슬라이드(compare 타입)가 1장 이상 있는가?
+□ 모든 title(헤드카피)이 "섹션명"이 아닌 "주장 문장"인가?
+□ 평가 배점 높은 항목에 더 많은 페이지가 배분되었는가?
+□ 수치·데이터가 있는 슬라이드는 number 또는 note 필드에 출처가 있는가?"""
 
     return call_json(prompt, max_tokens=8192)
 
