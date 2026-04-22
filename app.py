@@ -617,6 +617,7 @@ def start():
     _sb_style_raw = request.form.get("storyboard_style", "line").strip()
     storyboard_style = _sb_style_raw if _sb_style_raw in ("line", "color", "photo") else "line"
     storyboard_cuts_per_ep = max(1, min(30, int(request.form.get("storyboard_cuts_per_ep") or 10)))
+    generate_storyboard = request.form.get("generate_storyboard") == "on"
     _sm_raw = request.form.get("script_mode", "full").strip()
     script_mode = _sm_raw if _sm_raw in ("full", "summary") else "full"
 
@@ -670,6 +671,7 @@ def start():
     dna.script_preset_storyboard = script_preset_storyboard
     dna.storyboard_style         = storyboard_style
     dna.storyboard_cuts_per_ep   = storyboard_cuts_per_ep
+    dna.generate_storyboard      = generate_storyboard
     dna.script_mode              = script_mode
     if ref_structure:
         dna.reference_structure = ref_structure

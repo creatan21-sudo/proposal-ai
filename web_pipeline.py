@@ -211,6 +211,16 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
 
         # storyboard: 스타일 선택 후 DALL-E 생성
         if step_key == "storyboard":
+            if not getattr(dna, "generate_storyboard", False):
+                push_event({
+                    "type":    "log",
+                    "message": "⏭ 스토리보드 생성 안 함 (고급설정에서 활성화 가능)",
+                })
+                results[step_key] = {}
+                step_executed[step_key] = 1
+                i += 1
+                continue
+
             from config import OPENAI_API_KEY as _OAI_KEY
             if not _OAI_KEY:
                 push_event({

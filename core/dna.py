@@ -88,6 +88,7 @@ class ConceptDNA:
     script_preset_storyboard: str = ""     # "auto"|"none"|"cuts:N"
     storyboard_style: str = "line"         # "line"|"color"|"photo"
     storyboard_cuts_per_ep: int = 10       # 편당 스토리보드 컷 수
+    generate_storyboard: bool = False      # True면 DALL-E 3 이미지 생성, False면 스킵
     pt_duration_min: int = 10              # PT 발표 시간 (분) — STEP 11 시작 전 사용자 입력
 
     # PPT 생성 옵션 (app.py에서 주입)

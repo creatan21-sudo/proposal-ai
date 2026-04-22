@@ -611,7 +611,18 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
         function renderSb(frames) {
           const grid = document.getElementById(`sb-grid-${cid}`);
           if (!frames.length) {
-            grid.innerHTML = '<div style="grid-column:1/-1;text-align:center;color:#9ca3af;padding:40px;">스토리보드가 아직 없습니다.<br>파이프라인 실행 시 STEP 8에서 생성됩니다.</div>';
+            grid.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:40px;">
+              <div style="font-size:15px;color:#6b7280;margin-bottom:16px;">📭 스토리보드 미생성</div>
+              <div style="font-size:13px;color:#9ca3af;margin-bottom:20px;">
+                파이프라인 실행 시 고급설정에서 <strong>스토리보드 이미지 생성</strong>을 활성화하거나,<br>
+                아래 버튼으로 지금 바로 생성할 수 있습니다.
+              </div>
+              <button onclick="generateStoryboard()"
+                      style="padding:8px 20px;font-size:13px;font-weight:600;background:#4f46e5;
+                             color:#fff;border:none;border-radius:8px;cursor:pointer;">
+                ✨ 스토리보드 생성
+              </button>
+            </div>`;
             return;
           }
           let html = '';
@@ -638,6 +649,21 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
           grid.innerHTML = html;
         }
         loadSb();
+        window.generateStoryboard = async function() {
+          const style = document.getElementById('sb-style-sel')?.value || 'line';
+          if (!confirm('스토리보드를 생성하시겠습니까? (DALL-E 3 API 비용이 발생합니다)')) return;
+          const r = await fetch(`/api/storyboard/${cid}/regenerate`, {
+            method: 'POST',
+            headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({style}),
+          });
+          const d = await r.json();
+          if (d.ok) {
+            alert('생성 시작됨. 1~2분 후 새로고침하세요.');
+          } else {
+            alert('오류: ' + (d.error||'알 수 없음'));
+          }
+        };
         window.regenAllStoryboard = async function() {
           const style = document.getElementById('sb-style-sel').value;
           if (!confirm('전체 스토리보드를 재생성하시겠습니까?')) return;

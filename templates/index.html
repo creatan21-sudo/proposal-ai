@@ -231,26 +231,39 @@
           <!-- 스토리보드 옵션 -->
           <div id="storyboard-options" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:16px;">
             <div style="font-size:.85rem;font-weight:600;color:#374151;margin-bottom:10px;">스토리보드 설정:</div>
-            <div style="display:flex;flex-direction:column;gap:8px;font-size:.82rem;color:#374151;">
-              <div style="display:flex;align-items:center;gap:10px;">
-                <label style="min-width:60px;font-weight:500;">스타일:</label>
-                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
-                  <input type="radio" name="storyboard_style" value="line" checked> 라인
-                </label>
-                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
-                  <input type="radio" name="storyboard_style" value="color"> 컬러 그림
-                </label>
-                <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
-                  <input type="radio" name="storyboard_style" value="photo"> 실사
-                </label>
-              </div>
-              <div style="display:flex;align-items:center;gap:10px;margin-top:4px;">
-                <label style="min-width:60px;font-weight:500;">편당 컷 수:</label>
-                <input type="number" name="storyboard_cuts_per_ep" id="storyboard-cuts-input"
-                       min="1" max="20" value="10"
-                       oninput="this.value=Math.min(Math.max(1,parseInt(this.value)||1),20)"
-                       style="width:52px;padding:2px 6px;border:1px solid #d1d5db;border-radius:4px;">
-                <span style="color:#6b7280;">컷/편 (1~20, 기본 10)</span>
+            <div style="display:flex;flex-direction:column;gap:10px;font-size:.82rem;color:#374151;">
+              <!-- 생성 여부 토글 (기본 OFF) -->
+              <label style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:8px 10px;background:#fff;border:1px solid #d1d5db;border-radius:6px;">
+                <input type="checkbox" name="generate_storyboard" id="generate-sb-chk"
+                       onchange="toggleSbDetailOptions(this.checked)"
+                       style="width:16px;height:16px;cursor:pointer;">
+                <span>
+                  <strong>스토리보드 이미지 생성</strong>
+                  <span style="color:#6b7280;font-weight:400;"> (DALL-E 3, 유료 · 기본 OFF)</span>
+                </span>
+              </label>
+              <!-- 세부 옵션 — 체크 시에만 표시 -->
+              <div id="sb-detail-options" style="display:none;flex-direction:column;gap:8px;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <label style="min-width:60px;font-weight:500;">스타일:</label>
+                  <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+                    <input type="radio" name="storyboard_style" value="line" checked> 라인
+                  </label>
+                  <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+                    <input type="radio" name="storyboard_style" value="color"> 컬러 그림
+                  </label>
+                  <label style="display:flex;align-items:center;gap:4px;cursor:pointer;">
+                    <input type="radio" name="storyboard_style" value="photo"> 실사
+                  </label>
+                </div>
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <label style="min-width:60px;font-weight:500;">편당 컷 수:</label>
+                  <input type="number" name="storyboard_cuts_per_ep" id="storyboard-cuts-input"
+                         min="1" max="20" value="10"
+                         oninput="this.value=Math.min(Math.max(1,parseInt(this.value)||1),20)"
+                         style="width:52px;padding:2px 6px;border:1px solid #d1d5db;border-radius:4px;">
+                  <span style="color:#6b7280;">컷/편 (1~20, 기본 10)</span>
+                </div>
               </div>
             </div>
           </div>
@@ -321,6 +334,14 @@
     }
     function toggleStoryboardOptions(show) {
       document.getElementById('storyboard-options').style.display = show ? '' : 'none';
+      if (!show) {
+        const chk = document.getElementById('generate-sb-chk');
+        if (chk) { chk.checked = false; toggleSbDetailOptions(false); }
+      }
+    }
+    function toggleSbDetailOptions(show) {
+      const el = document.getElementById('sb-detail-options');
+      if (el) el.style.display = show ? 'flex' : 'none';
     }
     function toggleCustomCuts(enable) {
       const inp = document.getElementById('script-cuts-input');
