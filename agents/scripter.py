@@ -124,7 +124,11 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
                 script = _fallback_script(idx, ep_plan)
 
         scripts.append(script)
-        print(f"  [대본] {ep_num}편 scenes 저장: {len(script.get('scenes', []))}개")
+        _scenes = script.get("scenes", [])
+        print(f"  [대본] {ep_num}편 scenes 저장: {len(_scenes)}개")
+        if len(_scenes) == 0:
+            print(f"  [대본 raw키] {list(script.keys())}")
+            print(f"  [대본 raw내용] {str(script)[:300]}")
 
         # 편별 DB 저장
         try:
@@ -510,6 +514,11 @@ def _generate_shortform_outline(
     )
 
     raw = claude_client.call_json(prompt, max_tokens=500, _validate=False)
+    _ver_scenes = sum(len((raw.get("versions") or {}).get(v, {}).get("scenes", []))
+                      for v in ("15sec", "30sec", "60sec"))
+    if _ver_scenes == 0:
+        print(f"  [대본 raw키] {list(raw.keys())}")
+        print(f"  [대본 raw내용] {str(raw)[:300]}")
     raw.setdefault("episode",  ep_num)
     raw.setdefault("title",    ep_plan.get("title", f"{ep_num}편"))
     raw.setdefault("format",   "shortform")
