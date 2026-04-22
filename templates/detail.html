@@ -477,8 +477,16 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
           {% endif %}
           {% if sc.get('scenes') %}
           <div class="detail-field">
-            <div class="detail-field-label">씬 구성</div>
-            <div class="dv-cards">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <div class="detail-field-label" style="margin-bottom:0;">씬 구성</div>
+              <button class="scene-view-toggle"
+                      onclick="toggleSceneView(this)"
+                      data-mode="full"
+                      style="font-size:11px;padding:3px 10px;border:1px solid #d1d5db;
+                             border-radius:4px;background:#f9fafb;cursor:pointer;color:#6b7280;
+                             white-space:nowrap;">요약본 보기</button>
+            </div>
+            <div class="dv-cards scene-cards-wrap">
               {% for scene in sc.scenes %}
               <div class="dv-card">
                 <div style="font-size:11px;font-weight:700;color:var(--muted);margin-bottom:8px;">
@@ -487,18 +495,18 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
                   {% if scene.get('location') %} &nbsp;·&nbsp; {{ scene.location }}{% endif %}
                 </div>
                 {% if scene.get('narration') %}
-                <p class="dv-text" style="color:#4f46e5;"><strong>나레이션:</strong> {{ scene.narration }}</p>
+                <p class="dv-text scene-full" style="color:#4f46e5;"><strong>나레이션:</strong> {{ scene.narration }}</p>
                 {% elif scene.get('audio') %}
-                <p class="dv-text" style="color:#4f46e5;"><strong>오디오:</strong> {{ scene.audio }}</p>
+                <p class="dv-text scene-full" style="color:#4f46e5;"><strong>오디오:</strong> {{ scene.audio }}</p>
                 {% endif %}
                 {% if scene.get('visual') %}
                 <p class="dv-text" style="color:#6b7280;"><strong>화면:</strong> {{ scene.visual }}</p>
                 {% endif %}
                 {% if scene.get('dialogue') and scene.dialogue != None %}
-                <p class="dv-text" style="color:#059669;"><strong>대사:</strong> {{ scene.dialogue }}</p>
+                <p class="dv-text scene-full" style="color:#059669;"><strong>대사:</strong> {{ scene.dialogue }}</p>
                 {% endif %}
                 {% if scene.get('caption') %}
-                <p class="dv-text" style="color:#d97706;"><strong>자막:</strong> {{ scene.caption }}</p>
+                <p class="dv-text scene-full" style="color:#d97706;"><strong>자막:</strong> {{ scene.caption }}</p>
                 {% endif %}
                 {% if scene.get('key_point') %}
                 <p class="dv-text" style="color:#6b7280;font-size:11px;"><strong>핵심:</strong> {{ scene.key_point }}</p>
@@ -2099,6 +2107,34 @@ function _pptShowError(msg) {
   document.getElementById('ppt-progress').style.display = 'none';
   document.getElementById('ppt-error').style.display    = '';
   document.getElementById('ppt-error-msg').textContent  = msg;
+}
+
+/* ── 씬 요약/전체 토글 ── */
+(function addSceneToggleStyle() {
+  const s = document.createElement('style');
+  s.textContent = '.scene-cards-wrap.summary-view .scene-full { display: none !important; }';
+  document.head.appendChild(s);
+})();
+
+function toggleSceneView(btn) {
+  const wrap = btn.closest('.detail-field').querySelector('.scene-cards-wrap');
+  if (!wrap) return;
+  const isFull = btn.dataset.mode === 'full';
+  if (isFull) {
+    wrap.classList.add('summary-view');
+    btn.dataset.mode = 'summary';
+    btn.textContent  = '전체본 보기';
+    btn.style.background = '#eff6ff';
+    btn.style.color      = '#2563eb';
+    btn.style.borderColor = '#bfdbfe';
+  } else {
+    wrap.classList.remove('summary-view');
+    btn.dataset.mode = 'full';
+    btn.textContent  = '요약본 보기';
+    btn.style.background  = '#f9fafb';
+    btn.style.color       = '#6b7280';
+    btn.style.borderColor = '#d1d5db';
+  }
 }
 </script>
 {% endblock %}

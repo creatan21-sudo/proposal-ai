@@ -83,6 +83,7 @@ class ConceptDNA:
     pages: int = 30                                            # 목표 제안서 페이지 수
 
     # 대본 사전 설정 (index.html에서 미리 설정, 0/""이면 런타임 다이얼로그로 확인)
+    script_mode: str = "full"              # "full"|"summary" — 대본 생성 상세도
     script_preset_episodes: int = 0        # 미리 설정된 작성 편수
     script_preset_storyboard: str = ""     # "auto"|"none"|"cuts:N"
     storyboard_style: str = "line"         # "line"|"color"|"photo"

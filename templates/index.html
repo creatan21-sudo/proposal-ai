@@ -255,6 +255,25 @@
             </div>
           </div>
 
+          <!-- 시나리오 유형 -->
+          <div style="margin-bottom:16px;">
+            <div style="font-size:.85rem;font-weight:600;color:#374151;margin-bottom:8px;">시나리오 유형:</div>
+            <div style="display:flex;flex-direction:column;gap:8px;font-size:.82rem;color:#374151;">
+              <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
+                <input type="radio" name="script_mode" value="full" checked style="margin-top:2px;">
+                <div>
+                  <strong>전체본</strong> (기본) — 씬당 나레이션·대사·화면·자막 전체 상세 생성
+                </div>
+              </label>
+              <label style="display:flex;align-items:flex-start;gap:8px;cursor:pointer;">
+                <input type="radio" name="script_mode" value="summary" style="margin-top:2px;">
+                <div>
+                  <strong>요약본</strong> — 씬당 핵심포인트 1줄 + 촬영방향 1줄 (빠른 확인용)
+                </div>
+              </label>
+            </div>
+          </div>
+
           <!-- 실행 모드 -->
           <div style="margin-bottom:8px;">
             <div style="font-size:.85rem;font-weight:600;color:#374151;margin-bottom:8px;">실행 모드:</div>

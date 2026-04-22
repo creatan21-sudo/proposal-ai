@@ -76,6 +76,9 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
         ep_num = idx + 1
         if is_short:
             return _generate_shortform_outline(dna, ep_plan, ep_num, ep_plans, is_series)
+        script_mode = getattr(dna, "script_mode", "full") or "full"
+        if script_mode == "summary":
+            return _generate_longform_summary(dna, ep_plan, ep_num)
         is_sample = (ep_num == 1)
         return _generate_longform_outline(dna, ep_plan, ep_num, ep_plans, is_series, is_sample)
 
@@ -193,6 +196,48 @@ def _get_episode_plans(dna: ConceptDNA) -> list:
 # ─────────────────────────────────────────────
 # 제안서용 개요 모드 (속도 우선)
 # ─────────────────────────────────────────────
+
+def _generate_longform_summary(
+    dna: ConceptDNA,
+    ep_plan: dict,
+    ep_num: int,
+) -> dict:
+    """요약본 대본 — 씬당 핵심포인트+촬영방향 1줄씩 (속도 최우선)."""
+    duration_s = _duration_to_seconds(dna.duration)
+    title = ep_plan.get("title", f"{ep_num}편")
+
+    cuts = getattr(dna, "storyboard_cuts_per_ep", 0) or 0
+    scene_count = min(max(1, cuts), 20) if cuts > 0 else min(_calc_scene_count(duration_s), 5)
+    print(f"  [대본·요약] {ep_num}편 씬 수: {scene_count}개")
+
+    scenes_tmpl = ",".join(
+        f'{{"scene_number":{n},"key_point":"핵심포인트1줄","visual":"촬영방향1줄"}}'
+        for n in range(1, scene_count + 1)
+    )
+    prompt = (
+        f"영상대본요약JSON만출력(설명없이). 각 씬: 핵심포인트 1줄 + 촬영방향 1줄만 간결하게.\n"
+        f"발주처:{dna.client_name} 사업:{dna.project_name} 컨셉:{dna.concept or '미정'}"
+        f" 톤:{dna.tone_and_manner or '미정'} {ep_num}편\"{title}\" 러닝타임:{dna.duration}\n\n"
+        f'{{"episode":{ep_num},"title":"{title}","format":"longform","duration":"{dna.duration}",'
+        f'"opening_hook":{{"hook_line":"오프닝훅15자내"}},'
+        f'"scenes":[{scenes_tmpl}],'
+        f'"interview_questions":["질문1","질문2"],'
+        f'"closing_cta":{{"cta_direction":"CTA방향"}},'
+        f'"series_hook":{{"cliffhanger_line":null,"callback_line":null}}}}'
+    )
+    raw = claude_client.call_json(prompt, max_tokens=max(600, scene_count * 80), _validate=False)
+    raw.setdefault("episode", ep_num)
+    raw.setdefault("title", title)
+    raw.setdefault("format", "longform")
+    raw.setdefault("duration", dna.duration)
+    raw.setdefault("opening_hook", {})
+    raw.setdefault("scenes", [])
+    raw.setdefault("interview_questions", [])
+    raw.setdefault("closing_cta", {})
+    raw.setdefault("series_hook", {"cliffhanger_line": None, "callback_line": None})
+    print(f"  [대본·요약] {ep_num}편 완료: {len(raw.get('scenes', []))}씬")
+    return raw
+
 
 def _generate_longform_outline(
     dna: ConceptDNA,
@@ -496,7 +541,8 @@ def _generate_shortform_outline(
 
     cuts = getattr(dna, "storyboard_cuts_per_ep", 0) or 0
     n = min(max(1, cuts), 20) if cuts > 0 else 4
-    print(f"  [대본] {ep_num}편 숏폼 씬 수 결정: {n}개 (storyboard_cuts_per_ep={cuts})")
+    script_mode = getattr(dna, "script_mode", "full") or "full"
+    print(f"  [대본] {ep_num}편 숏폼 씬 수 결정: {n}개 (storyboard_cuts_per_ep={cuts}, mode={script_mode})")
 
     def _scene_tmpl(count):
         labels = ["훅","문제","공감","해결","전환","강조","CTA","마무리","엔딩","추가"]
@@ -508,8 +554,10 @@ def _generate_shortform_outline(
             for i in range(count)
         )
 
+    _mode_hint = "각 씬: 핵심포인트 1줄 + 화면방향 1줄만 간결하게.\n" if script_mode == "summary" else ""
     prompt = (
         f"숏폼대본개요JSON만출력(설명없이).\n"
+        f"{_mode_hint}"
         f"반드시 각 버전마다 정확히 {n}개 씬을 생성하세요.\n"
         f"발주처:{dna.client_name} 사업:{dna.project_name} 컨셉:{dna.concept or '미정'}"
         f" {ep_num}편\"{title}\" 러닝타임:{dna.duration}\n\n"

@@ -11,14 +11,16 @@ from core.dna import ConceptDNA
 
 _CRITICAL_PREFIX = (
     "ABSOLUTE RULES - NO EXCEPTIONS: "
-    "1. ZERO text in image. Not a single letter, number, or symbol. "
-    "No signs, no papers, no whiteboards, no screens with text, "
-    "no cue cards, no scripts, no documents, no books with visible text, "
-    "no name tags, no banners, no captions, no watermarks. "
-    "If an object would normally have text, show it without text. "
-    "2. No historical Korean elements. Modern only. "
-    "3. Single frame, single scene. No panels, no collage. "
-    "4. Pure visual storytelling. No text whatsoever. "
+    "no text, no letters, no words, no numbers, no symbols, no captions, "
+    "no subtitles, no watermark, no typography, no signs, no labels, "
+    "no banners, no name tags, no papers with writing, no whiteboards, "
+    "no screens showing text, no cue cards, no scripts, no documents, "
+    "no books with visible text. "
+    "Purely visual. Image only. Zero readable characters anywhere. "
+    "If an object normally has text, render it blank or without text. "
+    "No historical Korean elements. Modern only. "
+    "Single frame, single scene. No panels, no collage. "
+    "Pure visual storytelling. Absolutely no text whatsoever. "
 )
 
 
@@ -34,21 +36,29 @@ def _remove_text_props(scene_desc: str) -> str:
         scene_desc = scene_desc.replace(word, '')
     return scene_desc.strip()
 
+_NO_TEXT_SUFFIX = (
+    " [CRITICAL: no text, no letters, no words, no captions, no subtitles, "
+    "no watermark, no typography, purely visual, image only]"
+)
+
 _STYLE_TEMPLATES = {
     "line": (
         _CRITICAL_PREFIX
         + "Style: storyboard frame, pen sketch, black and white line art. "
         + "장면: {scene_description}"
+        + _NO_TEXT_SUFFIX
     ),
     "color": (
         _CRITICAL_PREFIX
         + "Style: storyboard frame, illustration style, colorful. "
         + "장면: {scene_description}"
+        + _NO_TEXT_SUFFIX
     ),
     "photo": (
         _CRITICAL_PREFIX
         + "Style: storyboard frame, cinematic photo style, realistic. "
         + "장면: {scene_description}"
+        + _NO_TEXT_SUFFIX
     ),
 }
 
