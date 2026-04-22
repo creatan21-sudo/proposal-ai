@@ -396,6 +396,33 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
     <span class="detail-tab-label">{{ step_label }}</span>
   </button>
   {% endfor %}
+  <button id="btn-view-all"
+          class="detail-tab detail-tab-all"
+          onclick="showAllView()"
+          title="모든 스텝을 한 페이지에서 보기 / 인쇄·PDF 저장">
+    <span class="detail-tab-icon">📄</span>
+    <span class="detail-tab-label">전체 보기</span>
+  </button>
+</div>
+
+{# ── 전체 보기 툴바 (showAllView 시 노출) ── #}
+<div id="all-view-toolbar"
+     style="display:none;align-items:center;justify-content:space-between;
+            padding:10px 16px;background:#eff6ff;border:1px solid #bfdbfe;
+            border-radius:8px;margin-bottom:16px;gap:10px;flex-wrap:wrap;">
+  <span style="font-size:13px;color:#1e40af;font-weight:600;">
+    📄 전체 보기 — 모든 스텝이 순서대로 표시됩니다
+  </span>
+  <div style="display:flex;gap:8px;">
+    <button onclick="window.print()"
+            style="padding:6px 14px;font-size:12px;font-weight:600;
+                   background:#fff;border:1px solid #bfdbfe;border-radius:6px;
+                   cursor:pointer;color:#1e40af;">🖨 인쇄 / PDF 저장</button>
+    <button onclick="showTabView()"
+            style="padding:6px 14px;font-size:12px;font-weight:600;
+                   background:#2563eb;color:#fff;border:none;border-radius:6px;
+                   cursor:pointer;">◀ 탭으로 보기</button>
+  </div>
 </div>
 
 <div class="detail-steps" id="detail-steps">
@@ -1068,6 +1095,33 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
 .detail-steps.mode-single .detail-step-header-accordion { display: none; }
 .detail-steps.mode-single .detail-step-header-tab { display: flex; }
 
+/* 전체 보기 모드: 아코디언 헤더 강조 */
+.detail-steps.mode-all .detail-step-header-accordion {
+  background: #f5f3ff;
+  border-bottom: 1px solid var(--border);
+  cursor: default;
+}
+
+/* 인쇄 스타일 */
+@media print {
+  .detail-tabs,
+  #all-view-toolbar { display: none !important; }
+  .detail-step-header-tab { display: none !important; }
+  .detail-step-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    margin-bottom: 20px;
+    box-shadow: none !important;
+    border: 1px solid #e5e7eb !important;
+  }
+  .detail-step-header-accordion {
+    background: #f5f3ff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .dv-cards { grid-template-columns: repeat(2, 1fr) !important; }
+}
+
 .detail-step-badge {
   width: 22px; height: 22px; border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
@@ -1258,6 +1312,35 @@ function toggleStep(key) {
   if (arrow) arrow.style.transform = hidden ? 'rotate(0deg)' : 'rotate(-90deg)';
 }
 
+// 전체 보기 모드
+function showAllView() {
+  const stepsEl = document.getElementById('detail-steps');
+  // 탭 active 해제
+  document.querySelectorAll('.detail-tab').forEach(btn => btn.classList.remove('active'));
+  const allBtn = document.getElementById('btn-view-all');
+  if (allBtn) allBtn.classList.add('active');
+  // 툴바 표시
+  document.getElementById('all-view-toolbar').style.display = 'flex';
+  // 모든 카드 표시 (데이터 있는 것만)
+  stepsEl.className = 'detail-steps mode-all';
+  document.querySelectorAll('.detail-step-card').forEach(card => {
+    const hasDone = card.classList.contains('detail-step-done');
+    card.style.display = hasDone ? '' : 'none';
+    if (hasDone) {
+      const body = document.getElementById('body-' + card.dataset.step);
+      if (body) body.style.display = 'block';
+    }
+  });
+  history.replaceState(null, '', '#all');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+// 탭 보기로 복귀
+function showTabView(stepKey) {
+  document.getElementById('all-view-toolbar').style.display = 'none';
+  switchTab(stepKey || _FIRST_STEP);
+}
+
 // 탭 전환 (단독 탭 모드만 사용)
 function switchTab(stepKey) {
   const stepsEl = document.getElementById('detail-steps');
@@ -1322,9 +1405,13 @@ function renderMd(raw) {
 
 document.addEventListener('DOMContentLoaded', function () {
   const hash = window.location.hash.replace('#', '');
-  const tabEl = hash ? document.getElementById('tab-' + hash) : null;
-  const isValidHash = tabEl && !tabEl.disabled;
-  switchTab(isValidHash ? hash : _FIRST_STEP);
+  if (hash === 'all') {
+    showAllView();
+  } else {
+    const tabEl = hash ? document.getElementById('tab-' + hash) : null;
+    const isValidHash = tabEl && !tabEl.disabled;
+    switchTab(isValidHash ? hash : _FIRST_STEP);
+  }
   loadStepOverrides();
   // renderMd 적용
   document.querySelectorAll('.dv-md-text').forEach(function(el) {
