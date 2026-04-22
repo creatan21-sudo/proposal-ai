@@ -124,6 +124,7 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
                 script = _fallback_script(idx, ep_plan)
 
         scripts.append(script)
+        print(f"  [대본] {ep_num}편 scenes 저장: {len(script.get('scenes', []))}개")
 
         # 편별 DB 저장
         try:
@@ -147,6 +148,7 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
          "format": s["format"], "scene_count": len(s.get("scenes", []))}
         for s in scripts
     ]
+    print(f"  [대본] dna.scripts 저장: {total}편 / 씬 수={[o['scene_count'] for o in outline]}")
     update_dna(dna, {
         "scripts":       scripts,
         "script_outline": outline,
@@ -206,12 +208,11 @@ def _generate_longform_outline(
 
     cuts = getattr(dna, "storyboard_cuts_per_ep", 0) or 0
     if cuts > 0:
-        # storyboard_cuts_per_ep가 설정된 경우: 그 값을 씬 수로 직접 사용
         scene_count = cuts
     else:
-        # 미설정 시: duration 기반 계산 후 기존 캡(1편=5, 나머지=3) 적용
         full_scenes = _calc_scene_count(duration_s)
         scene_count = min(full_scenes, 5) if is_sample else min(full_scenes, 3)
+    print(f"  [대본] {ep_num}편 씬 수 결정: {scene_count}개 (storyboard_cuts_per_ep={cuts})")
 
     # 1단계: 메타데이터 JSON (작은 호출)
     meta_prompt = _build_meta_only_prompt(dna, ep_plan, ep_num, all_plans if is_sample else [], is_series)
