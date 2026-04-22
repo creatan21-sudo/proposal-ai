@@ -126,6 +126,8 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
         scripts.append(script)
         _scenes = script.get("scenes", [])
         print(f"  [대본] {ep_num}편 scenes 저장: {len(_scenes)}개")
+        if _scenes:
+            print(f"  [씬 구조] {str(_scenes[0])[:200]}")
         if len(_scenes) == 0:
             print(f"  [대본 raw키] {list(script.keys())}")
             print(f"  [대본 raw내용] {str(script)[:300]}")
@@ -499,7 +501,10 @@ def _generate_shortform_outline(
     def _scene_tmpl(count):
         labels = ["훅","문제","공감","해결","전환","강조","CTA","마무리","엔딩","추가"]
         return ",".join(
-            f'{{"scene_number":{i+1},"key_point":"{labels[i] if i < len(labels) else f"씬{i+1}"}"}}'
+            f'{{"scene_number":{i+1},'
+            f'"key_point":"{labels[i] if i < len(labels) else f"씬{i+1}"}관련핵심내용1문장",'
+            f'"visual":"화면묘사1문장",'
+            f'"audio":"나레이션또는대사1문장"}}'
             for i in range(count)
         )
 
@@ -521,7 +526,7 @@ def _generate_shortform_outline(
     raw = None
     scenes = []
     for attempt in range(3):
-        raw = claude_client.call_json(prompt, max_tokens=max(500, n * 60), _validate=False)
+        raw = claude_client.call_json(prompt, max_tokens=max(1000, n * 150), _validate=False)
         _ver_scenes = sum(len((raw.get("versions") or {}).get(v, {}).get("scenes", []))
                           for v in ("15sec", "30sec", "60sec"))
         if _ver_scenes == 0:

@@ -486,14 +486,22 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
                   {% if scene.get('timecode') %} &nbsp;·&nbsp; {{ scene.timecode }}{% endif %}
                   {% if scene.get('location') %} &nbsp;·&nbsp; {{ scene.location }}{% endif %}
                 </div>
+                {% if scene.get('narration') %}
+                <p class="dv-text" style="color:#4f46e5;"><strong>나레이션:</strong> {{ scene.narration }}</p>
+                {% elif scene.get('audio') %}
+                <p class="dv-text" style="color:#4f46e5;"><strong>오디오:</strong> {{ scene.audio }}</p>
+                {% endif %}
+                {% if scene.get('visual') %}
+                <p class="dv-text" style="color:#6b7280;"><strong>화면:</strong> {{ scene.visual }}</p>
+                {% endif %}
+                {% if scene.get('dialogue') and scene.dialogue != None %}
+                <p class="dv-text" style="color:#059669;"><strong>대사:</strong> {{ scene.dialogue }}</p>
+                {% endif %}
+                {% if scene.get('caption') %}
+                <p class="dv-text" style="color:#d97706;"><strong>자막:</strong> {{ scene.caption }}</p>
+                {% endif %}
                 {% if scene.get('key_point') %}
-                <p class="dv-text"><strong>핵심:</strong> {{ scene.key_point }}</p>
-                {% endif %}
-                {% if scene.get('visual_concept') %}
-                <p class="dv-text" style="color:#6b7280;"><strong>비주얼:</strong> {{ scene.visual_concept }}</p>
-                {% endif %}
-                {% if scene.get('narration_key') %}
-                <p class="dv-text" style="color:#4f46e5;"><strong>나레이션:</strong> {{ scene.narration_key }}</p>
+                <p class="dv-text" style="color:#6b7280;font-size:11px;"><strong>핵심:</strong> {{ scene.key_point }}</p>
                 {% endif %}
               </div>
               {% endfor %}
