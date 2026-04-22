@@ -602,7 +602,8 @@ def start():
 
     # 고급 설정: 스텝 선택 (미선택 시 기본값 = 전체 스텝, 단 스토리보드 제외)
     _default_steps = ["rfp_analysis","research","narrative","strategy",
-                      "creative","plan","script","platform","marketing","final_proposal"]
+                      "creative","plan","script","platform","marketing","final_proposal",
+                      "improvement_report","ppt_design"]
     _all_steps     = _default_steps + ["storyboard"]
     selected_steps_raw = request.form.getlist("selected_steps")
     selected_steps = set(selected_steps_raw) if selected_steps_raw else set(_default_steps)
@@ -619,7 +620,8 @@ def start():
     _sb_style_raw = request.form.get("storyboard_style", "line").strip()
     storyboard_style = _sb_style_raw if _sb_style_raw in ("line", "color", "photo") else "line"
     storyboard_cuts_per_ep = max(1, min(30, int(request.form.get("storyboard_cuts_per_ep") or 10)))
-    generate_storyboard = request.form.get("generate_storyboard") == "on"
+    generate_storyboard  = request.form.get("generate_storyboard") == "on"
+    ppt_target_slides    = max(10, min(60, int(request.form.get("ppt_target_slides") or 30)))
     _sm_raw = request.form.get("script_mode", "full").strip()
     script_mode = _sm_raw if _sm_raw in ("full", "summary") else "full"
 
@@ -674,6 +676,7 @@ def start():
     dna.storyboard_style         = storyboard_style
     dna.storyboard_cuts_per_ep   = storyboard_cuts_per_ep
     dna.generate_storyboard      = generate_storyboard
+    dna.ppt_target_slides        = ppt_target_slides
     dna.script_mode              = script_mode
     if ref_structure:
         dna.reference_structure = ref_structure

@@ -11,7 +11,7 @@ from core.claude_client import set_retry_callback, clear_retry_callback, Overloa
 from agents import (
     rfp_parser, narrator, researcher, strategist,
     creative, planner, scripter, marketer, orchestrator,
-    storyboard,
+    storyboard, ppt_narrator,
 )
 
 import os as _os
@@ -29,12 +29,13 @@ _STEPS = [
     ("storyboard",        "STEP 8   스토리보드",         storyboard,   False),
     ("platform",          "STEP 9   플랫폼 운영전략",   marketer,     False),
     ("marketing",         "STEP 10  마케팅/홍보 전략",  marketer,     False),
-    ("final_proposal",    "STEP 11  PT/Q&A",            orchestrator, True),
-    ("improvement_report","STEP 12  크리틱",             None,         False),
+    ("final_proposal",    "STEP 11  PT/Q&A",            orchestrator,  True),
+    ("improvement_report","STEP 12  크리틱",             None,          False),
+    ("ppt_design",        "STEP 13  PPT 설계",          ppt_narrator,  False),
 ]
 
 # 컨펌 없이 자동 진행하는 스텝 (결과 표시 후 즉시 다음 스텝)
-_AUTO_CONTINUE_STEPS = {"improvement_report"}
+_AUTO_CONTINUE_STEPS = {"improvement_report", "ppt_design"}
 
 _STEP_INDEX          = {k: i for i, (k, *_) in enumerate(_STEPS)}
 _DOWNSTREAM_CREATIVE = ["plan", "script", "platform", "marketing", "final_proposal"]
@@ -206,6 +207,45 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
             results[step_key] = result
             _push_summary(push_event, step_key, step_name, elapsed,
                           _build_summary(step_key, dna, result))
+            i += 1
+            continue
+
+        # ppt_design: STEP 13 — dna+results에서 직접 설계안 생성 후 DB 저장
+        if step_key == "ppt_design":
+            push_event({"type": "log",
+                        "message": "✦ PPT 설계안 생성 중... (30초~2분 소요)"})
+            target_slides = getattr(dna, "ppt_target_slides", 30) or 30
+            _ka_stop_ppt = _keepalive_start(push_event, step_key)
+            try:
+                result = ppt_narrator.run_from_dna(dna, results, target_slides)
+                elapsed = 0.0
+                pipe_exc = None
+            except Exception as _ppt_e:
+                result = {"slides": [], "total_slides": 0, "error": str(_ppt_e)}
+                pipe_exc = _ppt_e
+                elapsed = 0.0
+            _ka_stop_ppt.set()
+
+            # DB 저장
+            if result.get("slides"):
+                try:
+                    from database.db import save_ppt_narrative
+                    save_ppt_narrative(
+                        case_id       = getattr(dna, "case_id", 0) or 0,
+                        slides        = result["slides"],
+                        rfp_coverage  = result.get("rfp_coverage", {}),
+                        target_slides = target_slides,
+                        content_chars = result.get("content_chars", 0),
+                    )
+                except Exception as _db_e:
+                    print(f"  [PPT설계] DB 저장 실패: {_db_e}")
+
+            step_executed[step_key] = 1
+            results[step_key] = result
+            _push_summary(push_event, step_key, step_name, elapsed,
+                          _build_summary(step_key, dna, result))
+            push_event({"type": "log",
+                        "message": f"✓ PPT 설계 완료 — {result.get('total_slides', 0)}장 설계안 생성"})
             i += 1
             continue
 
@@ -608,6 +648,7 @@ def _keepalive_start(push_event, step_key: str) -> threading.Event:
             "marketing":    "마케팅/홍보 전략 수립 중...",
             "final_proposal": "PT/Q&A 완성 중...",
             "improvement_report": "크리틱 분석 중...",
+            "ppt_design":        "PPT 설계안 생성 중...",
         }
         msg = msg_map.get(step_key, "처리 중...")
         while not stop_ev.wait(_KA_INTERVAL):
@@ -996,5 +1037,21 @@ def _build_summary(step_key: str, dna: ConceptDNA, result: dict) -> dict:
                 f"[{q.get('category', '')}] {q.get('question', '')}\n→ {q.get('answer', '')}"
                 for q in qa if isinstance(q, dict)
             ]
+
+    elif step_key == "ppt_design":
+        slides = result.get("slides", [])
+        s["설계 슬라이드 수"] = f"{len(slides)}장"
+        cov = result.get("rfp_coverage", {})
+        if isinstance(cov, dict):
+            covered = cov.get("covered", [])
+            missing = cov.get("missing", [])
+            s["RFP 커버리지"] = f"{len(covered)}항목 커버" + (f" / 누락 {len(missing)}항목" if missing else " / 누락 없음")
+        if slides:
+            s["슬라이드 목록 (처음 5장)"] = [
+                f"{sl.get('number', i+1)}. [{sl.get('section','')}] {sl.get('head_copy','')}"
+                for i, sl in enumerate(slides[:5])
+            ]
+        if result.get("error"):
+            s["오류"] = result["error"]
 
     return s

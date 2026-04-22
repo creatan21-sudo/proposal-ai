@@ -360,6 +360,7 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
   ('marketing',      'STEP 10', '마케팅/홍보 전략', '📣'),
   ('pt_qa',          'STEP 11', 'PT/Q&A',           '📝'),
   ('critic',         'STEP 12', '크리틱',           '🔎'),
+  ('ppt_design',     'STEP 13', 'PPT 설계',         '🗂'),
 ] %}
 
 {# 첫 번째 데이터 있는 스텝 계산 #}
@@ -648,6 +649,243 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
         {% endif %}
       </div>
       {% endfor %}
+
+    {# ── STEP 13 PPT 설계 ── #}
+    {% elif step_key == 'ppt_design' %}
+      <div id="ppt-design-step-{{ case_id }}">
+        {# 컨트롤 바 #}
+        <div style="display:flex;align-items:center;justify-content:space-between;
+                    flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+          <div style="font-size:13px;color:#6b7280;">
+            슬라이드를 클릭해 헤드카피·핵심 메시지를 직접 수정할 수 있습니다.
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            <div style="display:flex;align-items:center;gap:6px;font-size:.82rem;color:#374151;">
+              <label style="font-weight:600;">목표 장 수:</label>
+              <input type="number" id="step13-target-slides" min="10" max="60" value="30"
+                     style="width:52px;padding:3px 6px;border:1px solid #d1d5db;border-radius:5px;font-size:.82rem;">
+            </div>
+            <button onclick="regenPptDesign({{ case_id }})"
+                    style="padding:6px 14px;font-size:12px;background:#4f46e5;color:#fff;
+                           border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+              🔄 재생성
+            </button>
+            <button onclick="addPptSlide({{ case_id }})"
+                    style="padding:6px 14px;font-size:12px;background:#059669;color:#fff;
+                           border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+              + 슬라이드 추가
+            </button>
+            <button onclick="saveAndBuildPpt({{ case_id }})"
+                    style="padding:6px 16px;font-size:12px;background:#d97706;color:#fff;
+                           border:none;border-radius:6px;cursor:pointer;font-weight:700;">
+              📊 PPT 생성
+            </button>
+          </div>
+        </div>
+
+        {# RFP 커버리지 #}
+        <div id="step13-coverage-{{ case_id }}" style="display:none;margin-bottom:12px;"></div>
+
+        {# 로딩 상태 #}
+        <div id="step13-status-{{ case_id }}" style="display:none;padding:14px;
+             background:#eff6ff;border-radius:8px;font-size:.85rem;color:#1e40af;text-align:center;margin-bottom:12px;">
+          ⏳ 설계안 생성 중... 잠시 기다려 주세요.
+        </div>
+
+        {# 슬라이드 목록 #}
+        <div id="step13-slides-{{ case_id }}">
+          <div style="text-align:center;color:#9ca3af;padding:30px;">
+            슬라이드 목록 로딩 중...
+          </div>
+        </div>
+      </div>
+
+      <script>
+      (function(){
+        const CID = {{ case_id }};
+        let _slides = [];
+
+        function init() {
+          loadNarrative();
+        }
+
+        async function loadNarrative() {
+          try {
+            const r = await fetch(`/api/ppt_narrative/${CID}`);
+            const d = await r.json();
+            if (d.ok && d.narrative && d.narrative.slides && d.narrative.slides.length) {
+              _slides = d.narrative.slides;
+              renderSlides(_slides);
+              renderCoverage(d.narrative.rfp_coverage || {});
+              const ts = d.narrative.target_slides || _slides.length;
+              const inp = document.getElementById(`step13-target-slides`);
+              if (inp) inp.value = ts;
+            } else {
+              document.getElementById(`step13-slides-${CID}`).innerHTML =
+                '<div style="text-align:center;color:#9ca3af;padding:30px;">' +
+                '설계안이 없습니다. <strong>🔄 재생성</strong>을 클릭해 생성하세요.</div>';
+            }
+          } catch(e) {
+            document.getElementById(`step13-slides-${CID}`).innerHTML =
+              '<div style="color:#ef4444;padding:20px;">로드 오류: '+e+'</div>';
+          }
+        }
+
+        function renderCoverage(cov) {
+          const el = document.getElementById(`step13-coverage-${CID}`);
+          if (!el) return;
+          const covered = cov.covered || [];
+          const missing = cov.missing || [];
+          el.style.display = 'flex';
+          el.style.gap = '8px';
+          el.style.flexWrap = 'wrap';
+          el.style.alignItems = 'center';
+          el.innerHTML =
+            `<span style="font-size:.8rem;font-weight:600;color:#374151;">RFP 커버리지:</span>` +
+            `<span style="background:#dcfce7;color:#166534;padding:2px 10px;border-radius:99px;font-size:.78rem;font-weight:600;">✅ ${covered.length}항목 커버</span>` +
+            (missing.length
+              ? `<span style="background:#fee2e2;color:#991b1b;padding:2px 10px;border-radius:99px;font-size:.78rem;font-weight:600;">⚠️ 누락 ${missing.length}: ${missing.slice(0,2).join(', ')}${missing.length>2?'…':''}</span>`
+              : `<span style="background:#f0fdf4;color:#166534;padding:2px 10px;border-radius:99px;font-size:.78rem;">누락 없음</span>`);
+        }
+
+        function renderSlides(slides) {
+          const el = document.getElementById(`step13-slides-${CID}`);
+          if (!el) return;
+          if (!slides.length) {
+            el.innerHTML = '<div style="text-align:center;color:#9ca3af;padding:30px;">슬라이드 없음</div>';
+            return;
+          }
+          el.innerHTML = slides.map((sl, idx) => `
+            <div class="step13-slide-row" data-idx="${idx}"
+                 style="display:grid;grid-template-columns:40px 1fr;gap:0;
+                        border:1px solid #e5e7eb;border-radius:8px;margin-bottom:8px;overflow:hidden;">
+              <div style="background:#4f46e5;color:#fff;display:flex;align-items:center;
+                          justify-content:center;font-size:.8rem;font-weight:700;min-height:64px;">
+                ${sl.number || idx+1}
+              </div>
+              <div style="padding:10px 14px;background:#fff;">
+                <div style="display:flex;gap:6px;align-items:center;margin-bottom:5px;flex-wrap:wrap;">
+                  <span style="font-size:.7rem;background:#f3f4f6;color:#374151;
+                               padding:1px 7px;border-radius:99px;">${sl.section||''}</span>
+                  <span style="font-size:.68rem;background:#ede9fe;color:#6d28d9;
+                               padding:1px 7px;border-radius:99px;">${sl.slide_type||'content'}</span>
+                  ${(sl.rfp_tags||[]).slice(0,2).map(t=>
+                    `<span style="font-size:.65rem;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:99px;">${t}</span>`
+                  ).join('')}
+                  <button onclick="deletePptSlideAt(${CID},${idx})"
+                          style="margin-left:auto;background:none;border:none;color:#9ca3af;
+                                 cursor:pointer;font-size:.75rem;padding:0 4px;" title="슬라이드 삭제">✕</button>
+                </div>
+                <div contenteditable="true"
+                     data-cid="${CID}" data-idx="${idx}" data-field="head_copy"
+                     onblur="onStep13Edit(this)"
+                     style="font-size:.88rem;font-weight:700;color:#1f2937;margin-bottom:3px;
+                            border:1px dashed transparent;border-radius:4px;padding:1px 4px;
+                            outline:none;cursor:text;"
+                     onfocus="this.style.borderColor='#a5b4fc'"
+                     title="헤드카피 편집">${sl.head_copy||''}</div>
+                <div contenteditable="true"
+                     data-cid="${CID}" data-idx="${idx}" data-field="key_message"
+                     onblur="onStep13Edit(this)"
+                     style="font-size:.79rem;color:#6b7280;line-height:1.5;white-space:pre-wrap;
+                            border:1px dashed transparent;border-radius:4px;padding:1px 4px;
+                            outline:none;cursor:text;"
+                     onfocus="this.style.borderColor='#a5b4fc'"
+                     title="핵심 메시지 편집">${sl.key_message||''}</div>
+                ${sl.evidence ? `<div style="font-size:.72rem;color:#9ca3af;margin-top:3px;">📎 ${sl.evidence}</div>` : ''}
+              </div>
+            </div>`).join('');
+        }
+
+        window.onStep13Edit = function(el) {
+          el.style.borderColor = 'transparent';
+          const cid = parseInt(el.dataset.cid);
+          if (cid !== CID) return;
+          const idx   = parseInt(el.dataset.idx);
+          const field = el.dataset.field;
+          if (_slides[idx]) _slides[idx][field] = el.innerText.trim();
+        };
+
+        window.deletePptSlideAt = function(cid, idx) {
+          if (cid !== CID) return;
+          if (!confirm(`슬라이드 ${idx+1}번을 삭제하시겠습니까?`)) return;
+          _slides.splice(idx, 1);
+          _slides.forEach((s,i) => { s.number = i+1; });
+          renderSlides(_slides);
+        };
+
+        window.addPptSlide = function(cid) {
+          if (cid !== CID) return;
+          const num = _slides.length + 1;
+          _slides.push({
+            number: num, section: '추가 슬라이드', head_copy: '새 슬라이드 헤드카피',
+            key_message: '핵심 메시지를 입력하세요', evidence: '',
+            rfp_tags: [], slide_type: 'content'
+          });
+          renderSlides(_slides);
+          setTimeout(() => {
+            const rows = document.querySelectorAll(`#step13-slides-${CID} .step13-slide-row`);
+            if (rows.length) rows[rows.length-1].scrollIntoView({behavior:'smooth'});
+          }, 100);
+        };
+
+        window.regenPptDesign = async function(cid) {
+          if (cid !== CID) return;
+          const target = parseInt(document.getElementById('step13-target-slides')?.value) || 30;
+          if (!confirm(`설계안을 ${target}장으로 재생성하시겠습니까?`)) return;
+          const statusEl = document.getElementById(`step13-status-${CID}`);
+          statusEl.style.display = 'block';
+          statusEl.textContent = '⏳ 설계안 재생성 중... (30초~2분)';
+          document.getElementById(`step13-slides-${CID}`).innerHTML = '';
+
+          const r = await fetch(`/api/ppt_narrative/${CID}/generate`, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({target_slides: target}),
+          });
+          if (!r.ok) { statusEl.textContent = '❌ 재생성 요청 실패'; return; }
+
+          const poll = setInterval(async () => {
+            const r2 = await fetch(`/api/ppt_narrative/${CID}`);
+            const d2 = await r2.json();
+            if (d2.ok && d2.narrative && d2.narrative.slides && d2.narrative.slides.length) {
+              clearInterval(poll);
+              statusEl.style.display = 'none';
+              _slides = d2.narrative.slides;
+              renderSlides(_slides);
+              renderCoverage(d2.narrative.rfp_coverage || {});
+            }
+          }, 5000);
+          setTimeout(() => {
+            clearInterval(poll);
+            if (statusEl.style.display !== 'none')
+              statusEl.textContent = '⚠️ 생성 지연 — 페이지 새로고침 후 확인';
+          }, 180000);
+        };
+
+        window.saveAndBuildPpt = async function(cid) {
+          if (cid !== CID) return;
+          // 1. 현재 편집 내용 저장
+          const r = await fetch(`/api/ppt_narrative/${CID}/save`, {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({slides: _slides}),
+          });
+          const d = await r.json();
+          if (!d.ok) { alert('저장 실패: ' + (d.error||'')); return; }
+          // 2. PPT 모달 열기 (narrative 모드 사전 선택)
+          if (typeof openPptModal === 'function') {
+            openPptModal();
+            setTimeout(() => {
+              // narrative 옵션 카드 있으면 선택, 없으면 basic
+              if (typeof selectPptOpt === 'function') selectPptOpt('narrative');
+            }, 200);
+          } else {
+            alert('설계안 저장 완료. PPT 생성 버튼을 클릭하세요.');
+          }
+        };
+
+        init();
+      })();
+      </script>
 
     {# ── STEP 8 스토리보드 ── #}
     {% elif step_key == 'storyboard' %}
@@ -1737,7 +1975,7 @@ async function rerunFromStep(stepKey) {
     rfp_analysis: 'RFP 분석', research: '리서치', narrative: '내러티브',
     strategy: '전략', creative: '컨셉', plan: '기획',
     script: '시나리오', storyboard: '스토리보드', marketing: '마케팅',
-    final_proposal: 'PT/Q&A',
+    final_proposal: 'PT/Q&A', ppt_design: 'PPT 설계',
   };
   const label = stepNames[stepKey] || stepKey;
   if (!confirm(`"${label}"부터 다시 실행하시겠습니까?\n이 스텝 이후 결과도 모두 업데이트됩니다.`)) return;
@@ -2165,6 +2403,25 @@ async function loadStepOverrides() {
             </div>
           </div>
         </div>
+
+        <!-- 옵션 4: PPT 설계안 기반 생성 -->
+        <div id="ppt-card-narrative" onclick="selectPptOpt('narrative')"
+             style="border:2px solid #e5e7eb;border-radius:10px;padding:14px 16px;cursor:pointer;
+                    transition:border-color .15s,background .15s;">
+          <div style="display:flex;align-items:flex-start;gap:12px;">
+            <span style="font-size:1.6rem;line-height:1;">🗂</span>
+            <div style="flex:1;">
+              <div style="font-size:.95rem;font-weight:700;color:#1f2937;margin-bottom:3px;">
+                PPT 설계안 기반 생성
+                <span style="font-size:.75rem;font-weight:500;color:#059669;margin-left:6px;">추천 ★</span>
+                <span style="font-size:.75rem;font-weight:500;color:#6b7280;margin-left:6px;">~30초</span>
+              </div>
+              <div style="font-size:.8rem;color:#6b7280;line-height:1.5;">
+                STEP 13에서 생성·편집한 설계안을 그대로 PPTX로 변환합니다. Claude 재호출 없이 빠르게 생성됩니다.
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- 페이지 수 슬라이더 (basic / gamma에서만 표시) -->
@@ -2292,8 +2549,9 @@ fetch('/ppt/has_gamma')
 function selectPptOpt(opt) {
   _pptOpt = opt;
   // 카드 하이라이트
-  ['basic','gamma','template'].forEach(o => {
+  ['basic','gamma','template','narrative'].forEach(o => {
     const el = document.getElementById('ppt-card-' + o);
+    if (!el) return;
     if (o === opt) {
       el.style.borderColor = '#4f46e5';
       el.style.background  = '#eef2ff';

@@ -128,6 +128,46 @@ def _build_context(case_detail: dict) -> str:
     return "\n".join(lines)
 
 
+def _case_detail_from_dna(dna, results: dict) -> dict:
+    """파이프라인 실행 중 dna + results에서 case_detail 유사 구조를 조립."""
+    import dataclasses as _dc
+    dna_dict = {f.name: getattr(dna, f.name) for f in _dc.fields(dna)}
+    case = {
+        "client_name":  dna.client_name,
+        "project_name": dna.project_name,
+        "video_type":   dna.video_type,
+        "budget":       dna.budget,
+        "deadline":     dna.deadline,
+        "dna":          dna_dict,
+    }
+    steps = {
+        "rfp_analysis": {
+            "evaluation_criteria": dna.evaluation_criteria,
+            "evaluation_items":    dna.evaluation_items,
+            "core_tasks":          dna.core_tasks,
+            "top_keywords":        dna.evaluation_keywords,
+            "forbidden_notes":     dna.forbidden_notes,
+        },
+        "research":  results.get("research", {}),
+        "strategy":  results.get("strategy", {}),
+        "creative": {
+            "concept":             dna.concept,
+            "confirmed_slogan":    dna.slogan,
+            "concept_description": dna.concept_description,
+            "tone_description":    dna.tone_and_manner,
+        },
+        "plan":      results.get("plan", {}),
+        "marketing": results.get("marketing", {}),
+    }
+    return {"case": case, "steps": steps}
+
+
+def run_from_dna(dna, results: dict, target_slides: int = 30) -> dict:
+    """파이프라인 실행 중 dna + results에서 직접 설계안 생성."""
+    case_detail = _case_detail_from_dna(dna, results)
+    return run(case_detail, target_slides)
+
+
 def run(case_detail: dict, target_slides: int = 30) -> dict:
     """PPT 슬라이드 설계안 생성.
 

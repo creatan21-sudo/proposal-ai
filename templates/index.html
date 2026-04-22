@@ -178,6 +178,7 @@
                 ('platform',       'STEP 9: 플랫폼 운영전략'),
                 ('marketing',      'STEP 10: 마케팅/홍보 전략'),
                 ('final_proposal', 'STEP 11~12: PT/Q&A·크리틱'),
+                ('ppt_design',    'STEP 13: PPT 설계'),
               ] %}
               {% for key, label in step_defs %}
               <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;color:#374151;cursor:pointer;">
@@ -284,6 +285,22 @@
                   <strong>요약본</strong> — 씬당 핵심포인트 1줄 + 촬영방향 1줄 (빠른 확인용)
                 </div>
               </label>
+            </div>
+          </div>
+
+          <!-- PPT 설계 목표 장 수 -->
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:14px;margin-bottom:16px;">
+            <div style="font-size:.85rem;font-weight:600;color:#374151;margin-bottom:8px;">PPT 설계 설정 (STEP 13):</div>
+            <div style="display:flex;align-items:center;gap:10px;font-size:.82rem;color:#374151;">
+              <label style="font-weight:500;">목표 슬라이드 수:</label>
+              <input type="number" name="ppt_target_slides" id="ppt-target-slides-input"
+                     min="10" max="60" value="30"
+                     oninput="this.value=Math.min(Math.max(10,parseInt(this.value)||30),60)"
+                     style="width:58px;padding:2px 6px;border:1px solid #d1d5db;border-radius:4px;">
+              <span style="color:#6b7280;">장 (10~60, 기본 30)</span>
+            </div>
+            <div style="font-size:.78rem;color:#9ca3af;margin-top:6px;">
+              전체 제안서 내용을 지정한 장 수로 압축 설계합니다. 파이프라인 완료 후 MY DB에서 편집·PPT 생성 가능.
             </div>
           </div>
 
