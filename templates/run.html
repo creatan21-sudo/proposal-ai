@@ -331,6 +331,10 @@ function handleEvent(ev) {
       showPtDurationDialog(ev);
       playStepSound();
       break;
+    case 'research_review_needed':
+      showResearchReviewDialog(ev);
+      playStepSound();
+      break;
     case 'slogan_selected':
       appendLog(`슬로건 확정: ${ev.slogan}`);
       break;
@@ -937,6 +941,44 @@ function submitStoryboardStyle() {
   const style = sel ? sel.value : 'line';
   hideConfirm();
   sendConfirm(style);
+}
+
+function showResearchReviewDialog(ev) {
+  const panel = document.getElementById('confirm-panel');
+  const title = document.getElementById('confirm-title');
+  const body  = document.getElementById('confirm-body');
+
+  title.innerHTML = '📋 리서치 결과 검토';
+
+  body.innerHTML = `
+  <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:12px 16px;margin-bottom:14px;font-size:13px;line-height:1.7;color:#1e40af;">
+    📋 RFP와 리서치 결과를 충분히 검토하세요.<br>
+    분석 후 코멘트를 남기면 다음 스텝에 반영됩니다.<br>
+    코멘트가 없어도 <strong>[계속 진행]</strong> 버튼을 누르면 이어갑니다.
+  </div>
+  <div style="margin-bottom:12px;">
+    <div style="font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;">
+      코멘트 입력 <span style="font-weight:400;color:#9ca3af;">(선택)</span>
+    </div>
+    <textarea id="research-comment" rows="3"
+      style="width:100%;box-sizing:border-box;border:1px solid #d1d5db;border-radius:6px;
+             padding:8px 10px;font-size:13px;color:#374151;resize:vertical;"
+      placeholder="예) 경쟁사 홍보영상 사례 분석이 부족합니다. 공공기관 유튜브 성공 사례를 더 보강해주세요."></textarea>
+  </div>
+  <div class="confirm-row">
+    <button class="btn btn-primary" onclick="submitResearchReview()">계속 진행 →</button>
+  </div>`;
+
+  panel.classList.add('visible');
+  panel.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  setTimeout(() => document.getElementById('research-comment')?.focus(), 100);
+}
+
+function submitResearchReview() {
+  const comment = (document.getElementById('research-comment')?.value || '').trim();
+  hideConfirm();
+  // 코멘트는 instruction으로 전송 → dna.step_instruction에 자동 저장
+  sendConfirm('y', comment);
 }
 
 function showPtDurationDialog(ev) {

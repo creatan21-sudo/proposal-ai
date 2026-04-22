@@ -494,8 +494,16 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
             except Exception:
                 pass
 
-        # ── 컨펌 요청 (자동 실행 모드에서는 생략)
-        if auto_run:
+        # ── 컨펌 요청
+        # 자동실행이어도 research 완료 후에는 무조건 일시정지
+        if auto_run and step_key == "research":
+            push_event({
+                "type": "research_review_needed",
+                "step": step_key,
+                "name": step_name,
+            })
+            user_input = wait_confirm("research_review")
+        elif auto_run:
             user_input = "y"
             push_event({"type": "log", "message": f"✓ {step_name.strip()} 자동 완료"})
         else:
