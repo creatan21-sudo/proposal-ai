@@ -182,7 +182,7 @@
               {% for key, label in step_defs %}
               <label style="display:flex;align-items:center;gap:6px;font-size:.82rem;color:#374151;cursor:pointer;">
                 <input type="checkbox" name="selected_steps" value="{{ key }}"
-                       class="step-chk" checked
+                       class="step-chk" {% if key != 'storyboard' %}checked{% endif %}
                        {% if key == 'script' %}onchange="toggleScriptOptions(this.checked)"{% endif %}
                        {% if key == 'storyboard' %}onchange="toggleStoryboardOptions(this.checked)"{% endif %}>
                 {{ label }}
@@ -196,11 +196,11 @@
             <div style="font-size:.85rem;font-weight:600;color:#374151;margin-bottom:10px;">시나리오 작성 방식:</div>
             <div style="display:flex;flex-direction:column;gap:8px;font-size:.82rem;color:#374151;">
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                <input type="radio" name="script_preset_storyboard" value="auto" checked>
+                <input type="radio" name="script_preset_storyboard" value="auto">
                 스토리보드 자동 (런닝타임 기준 컷 수 자동 산정)
               </label>
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
-                <input type="radio" name="script_preset_storyboard" value="none">
+                <input type="radio" name="script_preset_storyboard" value="none" checked>
                 시나리오만 작성 (스토리보드 없음) — 실제 런닝타임 분량 시나리오 작성
               </label>
               <label style="display:flex;align-items:center;gap:8px;cursor:pointer;">
