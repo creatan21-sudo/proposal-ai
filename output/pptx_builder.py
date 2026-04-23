@@ -1505,6 +1505,239 @@ def _append_section_chunks(slides: list, title: str, items: list,
         })
 
 
+# ─────────────────────────────────────────────
+# Claude Vision 기반 디자인 스타일 추출
+# ─────────────────────────────────────────────
+
+def _get_representative_indices(total: int, max_slides: int = 5) -> list:
+    """표지·목차·중간·마지막 슬라이드 인덱스 선택."""
+    if total <= max_slides:
+        return list(range(total))
+    candidates = [0, 1, total // 2, max(0, total - 2), total - 1]
+    seen: set = set()
+    result = []
+    for i in candidates:
+        if i not in seen:
+            seen.add(i)
+            result.append(i)
+    return result[:max_slides]
+
+
+def _pdf_to_images(pdf_bytes: bytes, max_slides: int = 5) -> "list[bytes]":
+    """PDF → 대표 슬라이드 PNG 바이트 리스트 (pdf2image 사용)."""
+    try:
+        from pdf2image import convert_from_bytes
+        import io as _io
+
+        pages = convert_from_bytes(pdf_bytes, dpi=96, fmt="PNG", size=(960, None))
+        total = len(pages)
+        indices = _get_representative_indices(total, max_slides)
+        result = []
+        for i in indices:
+            buf = _io.BytesIO()
+            pages[i].save(buf, format="PNG", optimize=True)
+            result.append(buf.getvalue())
+        print(f"  [Vision] PDF {total}장 → 대표 {len(result)}장 (idx: {indices})")
+        return result
+    except ImportError:
+        print("  [Vision] pdf2image 미설치 — pip install pdf2image poppler-utils")
+        return []
+    except Exception as e:
+        print(f"  [Vision] PDF→이미지 변환 실패: {e}")
+        return []
+
+
+def _pptx_to_images(pptx_bytes: bytes, max_slides: int = 5) -> "list[bytes]":
+    """PPTX → PNG 이미지 리스트 (LibreOffice headless 사용). 없으면 빈 리스트."""
+    import subprocess
+    import tempfile
+    import os
+
+    soffice_candidates = [
+        "soffice",
+        "/usr/bin/soffice",
+        "/usr/local/bin/soffice",
+        "/Applications/LibreOffice.app/Contents/MacOS/soffice",
+    ]
+    soffice = None
+    for path in soffice_candidates:
+        try:
+            r = subprocess.run([path, "--version"], capture_output=True, timeout=5)
+            if r.returncode == 0:
+                soffice = path
+                break
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            continue
+
+    if not soffice:
+        return []
+
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            pptx_path = os.path.join(tmp, "tmpl.pptx")
+            with open(pptx_path, "wb") as f:
+                f.write(pptx_bytes)
+            subprocess.run(
+                [soffice, "--headless", "--convert-to", "pdf",
+                 "--outdir", tmp, pptx_path],
+                capture_output=True, timeout=60, check=True,
+            )
+            pdf_path = os.path.join(tmp, "tmpl.pdf")
+            if not os.path.exists(pdf_path):
+                return []
+            with open(pdf_path, "rb") as f:
+                return _pdf_to_images(f.read(), max_slides)
+    except Exception as e:
+        print(f"  [Vision] PPTX→이미지 변환 실패: {e}")
+        return []
+
+
+_VISION_PROMPT = """이 슬라이드 이미지들을 보고 디자인 시스템을 분석해줘.
+python-pptx로 재현할 수 있도록 구체적인 수치가 담긴 JSON만 반환해줘.
+
+분석 항목:
+- bg: 슬라이드 배경색 RGB (예: [255,255,255])
+- hd: 헤더/제목 영역 배경색 RGB
+- ht: 헤더 위 텍스트 색상 RGB
+- bd: 본문 텍스트 색상 RGB
+- ac: 주요 강조색(포인트 컬러, 버튼, 구분선) RGB
+- ac2: 보조 강조색 RGB (없으면 ac와 동일)
+- tf: 제목에 사용된 폰트명 (한글 폰트명 우선, 예: "나눔고딕Bold")
+- bf: 본문에 사용된 폰트명
+- ts: 주 제목 폰트 크기 pt (숫자)
+- bs: 본문 폰트 크기 pt (숫자)
+- palette: 발견된 주요 색상 RGB 배열 (최대 5개)
+- has_line: 수평 구분선 존재 여부 (true/false)
+- layout: "cover" / "two_col" / "section" / "plain" 중 하나
+
+JSON만 출력 (마크다운·설명 없이):
+{"bg":[...],"hd":[...],"ht":[...],"bd":[...],"ac":[...],"ac2":[...],"tf":"...","bf":"...","ts":24,"bs":13,"palette":[[...]],"has_line":false,"layout":"plain"}"""
+
+
+def _analyze_with_vision(images: "list[bytes]") -> dict:
+    """Claude Vision API로 슬라이드 이미지 디자인 분석."""
+    import base64, json as _json, re as _re
+
+    if not images:
+        return {}
+
+    try:
+        from core.claude_client import get_client
+        from config import DEFAULT_MODEL
+    except ImportError:
+        print("  [Vision] claude_client 임포트 실패")
+        return {}
+
+    client = get_client()
+    content: list = []
+    for img_bytes in images[:5]:
+        b64 = base64.standard_b64encode(img_bytes).decode("utf-8")
+        content.append({
+            "type": "image",
+            "source": {"type": "base64", "media_type": "image/png", "data": b64},
+        })
+    content.append({"type": "text", "text": _VISION_PROMPT})
+
+    try:
+        msg = client.messages.create(
+            model=DEFAULT_MODEL,
+            max_tokens=800,
+            messages=[{"role": "user", "content": content}],
+        )
+        raw = msg.content[0].text.strip()
+        raw = _re.sub(r"```(?:json)?\s*", "", raw).replace("```", "").strip()
+        s = raw.find("{")
+        e = raw.rfind("}") + 1
+        if s >= 0 and e > s:
+            raw = raw[s:e]
+        result = _json.loads(raw)
+        print(f"  [Vision] 분석 완료: bg={result.get('bg')} ac={result.get('ac')} tf={result.get('tf')!r}")
+        return result
+    except Exception as e:
+        print(f"  [Vision] 분석 실패: {e}")
+        return {}
+
+
+def _vision_dict_to_sty(vision: dict) -> dict:
+    """Vision 분석 결과 dict → pptx_builder sty dict 변환."""
+    sty = _default_style()
+
+    def _rgb(v, fallback):
+        if isinstance(v, (list, tuple)) and len(v) == 3:
+            return tuple(max(0, min(255, int(x))) for x in v)
+        return fallback
+
+    for key in ("bg", "hd", "ht", "bd", "ac", "ac2"):
+        if key in vision:
+            sty[key] = _rgb(vision[key], sty[key])
+    for key in ("tf", "bf"):
+        if isinstance(vision.get(key), str) and vision[key].strip():
+            sty[key] = vision[key].strip()
+    for key, lo, hi in (("ts", 12, 48), ("bs", 9, 20)):
+        try:
+            sty[key] = max(lo, min(hi, int(vision[key])))
+        except (KeyError, TypeError, ValueError):
+            pass
+    if isinstance(vision.get("palette"), list):
+        sty["palette"] = [_rgb(c, None) for c in vision["palette"]]
+        sty["palette"] = [c for c in sty["palette"] if c is not None]
+    if "has_line" in vision:
+        sty["has_line"] = bool(vision["has_line"])
+    if vision.get("layout") in ("cover", "two_col", "section", "plain"):
+        sty["layout"] = vision["layout"]
+    # ac2 폴백: 팔레트 2번째
+    if sty["ac2"] == sty["ac"] and len(sty.get("palette", [])) >= 2:
+        sty["ac2"] = sty["palette"][1]
+    return sty
+
+
+def _extract_style_via_vision(template_bytes: bytes, file_ext: str) -> "dict | None":
+    """Vision API로 템플릿 디자인 추출 (캐시 포함). 불가 시 None 반환."""
+    import hashlib, json as _json
+    from pathlib import Path
+
+    cache_key = hashlib.sha256(template_bytes).hexdigest()[:20]
+    try:
+        from config import BASE_DIR
+        cache_dir = BASE_DIR / "cache" / "ppt_style"
+    except ImportError:
+        cache_dir = Path("/tmp/ppt_style_cache")
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_dir / f"{cache_key}.json"
+
+    if cache_file.exists():
+        try:
+            cached = _json.loads(cache_file.read_text(encoding="utf-8"))
+            print(f"  [Vision] 캐시 히트: {cache_key[:8]}…")
+            return _vision_dict_to_sty(cached)
+        except Exception:
+            pass
+
+    ext = file_ext.lower()
+    images: list = []
+    if ext == ".pdf":
+        images = _pdf_to_images(template_bytes)
+    elif ext == ".pptx":
+        images = _pptx_to_images(template_bytes)
+    # HWP: 이미지 변환 미지원 → None 반환, 기존 방식 사용
+
+    if not images:
+        print(f"  [Vision] {ext} 이미지 추출 불가 → 기존 방식으로 폴백")
+        return None
+
+    vision_result = _analyze_with_vision(images)
+    if not vision_result:
+        return None
+
+    try:
+        cache_file.write_text(_json.dumps(vision_result, ensure_ascii=False), encoding="utf-8")
+        print(f"  [Vision] 캐시 저장: {cache_key[:8]}…")
+    except Exception as ce:
+        print(f"  [Vision] 캐시 저장 실패: {ce}")
+
+    return _vision_dict_to_sty(vision_result)
+
+
 def generate_from_template(detail: dict, template_bytes: bytes,
                             pages: int = 20, progress_cb=None,
                             file_ext: str = ".pptx") -> bytes:
@@ -1530,17 +1763,22 @@ def generate_from_template(detail: dict, template_bytes: bytes,
                 pass
 
     ext = file_ext.lower()
-    _prog("템플릿 스타일 분석 중...", 1, 5)
+    _prog("템플릿 스타일 분석 중 (Vision AI)...", 1, 5)
 
-    if ext == ".pptx":
-        tmpl_prs = Presentation(_io.BytesIO(template_bytes))
-        sty = _extract_template_style(tmpl_prs)
-    elif ext == ".pdf":
-        sty = _extract_style_from_pdf(template_bytes)
-    elif ext == ".hwpx":
-        sty = _extract_style_from_hwp(template_bytes, is_hwpx=True)
-    else:  # .hwp (바이너리) — 기본 스타일
-        sty = _extract_style_from_hwp(template_bytes, is_hwpx=False)
+    # 1차 시도: Claude Vision API (PDF/PPTX)
+    sty = _extract_style_via_vision(template_bytes, ext)
+
+    # 폴백: 기존 파싱 방식
+    if sty is None:
+        if ext == ".pptx":
+            tmpl_prs = Presentation(_io.BytesIO(template_bytes))
+            sty = _extract_template_style(tmpl_prs)
+        elif ext == ".pdf":
+            sty = _extract_style_from_pdf(template_bytes)
+        elif ext == ".hwpx":
+            sty = _extract_style_from_hwp(template_bytes, is_hwpx=True)
+        else:  # .hwp 바이너리
+            sty = _extract_style_from_hwp(template_bytes, is_hwpx=False)
 
     print(f"  [Template/{ext}] bg={sty['bg']} hd={sty['hd']} ac={sty['ac']} "
           f"font={sty['tf']}/{sty['bf']}")
