@@ -2790,12 +2790,13 @@ def api_ppt_narrative_get(case_id):
 @app.route("/api/ppt_narrative/<int:case_id>/generate", methods=["POST"])
 @login_required
 def api_ppt_narrative_generate(case_id):
-    """PPT 설계안 생성 (Claude AI 호출 — 백그라운드)."""
+    """PPT 설계안 생성 (Claude AI 호출 — 백그라운드). 소유자/admin 전용."""
     detail = get_case_detail(case_id)
     if not detail:
         return jsonify({"ok": False, "error": "케이스 없음"}), 404
-    if detail["case"].get("user_id") != session["user_id"] and not session.get("is_admin"):
-        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    uid = session["user_id"]
+    if detail["case"].get("user_id") != uid and not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "권한 없음 — 소유자만 설계안을 생성할 수 있습니다."}), 403
 
     data          = request.get_json(force=True) or {}
     target_slides = max(10, min(60, int(data.get("target_slides", 30))))
@@ -2825,12 +2826,13 @@ def api_ppt_narrative_generate(case_id):
 @app.route("/api/ppt_narrative/<int:case_id>/save", methods=["POST"])
 @login_required
 def api_ppt_narrative_save(case_id):
-    """사용자 편집 설계안 저장."""
+    """사용자 편집 설계안 저장. 소유자/admin 전용."""
     detail = get_case_detail(case_id)
     if not detail:
         return jsonify({"ok": False, "error": "케이스 없음"}), 404
-    if detail["case"].get("user_id") != session["user_id"] and not session.get("is_admin"):
-        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    uid = session["user_id"]
+    if detail["case"].get("user_id") != uid and not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "권한 없음 — 소유자만 설계안을 저장할 수 있습니다."}), 403
 
     data   = request.get_json(force=True) or {}
     slides = data.get("slides", [])

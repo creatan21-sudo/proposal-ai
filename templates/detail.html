@@ -2429,7 +2429,8 @@ async function loadStepOverrides() {
           </div>
         </div>
 
-        <!-- 옵션 4: PPT 설계안 기반 생성 -->
+        {% if is_owner %}
+        <!-- 옵션 4: PPT 설계안 기반 생성 (소유자/admin만) -->
         <div id="ppt-card-narrative" onclick="selectPptOpt('narrative')"
              style="border:2px solid #e5e7eb;border-radius:10px;padding:14px 16px;cursor:pointer;
                     transition:border-color .15s,background .15s;">
@@ -2447,6 +2448,7 @@ async function loadStepOverrides() {
             </div>
           </div>
         </div>
+        {% endif %}
       </div>
 
       <!-- 페이지 수 슬라이더 (basic / gamma에서만 표시) -->
