@@ -1186,6 +1186,12 @@ def init_users() -> None:
             conn.execute("UPDATE users SET role='admin' WHERE is_admin=1")
         except Exception:
             pass  # 이미 존재하면 무시
+
+        # users에 current_session_token 컬럼 추가 (최초 1회)
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN current_session_token TEXT DEFAULT ''")
+        except Exception:
+            pass  # 이미 존재하면 무시
         # viewer 등 비표준 role 정리 → user로 통합
         try:
             conn.execute(
@@ -1247,6 +1253,24 @@ def create_user(username: str, password: str, is_admin: bool = False,
              effective_role, datetime.now().isoformat()),
         )
         return cursor.lastrowid
+
+
+def set_session_token(user_id: int, token: str) -> None:
+    """로그인 시 현재 세션 토큰 저장 (이중 로그인 방지용)."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE users SET current_session_token=? WHERE id=?",
+            (token, user_id),
+        )
+
+
+def get_session_token(user_id: int) -> "str | None":
+    """DB에 저장된 현재 세션 토큰 조회."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT current_session_token FROM users WHERE id=?", (user_id,)
+        ).fetchone()
+    return dict(row).get("current_session_token") if row else None
 
 
 def update_user_role(user_id: int, role: str) -> None:

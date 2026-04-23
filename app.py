@@ -54,6 +54,8 @@ from database.db import (
     save_ppt_job, update_ppt_job, get_ppt_job,
     # PPT 설계 내러티브
     save_ppt_narrative, get_ppt_narrative,
+    # 이중 로그인 방지
+    set_session_token, get_session_token,
 )
 from output.txt_writer import write_txt
 from utils.telegram_notify import send_telegram
@@ -489,11 +491,29 @@ def check_login():
     """모든 요청에서 로그인 여부 확인. 로그인·static은 무조건 통과."""
     if request.endpoint in _PUBLIC_ENDPOINTS:
         return None
-    if not session.get("user_id"):
-        # API 엔드포인트(JSON 응답)는 401, 페이지는 로그인으로 리디렉션
+    uid = session.get("user_id")
+    if not uid:
         if request.path.startswith("/api/") or request.is_json:
             return jsonify({"ok": False, "error": "로그인이 필요합니다"}), 401
         return redirect(url_for("login"))
+
+    # 이중 로그인 방지: 세션 토큰이 DB와 불일치하면 강제 만료
+    session_token = session.get("session_token")
+    if session_token:
+        try:
+            db_token = get_session_token(uid)
+            if db_token and db_token != session_token:
+                session.clear()
+                if request.path.startswith("/api/") or request.is_json:
+                    return jsonify({
+                        "ok": False,
+                        "error": "다른 기기에서 로그인되어 세션이 종료되었습니다.",
+                        "redirect": "/login",
+                    }), 401
+                return redirect(url_for("login") + "?reason=duplicate")
+        except Exception:
+            pass  # DB 오류 시 통과 (서비스 중단 방지)
+
     return None
 
 
@@ -548,6 +568,8 @@ def login():
     if session.get("user_id"):
         return redirect(url_for("index"))
     error = None
+    if request.args.get("reason") == "duplicate":
+        error = "다른 기기에서 로그인되어 세션이 종료되었습니다."
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
@@ -556,8 +578,11 @@ def login():
             session["user_id"]  = user["id"]
             session["username"] = user["username"]
             session["is_admin"] = bool(user["is_admin"])
-            # role: admin/operator/user (구버전 DB 대비 폴백)
             session["role"] = user.get("role") or ("admin" if user["is_admin"] else "operator")
+            # 이중 로그인 방지: 새 세션 토큰 발급 → 기존 세션 자동 만료
+            token = str(uuid.uuid4())
+            session["session_token"] = token
+            set_session_token(user["id"], token)
             return redirect(url_for("index"))
         error = "아이디 또는 비밀번호가 틀렸습니다."
     return render_template("login.html", error=error)
