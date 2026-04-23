@@ -70,7 +70,18 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
     print(f"  대본 생성: {total}편 / {'숏폼' if is_short else '롱폼'} "
           f"({dna.duration}) {'| 시리즈 연결고리 포함' if is_series else ''}")
 
-    _EP_TIMEOUT = 300  # 편당 최대 5분 (씬별 개별 API 호출로 시간 증가)
+    _EP_TIMEOUT = 600  # 편당 최대 10분 (긴 시나리오 응답 대비)
+
+    case_id = getattr(dna, "case_id", 0) or 0
+
+    # 이미 완료된 에피소드 로드 (재시도 시 스킵용)
+    try:
+        from database.db import get_completed_episodes
+        completed = get_completed_episodes(case_id) if case_id else {}
+    except Exception:
+        completed = {}
+    if completed:
+        print(f"  [재시도] 이미 완료된 편: {sorted(completed.keys())} → 스킵")
 
     def _generate_one(idx: int, ep_plan: dict) -> dict:
         ep_num = idx + 1
@@ -101,8 +112,15 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
 
     scripts = []
     for idx, ep_plan in enumerate(ep_plans):
-        ep_num = idx + 1
+        ep_num   = idx + 1
         ep_title = ep_plan.get("title", f"{ep_num}편")
+
+        # 이미 완료된 편은 DB에서 불러오고 스킵
+        if ep_num in completed:
+            print(f"  [{ep_num}/{total}] {ep_title} — 이미 완료, 스킵")
+            scripts.append(completed[ep_num])
+            continue
+
         print(f"  [{ep_num}/{total}] {ep_title} 대본 생성 중...")
         if progress_fn:
             try:
@@ -135,12 +153,14 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
             print(f"  [대본 raw키] {list(script.keys())}")
             print(f"  [대본 raw내용] {str(script)[:300]}")
 
-        # 편별 DB 저장
-        try:
-            save_script(dna.client_name, dna.project_name, script,
-                        case_id=getattr(dna, "case_id", 0) or 0)
-        except Exception as e:
-            print(f"  [경고] 대본 DB 저장 실패: {e}")
+        # 편별 DB 저장 (성공 시에만)
+        if not script.get("_timeout"):
+            try:
+                save_script(dna.client_name, dna.project_name, script,
+                            case_id=case_id)
+                completed[ep_num] = script  # 로컬 캐시 갱신
+            except Exception as e:
+                print(f"  [경고] 대본 DB 저장 실패: {e}")
 
     # 시리즈 연결고리 후처리 (2편 이상)
     series_hooks = []

@@ -59,7 +59,7 @@ _STEP_TIMEOUT: dict = {
     "strategy":       300,   # call_json + validate 재시도 최대 ~180s
     "creative":       300,
     "plan":           300,
-    "script":         300,
+    "script":         600,   # 편당 최대 10분 × 다편수 대비
     "platform":       300,   # 2개 섹션 병렬 (youtube + sns)
     "marketing":      300,   # 2개 섹션 병렬 (influencer + kpi)
     "final_proposal": 300,

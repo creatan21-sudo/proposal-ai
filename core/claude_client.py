@@ -65,10 +65,14 @@ def get_client() -> anthropic.Anthropic:
     """Anthropic 클라이언트 인스턴스 반환 (싱글톤)."""
     global _client
     if _client is None:
+        import httpx
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
             raise RuntimeError("ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.")
-        _client = anthropic.Anthropic(api_key=api_key)
+        _client = anthropic.Anthropic(
+            api_key=api_key,
+            timeout=httpx.Timeout(600.0, connect=30.0),  # 시나리오 등 긴 응답 대비
+        )
     return _client
 
 

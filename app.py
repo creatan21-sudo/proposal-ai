@@ -56,6 +56,8 @@ from database.db import (
     save_ppt_narrative, get_ppt_narrative,
     # 이중 로그인 방지
     set_session_token, get_session_token,
+    # 시나리오 재시도용
+    get_completed_episodes,
 )
 from output.txt_writer import write_txt
 from utils.telegram_notify import send_telegram

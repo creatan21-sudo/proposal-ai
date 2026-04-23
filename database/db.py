@@ -519,6 +519,32 @@ def save_script(client_name: str, project_name: str, script: dict,
         return cursor.lastrowid
 
 
+def get_completed_episodes(case_id: int) -> dict:
+    """케이스의 완료된 대본 에피소드 번호 → script dict 매핑 반환.
+    타임아웃/오류로 빈 대본은 제외하고, 에피소드별 최신 버전만 반환."""
+    import json as _json
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT episode_number, script_json FROM script_results
+               WHERE case_id=? ORDER BY episode_number ASC, created_at DESC""",
+            (case_id,),
+        ).fetchall()
+    result: dict = {}
+    for row in rows:
+        ep_num = row["episode_number"]
+        if ep_num in result:  # 이미 최신 버전 있으면 스킵
+            continue
+        try:
+            script = _json.loads(row["script_json"])
+            # _timeout 플래그가 없고 scenes 또는 versions가 있는 것만 유효
+            has_content = bool(script.get("scenes") or script.get("versions"))
+            if not script.get("_timeout") and has_content:
+                result[ep_num] = script
+        except Exception:
+            pass
+    return result
+
+
 def save_plan(client_name: str, project_name: str, result: dict,
               case_id: int = 0) -> int:
     """제작 계획 결과 저장."""
