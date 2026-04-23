@@ -1134,12 +1134,14 @@ def history_detail(case_id):
         abort(404)
     case = detail["case"]
     uid = session["user_id"]
-    if case.get("user_id") != uid and not session.get("is_admin"):
+    is_owner = (case.get("user_id") == uid or bool(session.get("is_admin")))
+    if not is_owner:
         # 공유된 케이스인지 확인
         shares = get_case_shares(case_id)
         if not any(s["shared_with"] == uid for s in shares):
             abort(403)
-    return render_template("detail.html", detail=detail, case_id=case_id)
+    return render_template("detail.html", detail=detail, case_id=case_id,
+                           is_owner=is_owner)
 
 
 @app.route("/history/<int:case_id>/download")
@@ -2775,10 +2777,14 @@ def api_ppt_narrative_get(case_id):
     detail = get_case_detail(case_id)
     if not detail:
         return jsonify({"ok": False, "error": "케이스 없음"}), 404
-    if detail["case"].get("user_id") != session["user_id"] and not session.get("is_admin"):
-        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    uid = session["user_id"]
+    is_owner = (detail["case"].get("user_id") == uid or bool(session.get("is_admin")))
+    if not is_owner:
+        shares = get_case_shares(case_id)
+        if not any(s["shared_with"] == uid for s in shares):
+            return jsonify({"ok": False, "error": "권한 없음"}), 403
     narrative = get_ppt_narrative(case_id)
-    return jsonify({"ok": True, "narrative": narrative})
+    return jsonify({"ok": True, "narrative": narrative, "is_owner": is_owner})
 
 
 @app.route("/api/ppt_narrative/<int:case_id>/generate", methods=["POST"])

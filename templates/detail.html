@@ -440,11 +440,19 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
     {# 헤더 + 설계 생성 컨트롤 #}
     <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:20px;">
       <div>
-        <h3 style="margin:0 0 4px;font-size:1.05rem;font-weight:700;color:#1e1b4b;">🗂 PPT 슬라이드 설계안</h3>
+        <h3 style="margin:0 0 4px;font-size:1.05rem;font-weight:700;color:#1e1b4b;">🗂 PPT 슬라이드 설계안
+          {% if not is_owner %}
+          <span style="margin-left:8px;background:#fef3c7;color:#92400e;padding:2px 10px;
+                       border-radius:99px;font-size:.75rem;font-weight:600;vertical-align:middle;">
+            🔒 읽기 전용
+          </span>
+          {% endif %}
+        </h3>
         <p style="margin:0;font-size:.82rem;color:#6b7280;" id="ppt-design-desc">
           전체 제안서 내용을 지정한 장 수로 압축 설계합니다.
         </p>
       </div>
+      {% if is_owner %}
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <div style="display:flex;align-items:center;gap:6px;font-size:.82rem;color:#374151;">
           <label for="ppt-target-slides" style="font-weight:600;">목표 장 수:</label>
@@ -459,6 +467,7 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
           ✨ 설계 생성
         </button>
       </div>
+      {% endif %}
     </div>
 
     {# 상태 / 로딩 메시지 #}
@@ -486,9 +495,14 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
          padding-top:16px;border-top:1px solid #e5e7eb;
          display:none;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
       <div style="font-size:.85rem;color:#374151;">
+        {% if is_owner %}
         <strong>설계안 검토 완료?</strong>
         <span style="color:#6b7280;"> 위 설계안대로 PPTX 파일을 생성합니다.</span>
+        {% else %}
+        <span style="color:#6b7280;">열람 전용 — 수정 및 PPT 생성은 소유자만 가능합니다.</span>
+        {% endif %}
       </div>
+      {% if is_owner %}
       <div style="display:flex;gap:8px;">
         <button onclick="savePptDesign()"
                 style="padding:8px 16px;font-size:.82rem;font-weight:600;
@@ -501,6 +515,7 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
           📊 이 설계안으로 PPT 생성
         </button>
       </div>
+      {% endif %}
     </div>
 
   </div>
@@ -657,9 +672,15 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
         <div style="display:flex;align-items:center;justify-content:space-between;
                     flex-wrap:wrap;gap:10px;margin-bottom:16px;">
           <div style="font-size:13px;color:#6b7280;">
+            {% if is_owner %}
             슬라이드를 클릭해 헤드카피·핵심 메시지를 직접 수정할 수 있습니다.
+            {% else %}
+            <span style="background:#fef3c7;color:#92400e;padding:2px 10px;border-radius:99px;
+                         font-size:.8rem;font-weight:600;">🔒 PPT 설계안 (읽기 전용)</span>
+            {% endif %}
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            {% if is_owner %}
             <div style="display:flex;align-items:center;gap:6px;font-size:.82rem;color:#374151;">
               <label style="font-weight:600;">목표 장 수:</label>
               <input type="number" id="step13-target-slides" min="10" max="60" value="30"
@@ -680,6 +701,7 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
                            border:none;border-radius:6px;cursor:pointer;font-weight:700;">
               📊 PPT 생성
             </button>
+            {% endif %}
           </div>
         </div>
 
@@ -703,6 +725,7 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
       <script>
       (function(){
         const CID = {{ case_id }};
+        const IS_OWNER = {{ 'true' if is_owner else 'false' }};
         let _slides = [];
 
         // 탭이 활성화될 때 바로 로드
@@ -771,26 +794,26 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
                   ${(sl.rfp_tags||[]).slice(0,2).map(t=>
                     `<span style="font-size:.65rem;background:#fef3c7;color:#92400e;padding:1px 6px;border-radius:99px;">${t}</span>`
                   ).join('')}
-                  <button onclick="deletePptSlideAt(${CID},${idx})"
+                  ${IS_OWNER ? `<button onclick="deletePptSlideAt(${CID},${idx})"
                           style="margin-left:auto;background:none;border:none;color:#9ca3af;
-                                 cursor:pointer;font-size:.75rem;padding:0 4px;" title="슬라이드 삭제">✕</button>
+                                 cursor:pointer;font-size:.75rem;padding:0 4px;" title="슬라이드 삭제">✕</button>` : ''}
                 </div>
-                <div contenteditable="true"
+                <div ${IS_OWNER ? 'contenteditable="true"' : 'contenteditable="false"'}
                      data-cid="${CID}" data-idx="${idx}" data-field="head_copy"
-                     onblur="onStep13Edit(this)"
+                     ${IS_OWNER ? 'onblur="onStep13Edit(this)"' : ''}
                      style="font-size:.88rem;font-weight:700;color:#1f2937;margin-bottom:3px;
                             border:1px dashed transparent;border-radius:4px;padding:1px 4px;
-                            outline:none;cursor:text;"
-                     onfocus="this.style.borderColor='#a5b4fc'"
-                     title="헤드카피 편집">${sl.head_copy||''}</div>
-                <div contenteditable="true"
+                            outline:none;${IS_OWNER ? 'cursor:text' : 'cursor:default'};"
+                     ${IS_OWNER ? 'onfocus="this.style.borderColor=\'#a5b4fc\'"' : ''}
+                     title="${IS_OWNER ? '헤드카피 편집' : ''}">${sl.head_copy||''}</div>
+                <div ${IS_OWNER ? 'contenteditable="true"' : 'contenteditable="false"'}
                      data-cid="${CID}" data-idx="${idx}" data-field="key_message"
-                     onblur="onStep13Edit(this)"
+                     ${IS_OWNER ? 'onblur="onStep13Edit(this)"' : ''}
                      style="font-size:.79rem;color:#6b7280;line-height:1.5;white-space:pre-wrap;
                             border:1px dashed transparent;border-radius:4px;padding:1px 4px;
-                            outline:none;cursor:text;"
-                     onfocus="this.style.borderColor='#a5b4fc'"
-                     title="핵심 메시지 편집">${sl.key_message||''}</div>
+                            outline:none;${IS_OWNER ? 'cursor:text' : 'cursor:default'};"
+                     ${IS_OWNER ? 'onfocus="this.style.borderColor=\'#a5b4fc\'"' : ''}
+                     title="${IS_OWNER ? '핵심 메시지 편집' : ''}">${sl.key_message||''}</div>
                 ${sl.evidence ? `<div style="font-size:.72rem;color:#9ca3af;margin-top:3px;">📎 ${sl.evidence}</div>` : ''}
               </div>
             </div>`).join('');
@@ -1657,8 +1680,9 @@ function toggleStep(key) {
 
 // 전체 보기 모드
 // ── PPT 설계 패널 ──────────────────────────────────────
-const _PPT_DESIGN_CID = {{ case_id }};
-let   _pptDesignSlides = [];
+const _PPT_DESIGN_CID    = {{ case_id }};
+const _PPT_DESIGN_OWNER  = {{ 'true' if is_owner else 'false' }};
+let   _pptDesignSlides   = [];
 let   _pptDesignPollTimer = null;
 
 function showPptDesign() {
@@ -1680,7 +1704,10 @@ async function _loadPptNarrative() {
     } else {
       document.getElementById('ppt-slide-list').innerHTML =
         '<div style="text-align:center;color:#9ca3af;padding:40px;">' +
-        '설계안이 없습니다. 목표 장 수를 설정하고 <strong>✨ 설계 생성</strong>을 클릭하세요.</div>';
+        (_PPT_DESIGN_OWNER
+          ? '설계안이 없습니다. 목표 장 수를 설정하고 <strong>✨ 설계 생성</strong>을 클릭하세요.'
+          : '아직 생성된 PPT 설계안이 없습니다.') +
+        '</div>';
     }
   } catch(e) {
     console.error('PPT 설계 로드 오류:', e);
@@ -1776,21 +1803,20 @@ function _renderPptDesign(narrative) {
               `<span style="font-size:.68rem;background:#fef3c7;color:#92400e;padding:2px 7px;border-radius:99px;">${t}</span>`
             ).join('')}
           </div>
-          <div contenteditable="true" data-field="head_copy" data-idx="${idx}"
-               onblur="onSlideFieldEdit(this)"
+          <div ${_PPT_DESIGN_OWNER ? 'contenteditable="true"' : 'contenteditable="false"'} data-field="head_copy" data-idx="${idx}"
+               ${_PPT_DESIGN_OWNER ? 'onblur="onSlideFieldEdit(this)"' : ''}
                style="font-size:.9rem;font-weight:700;color:#1f2937;margin-bottom:4px;
                       border:1px dashed transparent;border-radius:4px;padding:2px 4px;
-                      cursor:text;outline:none;"
-               onfocus="this.style.borderColor='#a5b4fc'"
-               onblur2="this.style.borderColor='transparent'"
-               title="헤드카피 (클릭하여 편집)">${sl.head_copy || ''}</div>
-          <div contenteditable="true" data-field="key_message" data-idx="${idx}"
-               onblur="onSlideFieldEdit(this)"
+                      ${_PPT_DESIGN_OWNER ? 'cursor:text' : 'cursor:default'};outline:none;"
+               ${_PPT_DESIGN_OWNER ? 'onfocus="this.style.borderColor=\'#a5b4fc\'"' : ''}
+               title="${_PPT_DESIGN_OWNER ? '헤드카피 (클릭하여 편집)' : ''}">${sl.head_copy || ''}</div>
+          <div ${_PPT_DESIGN_OWNER ? 'contenteditable="true"' : 'contenteditable="false"'} data-field="key_message" data-idx="${idx}"
+               ${_PPT_DESIGN_OWNER ? 'onblur="onSlideFieldEdit(this)"' : ''}
                style="font-size:.8rem;color:#6b7280;line-height:1.5;white-space:pre-wrap;
                       border:1px dashed transparent;border-radius:4px;padding:2px 4px;
-                      cursor:text;outline:none;"
-               onfocus="this.style.borderColor='#a5b4fc'"
-               title="핵심 메시지 (클릭하여 편집)">${sl.key_message || ''}</div>
+                      ${_PPT_DESIGN_OWNER ? 'cursor:text' : 'cursor:default'};outline:none;"
+               ${_PPT_DESIGN_OWNER ? 'onfocus="this.style.borderColor=\'#a5b4fc\'"' : ''}
+               title="${_PPT_DESIGN_OWNER ? '핵심 메시지 (클릭하여 편집)' : ''}">${sl.key_message || ''}</div>
           ${sl.evidence ? `<div style="font-size:.75rem;color:#9ca3af;margin-top:4px;">📎 ${sl.evidence}</div>` : ''}
         </div>
       </div>`;
