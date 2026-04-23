@@ -818,15 +818,19 @@ def _set_cell_text(
 def _default_style() -> dict:
     """기본 디자인 토큰."""
     return {
-        "bg":  (255, 255, 255),
-        "hd":  (30,  30,  30),
-        "ht":  (255, 255, 255),
-        "bd":  (30,  30,  30),
-        "ac":  (79,  70,  229),
-        "tf":  "맑은 고딕",
-        "bf":  "맑은 고딕",
-        "ts":  24,
-        "bs":  13,
+        "bg":      (255, 255, 255),
+        "hd":      (30,  30,  30),
+        "ht":      (255, 255, 255),
+        "bd":      (30,  30,  30),
+        "ac":      (79,  70,  229),
+        "ac2":     (79,  70,  229),   # 보조 강조색 — pdf/hwp 경로에서 미설정 시 KeyError 방지
+        "tf":      "맑은 고딕",
+        "bf":      "맑은 고딕",
+        "ts":      24,
+        "bs":      13,
+        "palette": [],
+        "has_line": False,
+        "layout":  "plain",
     }
 
 
@@ -1682,7 +1686,7 @@ def generate_from_template(detail: dict, template_bytes: bytes,
                                                    Cm(item_w - 0.3), Cm(item_h - 1.7))
                     cont_box.fill.solid()
                     cont_box.fill.fore_color.rgb = _t_rgb(
-                        sty["ac2"] if i % 2 == 0 else sty["hd"])
+                        sty.get("ac2", sty.get("ac", (79, 70, 229))) if i % 2 == 0 else sty.get("hd", (30, 30, 30)))
                     cont_box.line.fill.background()
                     _tmpl_box(sl, x + 0.2, y_top + 1.6, item_w - 0.5, item_h - 1.9,
                               step_text, sty["bf"], sty["bs"],
