@@ -112,17 +112,51 @@ def _build_context(case_detail: dict) -> str:
         if pl: lines.append("채널: " + ", ".join(str(p)[:40] for p in pl[:6]))
         lines.append("")
 
-    # 리서치 인사이트
+    # 리서치 인사이트 (출처 포함)
     research = steps.get("research", {})
     if research:
-        lines.append("## 리서치 인사이트")
+        lines.append("## 리서치 데이터 (출처 명시 — 슬라이드에 우선 활용)")
+
+        # 최근 이슈
         issues = research.get("recent_issues", [])
         if issues:
-            for iss in issues[:3]:
+            lines.append("### 주요 이슈")
+            for iss in issues[:5]:
                 if isinstance(iss, dict):
-                    lines.append(f"  - {str(iss.get('title','') or iss.get('issue',''))[:150]}")
+                    title  = iss.get("title", "") or iss.get("issue", "")
+                    source = iss.get("source", "") or iss.get("출처", "")
+                    year   = iss.get("year", "") or iss.get("date", "")
+                    cite   = f" (출처: {source}{', ' + str(year) if year else ''})" if source else " (출처: 리서치 결과)"
+                    lines.append(f"  - {str(title)[:150]}{cite}")
                 elif isinstance(iss, str):
-                    lines.append(f"  - {iss[:150]}")
+                    lines.append(f"  - {iss[:150]} (출처: 리서치 결과)")
+
+        # 통계/수치 데이터
+        stats = research.get("statistics", []) or research.get("key_stats", []) or research.get("data_points", [])
+        if stats:
+            lines.append("### 핵심 통계/수치")
+            for st in stats[:5]:
+                if isinstance(st, dict):
+                    val    = st.get("value", "") or st.get("stat", "") or st.get("content", "")
+                    source = st.get("source", "") or st.get("출처", "")
+                    cite   = f" (출처: {source})" if source else " (출처: 리서치 결과)"
+                    lines.append(f"  - {str(val)[:150]}{cite}")
+                elif isinstance(st, str):
+                    lines.append(f"  - {st[:150]} (출처: 리서치 결과)")
+
+        # 트렌드
+        trends = research.get("trends", []) or research.get("trend_keywords", [])
+        if trends:
+            lines.append("### 트렌드")
+            for tr in trends[:4]:
+                if isinstance(tr, dict):
+                    kw     = tr.get("keyword", "") or tr.get("trend", "") or tr.get("name", "")
+                    source = tr.get("source", "")
+                    cite   = f" (출처: {source})" if source else ""
+                    lines.append(f"  - {str(kw)[:120]}{cite}")
+                elif isinstance(tr, str):
+                    lines.append(f"  - {tr[:120]}")
+
         lines.append("")
 
     return "\n".join(lines)
@@ -297,6 +331,37 @@ STEP 11 ─ 기대효과 & 마무리 (2~3장)
   · 마지막 슬라이드 head_copy = 슬로건 전문, slide_type: message
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+【데이터 출처 및 신뢰도 원칙 — 반드시 준수】
+
+▌원칙 1 · 출처 필수 표기
+  · 모든 수치·통계·데이터에 반드시 출처 명시
+  · 표기 형식:  (출처: 기관명, 연도)  또는  (출처: 리서치 결과)
+  · 출처 없는 수치는 슬라이드에 사용 금지
+  · 출처 불명확한 경우 → "업계 추정" 표기 또는 해당 수치 삭제
+  · evidence 필드에 수치와 출처를 함께 기재:
+    예) "유튜브 쇼핑 클릭률 전년 대비 34% 상승 (출처: 유튜브 코리아, 2024)"
+
+▌원칙 2 · 신뢰도 우선순위
+  1순위: 정부·공공기관 공식 발표 자료 (문화체육관광부, 행정안전부 등)
+  2순위: 언론 보도 (주요 일간지, 공영방송, 연합뉴스 등)
+  3순위: 학술 연구·공식 보고서 (학회, 연구기관)
+  4순위: 업계 리포트 (닐슨, 오픈서베이, 대행사 리포트 등)
+  5순위: 인터즈 학습 데이터 사례
+  사용 불가: 출처 불명 블로그, 커뮤니티 게시글, 익명 정보
+
+▌원칙 3 · 리서치 데이터 우선 활용
+  · 위 [리서치 데이터] 섹션의 실제 수집 데이터를 최우선으로 사용
+  · 리서치 데이터에 출처가 명시된 경우 그대로 인용
+  · 리서치에 없는 수치가 필요한 경우 → evidence에 "추가 조사 필요" 표시
+  · 스스로 수치를 만들어내거나 추정치를 확정 수치처럼 쓰지 않는다
+
+▌원칙 4 · 슬라이드별 출처 표기 방법
+  · evidence 필드 = "수치/데이터 내용 (출처: 기관명, 연도)" 형식으로 작성
+  · number·compare 타입 슬라이드: evidence에 수치 출처 필수
+  · content 타입: 핵심 근거가 있으면 evidence에 기재
+  · 출처가 없는 슬라이드(커버·목차·메시지 타입)는 evidence를 빈 문자열로
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 【헤드카피 작성 원칙 — 가장 중요】
 
 헤드카피는 '장면'이어야 합니다.
@@ -370,7 +435,10 @@ STEP 11 ─ 기대효과 & 마무리 (2~3장)
 □ rfp_coverage.missing이 비어있는가?
 □ 표지(1) + 목차(1) + INTERZ차별화(compare, 2장 이상) + 마무리 message(1) 포함인가?
 □ 모든 head_copy가 "주장 문장 or 장면"인가? (섹션명이면 다시 쓰라)
-□ 마지막 슬라이드 head_copy가 슬로건 전문인가?"""
+□ 마지막 슬라이드 head_copy가 슬로건 전문인가?
+□ number·compare 타입 슬라이드의 evidence에 출처가 명시되어 있는가?
+□ 출처 없는 수치를 확정 사실처럼 쓴 슬라이드가 없는가?
+□ 리서치 데이터의 수치는 "(출처: 리서치 결과)" 또는 원본 출처로 표기했는가?"""
 
     result = call_json(prompt, max_tokens=16000)
     slides = result.get("slides", [])
