@@ -107,6 +107,8 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
     step_executed: dict = {}
     # 스킵 모드: 이전 스텝을 스킵한 경우 다음 스텝 실행 전 확인 요청
     _skip_mode = False
+    # 리서치 리뷰 완료 여부 — prior_results에 research가 있으면 이미 완료된 케이스
+    _research_reviewed = bool(results.get("research"))
 
     i = start_idx
     while i < len(_STEPS):
@@ -546,13 +548,15 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
 
         # ── 컨펌 요청
         # 자동실행이어도 research 완료 후에는 무조건 일시정지
-        if auto_run and step_key == "research":
+        if auto_run and step_key == "research" and not _research_reviewed:
             push_event({
                 "type": "research_review_needed",
                 "step": step_key,
                 "name": step_name,
             })
             user_input = wait_confirm("research_review")
+            _research_reviewed = True
+            push_event({"type": "research_review_done"})
         elif auto_run:
             user_input = "y"
             push_event({"type": "log", "message": f"✓ {step_name.strip()} 자동 완료"})

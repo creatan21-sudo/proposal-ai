@@ -803,6 +803,7 @@ def stream(sid):
             return
 
         idx = 0
+        _research_review_resolved = False  # SSE 재연결 시 이미 완료된 리뷰 다이얼로그 재출력 방지
         try:
             while True:
                 with _sessions_lock:
@@ -812,8 +813,18 @@ def stream(sid):
                     yield f"data: {payload}\n\n"
                     break
                 events = sess["events"]
+                # 리뷰 완료 여부 갱신 (한 번 True가 되면 유지)
+                if not _research_review_resolved:
+                    _research_review_resolved = any(
+                        e.get("type") == "research_review_done" for e in events
+                    )
                 while idx < len(events):
-                    data = json.dumps(events[idx], ensure_ascii=False)
+                    ev = events[idx]
+                    # 이미 완료된 리서치 리뷰 요청은 재전송 안 함
+                    if ev.get("type") == "research_review_needed" and _research_review_resolved:
+                        idx += 1
+                        continue
+                    data = json.dumps(ev, ensure_ascii=False)
                     yield f"data: {data}\n\n"
                     idx += 1
                 # 완료/중지/오류 → 스트림 종료

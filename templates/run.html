@@ -188,6 +188,9 @@ evtSource.onmessage = function(e) {
   catch(err) { console.error('SSE parse error', err); }
 };
 
+// 리서치 리뷰 완료 플래그 — SSE 재연결 시 다이얼로그 중복 표시 방지
+let _researchReviewDone = false;
+
 // 연결 오류 카운터 — 일시적 끊김은 무시하고 연속 실패 시만 알림
 let _sseErrCount = 0;
 evtSource.onerror = function() {
@@ -332,8 +335,14 @@ function handleEvent(ev) {
       playStepSound();
       break;
     case 'research_review_needed':
-      showResearchReviewDialog(ev);
-      playStepSound();
+      if (!_researchReviewDone) {
+        showResearchReviewDialog(ev);
+        playStepSound();
+      }
+      break;
+    case 'research_review_done':
+      _researchReviewDone = true;
+      hideConfirm();
       break;
     case 'slogan_selected':
       appendLog(`슬로건 확정: ${ev.slogan}`);
@@ -977,7 +986,7 @@ function showResearchReviewDialog(ev) {
 function submitResearchReview() {
   const comment = (document.getElementById('research-comment')?.value || '').trim();
   hideConfirm();
-  // 코멘트는 instruction으로 전송 → dna.step_instruction에 자동 저장
+  _researchReviewDone = true;
   sendConfirm('y', comment);
 }
 

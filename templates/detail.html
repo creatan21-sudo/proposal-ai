@@ -705,9 +705,8 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
         const CID = {{ case_id }};
         let _slides = [];
 
-        function init() {
-          loadNarrative();
-        }
+        // 탭이 활성화될 때 바로 로드
+        loadNarrative();
 
         async function loadNarrative() {
           try {

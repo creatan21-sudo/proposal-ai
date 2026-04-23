@@ -935,6 +935,21 @@ def get_case_detail(case_id: int) -> "dict | None":
                 "final_proposal":       fp.get("final_proposal", {}),
             }
 
+        # STEP 13 PPT 설계 — ppt_narratives 테이블에서 존재 여부 확인
+        if case_id_val:
+            try:
+                ppt_row = conn.execute(
+                    "SELECT target_slides FROM ppt_narratives WHERE case_id=?",
+                    (case_id_val,),
+                ).fetchone()
+                if ppt_row:
+                    steps["ppt_design"] = {
+                        "has_narrative": True,
+                        "target_slides": dict(ppt_row).get("target_slides", 0),
+                    }
+            except Exception:
+                pass  # 테이블 없으면 무시
+
         return {"case": case, "steps": steps}
 
 
@@ -1437,25 +1452,40 @@ def delete_learning_case(case_id: int, user_id: int) -> bool:
         return result.rowcount > 0
 
 
-def get_learning_cases_for_researcher(client_name: str, limit: int = 5) -> list:
-    """researcher.py용 — 유사 발주처 학습 데이터 조회.
+def get_learning_cases_for_researcher(
+    client_name: str,
+    agency_type: str = "",
+    video_type: str = "",
+    limit: int = 5,
+) -> list:
+    """researcher.py용 — 우수 학습 데이터 조회 (유사도 정렬).
 
-    Args:
-        client_name: 발주처명 (부분 매치)
-        limit: 최대 반환 건수
-
-    Returns:
-        관련 학습 케이스 목록
+    발주처명 매칭 → agency_type/video_type 키워드 매칭 → eval_score 순으로 정렬.
     """
     with get_connection() as conn:
         rows = conn.execute(
             """SELECT data_type, client_name, project_name, content, bid_result, eval_score
                FROM learning_cases
-               WHERE client_name LIKE ?
-               ORDER BY created_at DESC LIMIT ?""",
-            (f"%{client_name}%", limit),
+               ORDER BY eval_score DESC, created_at DESC LIMIT ?""",
+            (limit * 4,),  # 넉넉하게 가져와서 유사도 정렬 후 상위 N개 반환
         ).fetchall()
-    return [dict(r) for r in rows]
+
+    cases = [dict(r) for r in rows]
+
+    def _score(c: dict) -> float:
+        s = 0.0
+        content = (c.get("content") or "").lower()
+        if client_name and client_name.lower() in (c.get("client_name") or "").lower():
+            s += 10.0
+        if agency_type and agency_type.lower() in content:
+            s += 5.0
+        if video_type and video_type.lower() in content:
+            s += 5.0
+        s += (c.get("eval_score") or 0.0) * 0.1
+        return s
+
+    cases.sort(key=_score, reverse=True)
+    return cases[:limit]
 
 
 def get_winning_patterns(limit: int = 10) -> list:

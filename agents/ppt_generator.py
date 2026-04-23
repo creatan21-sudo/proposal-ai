@@ -269,7 +269,7 @@ def _draw_compare(slide, sl, num, total):
 def _draw_number(slide, sl, num, total):
     """6. 숫자 강조: 대형 숫자(48pt) 중앙 + 설명(14pt)"""
     title       = sl.get("title", "")
-    number      = str(sl.get("number", ""))
+    number      = str(sl.get("value", "") or sl.get("number", ""))
     label       = sl.get("label", "")
     description = sl.get("description", "")
 
@@ -701,7 +701,7 @@ def _narrative_to_slide(ns: dict, idx: int) -> dict:
     if sl_type == "number":
         lines = [l.strip() for l in msg.splitlines() if l.strip()]
         return {"number": num, "type": "number", "title": head,
-                "number": lines[0] if lines else "",
+                "value":  lines[0] if lines else "",
                 "label":  lines[1] if len(lines) > 1 else "",
                 "description": ev or (lines[2] if len(lines) > 2 else "")}
 

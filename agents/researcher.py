@@ -79,10 +79,14 @@ def run(dna: ConceptDNA) -> dict:
     if past_cases:
         print(f"  DB 참조: {len(past_cases)}건 이력 발견")
 
-    # 학습 데이터 참조
-    learning_cases = get_learning_cases_for_researcher(dna.client_name, limit=5)
-    if learning_cases:
-        print(f"  학습 데이터 참조: {len(learning_cases)}건")
+    # 학습 데이터 참조 (발주처·영상유형 유사도 정렬)
+    learning_cases = get_learning_cases_for_researcher(
+        dna.client_name,
+        agency_type=getattr(dna, "agency_type", "") or "",
+        video_type=getattr(dna, "video_type", "") or "",
+        limit=5,
+    )
+    print(f"[학습데이터] {len(learning_cases)}건 참조")
 
     # ── SerpAPI + Tavily 병렬 검색 ────────────
     serp_results: dict[str, list] = {}
@@ -400,6 +404,27 @@ def _analyze(dna: ConceptDNA, profile: dict, past_cases: list,
         for c in past_cases[:3]
     ) or "(없음)"
 
+    # 학습 데이터 → 프롬프트 주입용 블록 구성
+    _lc_list = learning_cases or []
+    if _lc_list:
+        _lc_parts = []
+        for lc in _lc_list:
+            score_str  = f" (평가점수 {lc['eval_score']:.0f}점)" if lc.get("eval_score") else ""
+            result_str = f" [{lc['bid_result']}]" if lc.get("bid_result") and lc["bid_result"] != "미정" else ""
+            header     = f"[{lc.get('data_type','')}] {lc.get('client_name','')} / {lc.get('project_name','')}{result_str}{score_str}"
+            content    = (lc.get("content") or "")[:600]
+            _lc_parts.append(f"{header}\n{content}")
+        learning_block = (
+            "\n\n━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "[INTERZ 우수 제안 사례 참고]\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "아래는 인터즈의 실제 우수 제안 사례입니다. "
+            "이 사례들의 전략·컨셉·표현 방식을 참고하여 작성하세요.\n\n"
+            + "\n\n".join(_lc_parts)
+        )
+    else:
+        learning_block = ""
+
     def _call_one(key: str, label: str, search_keys: list, instructions: str) -> tuple[str, str]:
         search_block = "\n\n".join(
             f"▶ {sk}\n{ctx.get(sk, '(없음)')}" for sk in search_keys
@@ -414,7 +439,8 @@ def _analyze(dna: ConceptDNA, profile: dict, past_cases: list,
             f"4. 모든 수치에 (기관명, 연도) 형식으로 출처 표기.\n"
             f"5. JSON 형식이 아닌 순수 마크다운 텍스트로만 작성.\n\n"
             f"[프로젝트 정보]\n{dna_ctx}\n\n"
-            f"[DB 유사 케이스]\n{past_str}\n\n"
+            f"[DB 유사 케이스]\n{past_str}\n"
+            f"{learning_block}\n\n"
             f"[검색 결과]\n{search_block}\n\n"
             f"[작성 지침]\n{instructions}\n\n"
             f"위 지침에 따라 {label} 내용을 지금 바로 작성하십시오:"
