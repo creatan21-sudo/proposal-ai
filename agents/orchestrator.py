@@ -86,10 +86,15 @@ def run(dna: ConceptDNA, pipeline_results: dict = None, generate_ppt: bool = Fal
     try:
         pre_checks = _rule_based_checks(dna)
         pre_score  = _calc_pre_score(pre_checks)
+        dr_score = pre_checks['data_relevance']['score']
+        dr_issues = pre_checks['data_relevance'].get('issues', [])
+        if dr_issues:
+            print(f"           ⚠️  데이터 적합성 경고 {len(dr_issues)}건 — PASS 2에서 재검토")
         print(f"           사전 검수 점수: {pre_score:.0%}  "
               f"(컨셉흐름 {pre_checks['concept_flow']['score']:.0%} / "
               f"평가항목 {pre_checks['evaluation_coverage']['score']:.0%} / "
-              f"키워드통합 {pre_checks['keyword_integration']['score']:.0%})")
+              f"키워드통합 {pre_checks['keyword_integration']['score']:.0%} / "
+              f"데이터적합성 {dr_score:.0%})")
     except Exception as e:
         raise RuntimeError(f"PASS 1 (규칙 기반 사전 검수) 실패: {type(e).__name__}: {e}") from e
 
@@ -173,7 +178,7 @@ def run(dna: ConceptDNA, pipeline_results: dict = None, generate_ppt: bool = Fal
 # ─────────────────────────────────────────────
 
 def _rule_based_checks(dna: ConceptDNA) -> dict:
-    """DNA 필드를 직접 순회하며 3개 영역 점수 계산.
+    """DNA 필드를 직접 순회하며 4개 영역 점수 계산.
 
     API 호출 없이 즉시 실행. 각 항목은 0.0~1.0 점수와 issues 리스트 반환.
     """
@@ -181,6 +186,7 @@ def _rule_based_checks(dna: ConceptDNA) -> dict:
         "concept_flow":        _check_concept_flow(dna),
         "evaluation_coverage": _check_evaluation_coverage(dna),
         "keyword_integration": _check_keyword_integration(dna),
+        "data_relevance":      _check_data_relevance(dna),
     }
 
 
@@ -282,10 +288,83 @@ def _check_keyword_integration(dna: ConceptDNA) -> dict:
     return {"score": round(score, 2), "found": found, "missing": missing}
 
 
+def _check_data_relevance(dna: ConceptDNA) -> dict:
+    """인용 데이터가 RFP 주제와 직접 관련인지 키워드 기반 검증.
+
+    core_tasks + evaluation_keywords를 주제 기준으로 삼아,
+    research 관련 DNA 필드 텍스트를 검사하여 주제 이탈 여부를 감지.
+
+    Returns:
+        {"score": float, "passed": [...], "issues": [...]}
+    """
+    passed, issues = [], []
+
+    # 주제 기준 키워드 집합
+    topic_kws = set()
+    for t in dna.core_tasks:
+        topic_kws.update(w for w in str(t).replace("·", " ").replace("/", " ").split() if len(w) >= 2)
+    for k in dna.evaluation_keywords:
+        topic_kws.update(w for w in str(k).replace("·", " ").replace("/", " ").split() if len(w) >= 2)
+    # 프로젝트명·기관명도 허용
+    for src in [dna.project_name, dna.client_name, dna.video_type]:
+        topic_kws.update(w for w in str(src).split() if len(w) >= 2)
+    topic_kws_lower = {k.lower() for k in topic_kws if k}
+
+    if not topic_kws_lower:
+        return {"score": 0.5, "passed": [], "issues": [], "note": "주제 키워드 정보 없음"}
+
+    # 검사 대상: research 관련 DNA 텍스트
+    research_text = " ".join(filter(None, [
+        dna.core_problem,
+        dna.crisis_statement,
+        " ".join(str(e) for e in dna.expected_effects),
+        " ".join(str(p) for p in dna.persuasion_structure[:3]),
+    ])).lower()
+
+    if not research_text.strip():
+        return {"score": 0.5, "passed": [], "issues": [], "note": "검사 대상 텍스트 없음 (리서치 미완료)"}
+
+    # 주제 키워드 커버리지 확인
+    matched = [kw for kw in topic_kws_lower if kw in research_text]
+    coverage = len(matched) / len(topic_kws_lower) if topic_kws_lower else 0.5
+
+    if coverage >= 0.3:
+        passed.append(f"주제 키워드 커버리지 {coverage:.0%} — 데이터 적합성 양호")
+    else:
+        issues.append({
+            "severity": "warning",
+            "field":    "데이터 적합성",
+            "message":  f"주제 키워드 커버리지 {coverage:.0%} — 인용 데이터가 RFP 주제와 충분히 일치하지 않을 수 있음",
+            "suggestion": "PASS 2에서 인용 데이터의 주제 적합성 재검토 필요. 유사 주제 데이터를 RFP 주제 데이터로 교체하거나 '관련 데이터 없음'으로 표기하라.",
+        })
+
+    # ⚠️ AI 추정값 표시 누락 여부 경고 (텍스트에 수치만 있고 출처 없는 패턴 감지)
+    import re as _re
+    bare_numbers = _re.findall(r'\d+[%만억원]', research_text)
+    sourced = _re.findall(r'\d+[%만억원][^\)]*\(', research_text)
+    if bare_numbers and len(sourced) < len(bare_numbers) * 0.5:
+        issues.append({
+            "severity": "warning",
+            "field":    "출처 미표기 수치",
+            "message":  f"출처 없는 수치 {len(bare_numbers) - len(sourced)}개 감지 — ⚠️ AI 추정값 표시 또는 삭제 필요",
+            "suggestion": "각 수치에 (출처명, 연도) 표기 추가. 확인 불가 시 ⚠️ AI 추정값 — 제출 전 직접 확인 필요 표시.",
+        })
+    else:
+        passed.append("수치 출처 표기 양호")
+
+    score = len(passed) / max(len(passed) + len(issues), 1)
+    return {"score": round(score, 2), "passed": passed, "issues": issues}
+
+
 def _calc_pre_score(pre_checks: dict) -> float:
-    """3개 영역 점수의 가중 평균 계산."""
-    weights = {"concept_flow": 0.4, "evaluation_coverage": 0.4, "keyword_integration": 0.2}
-    return sum(pre_checks[k]["score"] * w for k, w in weights.items())
+    """4개 영역 점수의 가중 평균 계산."""
+    weights = {
+        "concept_flow":        0.35,
+        "evaluation_coverage": 0.35,
+        "keyword_integration": 0.15,
+        "data_relevance":      0.15,
+    }
+    return sum(pre_checks[k]["score"] * w for k, w in weights.items() if k in pre_checks)
 
 
 # ─────────────────────────────────────────────
@@ -383,6 +462,11 @@ def _build_consistency_prompt(dna: ConceptDNA, pre_checks: dict, winning_pattern
 ━━━━━━━━━━━━━━━━━━━━━━━
 [분석 지침]
 ━━━━━━━━━━━━━━━━━━━━━━━
+0. 데이터 적합성 검토 (최우선 실행):
+   - 제안서에 인용된 모든 통계·수치·사례가 이 RFP의 실제 주제와 직접 관련인지 검토하라.
+   - 유사하지만 다른 주제의 데이터 사용 사례(예: 데이트 폭력 주제에 가정 폭력 통계) 발견 시
+     해당 데이터를 issues에 critical로 기록하고 revised_sections에서 제거 또는 "관련 데이터 없음"으로 교체하라.
+   - AI가 생성한 불확실한 수치에는 ⚠️ AI 추정값 — 제출 전 직접 확인 필요 표시를 추가하라.
 1. narrative_score: 위기→진단→해결→효과 4단계 서사 흐름의 완성도 (0.0~1.0)
 2. issues: 발견된 불일치·빈틈·개선 사항 목록 (심각도별 분류, critical/warning/info)
 3. revised_sections: 미흡 섹션의 보완 내용 (없으면 빈 dict)
