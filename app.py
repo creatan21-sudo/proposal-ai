@@ -544,13 +544,19 @@ def admin_required(f):
 
 
 def operator_or_admin_required(f):
-    """operator 이상 권한 필요 (파이프라인 생성, 학습 데이터 관리 등)."""
+    """operator 이상 권한 필요 (파이프라인 생성, 학습 데이터 관리 등).
+    user 역할은 열람 전용 — 생성/수정 엔드포인트 403 차단.
+    """
     @wraps(f)
     def wrapped(*args, **kwargs):
         if not session.get("user_id"):
+            if request.is_json or request.path.startswith("/api/"):
+                return jsonify({"ok": False, "error": "로그인이 필요합니다."}), 401
             return redirect(url_for("login"))
         role = session.get("role", "")
         if role not in ("admin", "operator"):
+            if request.is_json or request.path.startswith("/api/"):
+                return jsonify({"ok": False, "error": "권한이 없습니다. 열람 전용 계정입니다."}), 403
             abort(403)
         return f(*args, **kwargs)
     return wrapped
@@ -585,6 +591,9 @@ def login():
             token = str(uuid.uuid4())
             session["session_token"] = token
             set_session_token(user["id"], token)
+            # user 역할: 공유받은 제안서 목록으로 바로 이동
+            if session["role"] == "user":
+                return redirect(url_for("history"))
             return redirect(url_for("index"))
         error = "아이디 또는 비밀번호가 틀렸습니다."
     return render_template("login.html", error=error)
@@ -603,6 +612,9 @@ def logout():
 @app.route("/")
 @login_required
 def index():
+    # user 역할은 새 제안서 생성 불가 → 공유 DB로 리다이렉트
+    if session.get("role") == "user":
+        return redirect(url_for("history"))
     return render_template("index.html", video_types=VIDEO_TYPES)
 
 
@@ -611,7 +623,7 @@ def index():
 # ─────────────────────────────────────────────
 
 @app.route("/start", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def start():
     client        = request.form.get("client", "").strip()
     project       = request.form.get("project", "").strip()
@@ -874,7 +886,7 @@ def stream(sid):
 
 
 @app.route("/confirm/<sid>", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def confirm(sid):
     with _sessions_lock:
         sess = _sessions.get(sid)
@@ -894,7 +906,7 @@ def confirm(sid):
 
 
 @app.route("/stop/<sid>", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def stop_pipeline(sid):
     """사용자가 진행 중인 파이프라인을 강제 중지."""
     with _sessions_lock:
@@ -919,7 +931,7 @@ def stop_pipeline(sid):
 
 
 @app.route("/rfp_analyze", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def rfp_analyze():
     """RFP 파일 업로드 → 폼 자동채우기용 필드 추출."""
     f = request.files.get("rfp_file")
@@ -984,7 +996,7 @@ def rfp_analyze():
 
 
 @app.route("/retry/<sid>", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def retry_pipeline(sid):
     """실패/중단된 파이프라인을 재시작. 중단 지점부터 재개.
     ?skip=1 이면 실패 스텝을 건너뛰고 다음 스텝부터 재개.
@@ -1138,17 +1150,23 @@ def history():
 
         rows = conn.execute(base, params).fetchall()
 
-    cases = [dict(r) for r in rows]
-
-    # 공유된 제안서 (내 것이 아닌 것 중 나에게 공유된 것)
-    my_ids = {c["id"] for c in cases}
-    shared = [c for c in get_shared_cases(session["user_id"]) if c["id"] not in my_ids]
+    is_user_role = (session.get("role") == "user")
+    if is_user_role:
+        # user 역할: 본인 생성 케이스 없음 → 공유받은 케이스만 표시
+        cases = []
+        shared = get_shared_cases(session["user_id"])
+    else:
+        cases = [dict(r) for r in rows]
+        # 공유된 제안서 (내 것이 아닌 것 중 나에게 공유된 것)
+        my_ids = {c["id"] for c in cases}
+        shared = [c for c in get_shared_cases(session["user_id"]) if c["id"] not in my_ids]
 
     return render_template(
         "history.html", cases=cases, shared_cases=shared, q=q,
         view_all=view_all,
         show_hidden=show_hidden,
         is_admin=session.get("is_admin", False),
+        is_user_role=is_user_role,
     )
 
 
@@ -1264,7 +1282,7 @@ def _flatten_to_lines(obj, lines: list, indent: int = 0):
 
 
 @app.route("/history/<int:case_id>/reuse")
-@login_required
+@operator_or_admin_required
 def reuse(case_id):
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM rfp_cases WHERE id=?", (case_id,)).fetchone()
@@ -1284,7 +1302,7 @@ def reuse(case_id):
 
 
 @app.route("/history/<int:case_id>/hide", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def hide_case_route(case_id):
     with get_connection() as conn:
         row = conn.execute("SELECT user_id FROM rfp_cases WHERE id=?", (case_id,)).fetchone()
@@ -1297,7 +1315,7 @@ def hide_case_route(case_id):
 
 
 @app.route("/history/<int:case_id>/unhide", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def unhide_case_route(case_id):
     with get_connection() as conn:
         row = conn.execute("SELECT user_id FROM rfp_cases WHERE id=?", (case_id,)).fetchone()
@@ -1310,7 +1328,7 @@ def unhide_case_route(case_id):
 
 
 @app.route("/history/<int:case_id>/share", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def share_case_route(case_id):
     """케이스를 특정 사용자와 공유."""
     data = request.get_json(force=True) or {}
@@ -1328,7 +1346,7 @@ def share_case_route(case_id):
 
 
 @app.route("/history/<int:case_id>/unshare", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def unshare_case_route(case_id):
     """공유 취소."""
     data = request.get_json(force=True) or {}
@@ -1363,7 +1381,7 @@ def api_shareable_users():
 # ─────────────────────────────────────────────
 
 @app.route("/history/<int:case_id>/request_delete", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def request_delete_case(case_id):
     """일반 사용자: 삭제 요청 전송 (운영자에게 알림)."""
     with get_connection() as conn:
@@ -1862,7 +1880,7 @@ def _cleanup_template_uploads():
 
 
 @app.route("/ppt/upload_template", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def ppt_upload_template():
     """옵션 3: 참고 파일 업로드 → upload_id 반환.
     프론트엔드 FormData 필드명: 'file' 또는 'template_file' 모두 허용.
@@ -1920,7 +1938,7 @@ def ppt_has_gamma():
 
 
 @app.route("/ppt/start", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def ppt_start():
     """PPT 생성 시작.
     mode: 'basic' (python-pptx) | 'gamma' | 'template' (참고 PPTX 스타일 적용)
@@ -2582,7 +2600,7 @@ def api_ppt_version_memo(version_id):
 # ─────────────────────────────────────────────
 
 @app.route("/ppt/gamma/start", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def ppt_gamma_start():
     """Gamma API를 통한 고품질 PPT 생성 시작."""
     data    = request.get_json(force=True) or {}
@@ -2815,7 +2833,7 @@ def api_ppt_narrative_get(case_id):
 
 
 @app.route("/api/ppt_narrative/<int:case_id>/generate", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def api_ppt_narrative_generate(case_id):
     """PPT 설계안 생성 (Claude AI 호출 — 백그라운드). 소유자/admin 전용."""
     detail = get_case_detail(case_id)
@@ -2851,7 +2869,7 @@ def api_ppt_narrative_generate(case_id):
 
 
 @app.route("/api/ppt_narrative/<int:case_id>/save", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def api_ppt_narrative_save(case_id):
     """사용자 편집 설계안 저장. 소유자/admin 전용."""
     detail = get_case_detail(case_id)
@@ -2890,7 +2908,7 @@ def api_storyboard(case_id):
 
 
 @app.route("/api/storyboard/<int:case_id>/regenerate", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def api_storyboard_regenerate(case_id):
     """개별 씬 또는 전체 스토리보드 재생성."""
     data = request.get_json(force=True) or {}
@@ -2949,7 +2967,7 @@ def storyboard_image(case_id, scene_num):
 # ─────────────────────────────────────────────
 
 @app.route("/rerun_from_step/<int:case_id>/<step_key>", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def rerun_from_step(case_id, step_key):
     """특정 스텝부터 파이프라인 재실행."""
     import dataclasses as _dc2
@@ -3049,7 +3067,7 @@ def rerun_from_step(case_id, step_key):
 # ─────────────────────────────────────────────
 
 @app.route("/update_step_content/<int:case_id>/<step_key>", methods=["POST"])
-@login_required
+@operator_or_admin_required
 def update_step_content(case_id, step_key):
     """스텝 내용을 직접 수정해 DB에 저장."""
     VALID_STEPS = {
