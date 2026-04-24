@@ -1,6 +1,8 @@
 # agents/ppt_narrator.py
 # PPT 설계 에이전트: 전체 제안서 내용을 N장 슬라이드 설계안으로 압축
 
+import anthropic
+
 from core.claude_client import call_json
 
 
@@ -16,28 +18,25 @@ def _measure_content(case_detail: dict) -> int:
     return total
 
 
-def _build_context(case_detail: dict) -> str:
-    """Claude 프롬프트용 전체 컨텍스트 구성."""
+def _build_essential_block(case_detail: dict) -> str:
+    """필수 블록만 구성: 컨셉/슬로건, 평가 배점표, 핵심 과업."""
     case  = case_detail.get("case", {})
     dna   = case.get("dna", {})
     steps = case_detail.get("steps", {})
     rfp   = steps.get("rfp_analysis", {})
     cr    = steps.get("creative", {})
 
-    lines = [
-        f"# {case.get('client_name','')} / {case.get('project_name','')}",
-        f"영상종류: {case.get('video_type','')} | 예산: {case.get('budget','')} | 납품기한: {case.get('deadline','')}",
-        "",
-    ]
+    lines = []
 
-    # 컨셉 & 슬로건
     concept = cr.get("concept", "") or dna.get("concept", "")
     slogan  = cr.get("confirmed_slogan", "") or dna.get("slogan", "")
-    if concept: lines += [f"핵심 컨셉: {concept}", f"컨셉 설명: {cr.get('concept_description','') or dna.get('concept_description','')}"]
-    if slogan:  lines.append(f"슬로건: {slogan}")
+    if concept:
+        lines += [f"핵심 컨셉: {concept}",
+                  f"컨셉 설명: {cr.get('concept_description','') or dna.get('concept_description','')}"]
+    if slogan:
+        lines.append(f"슬로건: {slogan}")
     lines.append("")
 
-    # 평가 배점표
     eval_crit = dna.get("evaluation_criteria", "") or rfp.get("evaluation_criteria", "")
     if not eval_crit:
         eval_items = rfp.get("evaluation_items", []) or dna.get("evaluation_items", [])
@@ -50,7 +49,6 @@ def _build_context(case_detail: dict) -> str:
     if eval_crit:
         lines += ["## 평가 배점표 (배점 높은 순)", str(eval_crit)[:1500], ""]
 
-    # RFP 핵심 과업
     core_tasks = rfp.get("core_tasks", []) or dna.get("core_tasks", [])
     if core_tasks:
         lines.append("## RFP 핵심 과업 (반드시 슬라이드에 포함)")
@@ -58,18 +56,21 @@ def _build_context(case_detail: dict) -> str:
             lines.append(f"  {i}. {str(t)[:150]}")
         lines.append("")
 
-    # 특이사항
-    special = rfp.get("forbidden_notes", []) or dna.get("forbidden_notes", [])
-    if special:
-        lines += ["## RFP 특이사항/주의사항"] + [f"  - {str(s)[:150]}" for s in special[:5]] + [""]
+    return "\n".join(lines)
 
-    # 전략
+
+def _build_important_block(case_detail: dict, step_limit: int) -> str:
+    """중요 블록: 전략, 크리에이티브, 제작 계획."""
+    steps = case_detail.get("steps", {})
+    lines = []
+
     strat = steps.get("strategy", {})
     if strat:
         lines.append("## 전략")
-        for k, lbl in [("core_problem","핵심문제"), ("crisis_statement","위기제시"),
-                       ("solution_direction","해결방향")]:
-            if strat.get(k): lines.append(f"{lbl}: {str(strat[k])[:200]}")
+        for k, lbl in [("core_problem", "핵심문제"), ("crisis_statement", "위기제시"),
+                        ("solution_direction", "해결방향")]:
+            if strat.get(k):
+                lines.append(f"{lbl}: {str(strat[k])[:200]}")
         effects = strat.get("expected_effects", [])
         if effects:
             lines.append("기대효과: " + " / ".join(str(e)[:80] for e in effects[:5]))
@@ -82,18 +83,20 @@ def _build_context(case_detail: dict) -> str:
         hi = strat.get("high_priority_eval", []) or strat.get("high_priority_eval_items", [])
         if hi:
             lines.append("배점 상위 항목: " + " / ".join(
-                (it.get("item","") if isinstance(it, dict) else str(it))[:60]
+                (it.get("item", "") if isinstance(it, dict) else str(it))[:60]
                 for it in hi[:5]
             ))
         lines.append("")
 
-    # 제작 계획
     plan = steps.get("plan", {})
     if plan:
         lines.append("## 제작 계획")
         for ep in plan.get("episodes", [])[:6]:
             if isinstance(ep, dict):
-                lines.append(f"  {ep.get('episode_number','')}편: {ep.get('title','')} — {str(ep.get('core_message',''))[:120]}")
+                lines.append(
+                    f"  {ep.get('episode_number','')}편: {ep.get('title','')} — "
+                    f"{str(ep.get('core_message',''))[:120]}"
+                )
         sched = plan.get("production_schedule", [])
         if sched:
             lines.append("제작 일정:")
@@ -102,22 +105,17 @@ def _build_context(case_detail: dict) -> str:
                     lines.append(f"  [{ph.get('phase','')}] {str(ph.get('tasks',''))[:120]}")
         lines.append("")
 
-    # 마케팅
-    mkt = steps.get("marketing", {})
-    if mkt:
-        lines.append("## 마케팅 전략")
-        for k, lbl in [("target_audience","타겟"), ("kpi","KPI"), ("key_strategy","핵심전략")]:
-            if mkt.get(k): lines.append(f"{lbl}: {str(mkt[k])[:150]}")
-        pl = mkt.get("platforms", [])
-        if pl: lines.append("채널: " + ", ".join(str(p)[:40] for p in pl[:6]))
-        lines.append("")
+    return "\n".join(lines)[:step_limit]
 
-    # 리서치 인사이트 (출처 포함)
+
+def _build_summary_block(case_detail: dict, step_limit: int) -> str:
+    """요약 블록: 리서치 핵심 5줄, 마케팅 핵심 3줄."""
+    steps = case_detail.get("steps", {})
+    lines = []
+
     research = steps.get("research", {})
     if research:
         lines.append("## 리서치 데이터 (출처 명시 — 슬라이드에 우선 활용)")
-
-        # 최근 이슈
         issues = research.get("recent_issues", [])
         if issues:
             lines.append("### 주요 이슈")
@@ -130,8 +128,6 @@ def _build_context(case_detail: dict) -> str:
                     lines.append(f"  - {str(title)[:150]}{cite}")
                 elif isinstance(iss, str):
                     lines.append(f"  - {iss[:150]} (출처: 리서치 결과)")
-
-        # 통계/수치 데이터
         stats = research.get("statistics", []) or research.get("key_stats", []) or research.get("data_points", [])
         if stats:
             lines.append("### 핵심 통계/수치")
@@ -143,8 +139,6 @@ def _build_context(case_detail: dict) -> str:
                     lines.append(f"  - {str(val)[:150]}{cite}")
                 elif isinstance(st, str):
                     lines.append(f"  - {st[:150]} (출처: 리서치 결과)")
-
-        # 트렌드
         trends = research.get("trends", []) or research.get("trend_keywords", [])
         if trends:
             lines.append("### 트렌드")
@@ -156,10 +150,102 @@ def _build_context(case_detail: dict) -> str:
                     lines.append(f"  - {str(kw)[:120]}{cite}")
                 elif isinstance(tr, str):
                     lines.append(f"  - {tr[:120]}")
-
         lines.append("")
 
-    return "\n".join(lines)
+    mkt = steps.get("marketing", {})
+    if mkt:
+        lines.append("## 마케팅 전략")
+        for k, lbl in [("target_audience", "타겟"), ("kpi", "KPI"), ("key_strategy", "핵심전략")]:
+            if mkt.get(k):
+                lines.append(f"{lbl}: {str(mkt[k])[:150]}")
+        pl = mkt.get("platforms", [])
+        if pl:
+            lines.append("채널: " + ", ".join(str(p)[:40] for p in pl[:6]))
+        lines.append("")
+
+    return "\n".join(lines)[:step_limit]
+
+
+def _build_omittable_block(case_detail: dict, step_limit: int) -> str:
+    """생략 가능 블록: 특이사항, platform_ops."""
+    case  = case_detail.get("case", {})
+    dna   = case.get("dna", {})
+    steps = case_detail.get("steps", {})
+    rfp   = steps.get("rfp_analysis", {})
+    lines = []
+
+    special = rfp.get("forbidden_notes", []) or dna.get("forbidden_notes", [])
+    if special:
+        lines += ["## RFP 특이사항/주의사항"] + \
+                 [f"  - {str(s)[:150]}" for s in special[:5]] + [""]
+
+    platform_ops = steps.get("platform_ops", {})
+    if platform_ops:
+        lines.append("## 플랫폼 운영 전략")
+        lines.append(str(platform_ops)[:500])
+        lines.append("")
+
+    return "\n".join(lines)[:step_limit]
+
+
+def _build_context(case_detail: dict, step_limit: int = 3_000, total_limit: int = 80_000) -> str:
+    """Claude 프롬프트용 전체 컨텍스트 구성 (우선순위 기반 트런케이션).
+
+    우선순위: essential > important > summary > omittable
+    total_limit 초과 시 낮은 우선순위 블록부터 제거.
+    """
+    case = case_detail.get("case", {})
+
+    header = "\n".join([
+        f"# {case.get('client_name','')} / {case.get('project_name','')}",
+        f"영상종류: {case.get('video_type','')} | 예산: {case.get('budget','')} | 납품기한: {case.get('deadline','')}",
+        "",
+    ])
+
+    essential  = _build_essential_block(case_detail)[:step_limit]
+    important  = _build_important_block(case_detail, step_limit)
+    summary    = _build_summary_block(case_detail, step_limit)
+    omittable  = _build_omittable_block(case_detail, step_limit)
+
+    # 우선순위 순으로 total_limit 내에서 블록 조립
+    blocks_by_priority = [
+        ("essential",  essential),
+        ("important",  important),
+        ("summary",    summary),
+        ("omittable",  omittable),
+    ]
+
+    used = len(header)
+    included = []
+    for name, block in blocks_by_priority:
+        if not block.strip():
+            continue
+        needed = len(block) + 2
+        if used + needed <= total_limit:
+            included.append(block)
+            used += needed
+        else:
+            remaining = total_limit - used - 2
+            if remaining > 200 and name in ("essential", "important"):
+                # 필수/중요 블록은 잘라서라도 포함
+                included.append(block[:remaining])
+            # summary/omittable은 공간 부족 시 드롭
+            break
+
+    return header + "\n\n".join(included)
+
+
+def _is_context_overflow(exc: Exception) -> bool:
+    """422 또는 context_length_exceeded 오류인지 판별."""
+    if isinstance(exc, anthropic.APIStatusError):
+        if exc.status_code == 422:
+            return True
+        if exc.status_code == 400:
+            body = getattr(exc, "body", None) or {}
+            msg  = body.get("error", {}).get("message", "") if isinstance(body, dict) else str(exc)
+            return "context_length" in msg.lower() or "too large" in msg.lower()
+    msg = str(exc).lower()
+    return "context_length" in msg or "too large" in msg or "422" in msg
 
 
 def _case_detail_from_dna(dna, results: dict) -> dict:
@@ -225,22 +311,22 @@ def run(case_detail: dict, target_slides: int = 30) -> dict:
         }
     """
     target_slides = max(10, min(60, target_slides))
-    context       = _build_context(case_detail)
     content_chars = _measure_content(case_detail)
 
-    case   = case_detail.get("case", {})
-    dna    = case.get("dna", {})
-    steps  = case_detail.get("steps", {})
-    rfp    = steps.get("rfp_analysis", {})
-    cr     = steps.get("creative", {})
+    case  = case_detail.get("case", {})
+    dna   = case.get("dna", {})
+    steps = case_detail.get("steps", {})
+    rfp   = steps.get("rfp_analysis", {})
+    cr    = steps.get("creative", {})
 
     core_tasks = rfp.get("core_tasks", []) or dna.get("core_tasks", [])
-    concept    = cr.get("concept", "")       or dna.get("concept", "")
-    slogan     = cr.get("confirmed_slogan","") or dna.get("slogan", "")
+    concept    = cr.get("concept", "")        or dna.get("concept", "")
+    slogan     = cr.get("confirmed_slogan", "") or dna.get("slogan", "")
 
     body_slides = target_slides - 3  # 표지(1) + 목차(1) + 마무리(1) 고정
 
-    prompt = f"""당신은 영상 제작 제안서 PT의 스토리 디렉터입니다.
+    def _build_prompt(context: str) -> str:
+        return f"""당신은 영상 제작 제안서 PT의 스토리 디렉터입니다.
 아래 제안서 데이터({content_chars:,}자)를 바탕으로 정확히 {target_slides}장의 PPT 설계안을 만드세요.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -440,9 +526,34 @@ STEP 11 ─ 기대효과 & 마무리 (2~3장)
 □ 출처 없는 수치를 확정 사실처럼 쓴 슬라이드가 없는가?
 □ 리서치 데이터의 수치는 "(출처: 리서치 결과)" 또는 원본 출처로 표기했는가?"""
 
-    result = call_json(prompt, max_tokens=16000)
-    slides = result.get("slides", [])
+    # ── 3단계 재시도: 3000자 → 1500자 → 필수만 ──────────────────────────
+    attempts = [
+        {"step_limit": 3_000, "total_limit": 80_000, "label": "3000자/스텝"},
+        {"step_limit": 1_500, "total_limit": 80_000, "label": "1500자/스텝"},
+        {"step_limit": None,  "total_limit": None,   "label": "필수항목만"},
+    ]
 
+    result = None
+    for i, cfg in enumerate(attempts):
+        if cfg["step_limit"] is None:
+            context = _build_essential_block(case_detail)
+        else:
+            context = _build_context(case_detail, cfg["step_limit"], cfg["total_limit"])
+
+        print(f"  [PPT설계] 컨텍스트 {len(context):,}자 ({cfg['label']}) — API 호출 중...")
+        try:
+            result = call_json(_build_prompt(context), max_tokens=16000)
+            break
+        except Exception as exc:
+            if _is_context_overflow(exc) and i < len(attempts) - 1:
+                print(f"  [PPT설계] 컨텍스트 초과 — {attempts[i+1]['label']}으로 재시도")
+                continue
+            raise
+
+    if result is None:
+        result = {}
+
+    slides = result.get("slides", [])
     print(f"  [PPT설계] {len(slides)}/{target_slides}장 설계안 생성 완료")
     missing = result.get("rfp_coverage", {}).get("missing", [])
     if missing:
