@@ -1330,18 +1330,24 @@ def unhide_case_route(case_id):
 @app.route("/history/<int:case_id>/share", methods=["POST"])
 @operator_or_admin_required
 def share_case_route(case_id):
-    """케이스를 특정 사용자와 공유."""
+    """케이스를 한 명 또는 여러 명에게 공유 (user_ids 리스트 또는 단일 user_id 지원)."""
     data = request.get_json(force=True) or {}
-    target_uid = int(data.get("user_id", 0))
-    if not target_uid:
-        return jsonify({"ok": False, "error": "user_id 필요"}), 400
+    user_ids = data.get("user_ids") or []
+    if not user_ids and data.get("user_id"):
+        user_ids = [data["user_id"]]
+    if not user_ids:
+        return jsonify({"ok": False, "error": "user_ids 필요"}), 400
     with get_connection() as conn:
         row = conn.execute("SELECT user_id FROM rfp_cases WHERE id=?", (case_id,)).fetchone()
     if not row:
         abort(404)
     if dict(row)["user_id"] != session["user_id"] and not session.get("is_admin"):
         abort(403)
-    share_proposal(case_id, session["user_id"], target_uid)
+    for uid in user_ids:
+        try:
+            share_proposal(case_id, session["user_id"], int(uid))
+        except Exception:
+            pass
     return jsonify({"ok": True})
 
 
@@ -2980,6 +2986,9 @@ def rerun_from_step(case_id, step_key):
     if step_key not in VALID_STEPS:
         return jsonify({"ok": False, "error": f"유효하지 않은 step_key: {step_key}"}), 400
 
+    req_data = request.get_json(force=True) or {}
+    comment = str(req_data.get("comment", "")).strip()
+
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM rfp_cases WHERE id=?", (case_id,)).fetchone()
     if not row:
@@ -3021,6 +3030,37 @@ def rerun_from_step(case_id, step_key):
     ]
     start_idx = PIPELINE_ORDER.index(step_key) if step_key in PIPELINE_ORDER else 0
     steps_to_clear = PIPELINE_ORDER[start_idx:]
+
+    # 이전 결과 수집 (삭제 전)
+    prev_content_text = ""
+    if comment:
+        table = STEP_TABLE_MAP.get(step_key)
+        if table:
+            with get_connection() as conn:
+                prev_row = conn.execute(
+                    f"SELECT * FROM {table} WHERE case_id=? ORDER BY created_at DESC LIMIT 1",
+                    (case_id,),
+                ).fetchone()
+            if prev_row:
+                try:
+                    prev_dict = {k: v for k, v in dict(prev_row).items()
+                                 if k not in ("id", "case_id", "created_at", "client_name", "project_name")}
+                    prev_content_text = json.dumps(prev_dict, ensure_ascii=False)[:3000]
+                except Exception:
+                    pass
+
+    # 코멘트 → step_instruction 구성
+    if comment:
+        parts = [
+            f"사용자 요청사항: {comment}",
+            "위 요청사항을 최우선으로 반영해서 작성하세요.",
+        ]
+        if prev_content_text:
+            parts += [
+                f"\n이전 결과: {prev_content_text}",
+                "위 내용에서 사용자 요청사항을 반영해 개선하세요.",
+            ]
+        dna.step_instruction = "\n".join(parts)
 
     with get_connection() as conn:
         for sk in steps_to_clear:
