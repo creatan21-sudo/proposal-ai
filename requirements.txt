@@ -1,7 +1,31 @@
-flask
-gunicorn
-python-dotenv
-requests
-anthropic
-openai
-werkzeug
+anthropic>=0.40.0
+python-pptx>=1.0.0
+python-dotenv>=1.0.0
+pydantic>=2.0.0
+click>=8.1.0
+
+# PDF 파싱
+pdfplumber>=0.11.0
+
+# PDF → 이미지 변환 (Vision 스타일 추출용, poppler 필요)
+pdf2image>=1.17.0
+
+# HWP 바이너리 파싱
+olefile>=0.47
+
+# JSON 복구
+json-repair>=0.30.0
+
+# 웹 서치
+tavily-python>=0.3.0
+google-search-results>=2.4.2
+
+# 웹 서비스
+flask>=3.0.0
+gunicorn>=21.2.0
+requests>=2.31.0
+
+# OpenAI (DALL-E 스토리보드)
+openai>=1.0.0
+
+Werkzeug>=3.0.0
