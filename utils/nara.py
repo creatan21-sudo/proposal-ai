@@ -15,7 +15,7 @@ _scheduler_lock = threading.Lock()
 
 def fetch_bids(keyword: str, page: int = 1, rows: int = 20) -> list:
     today     = datetime.now()
-    from_date = (today - timedelta(days=1)).strftime("%Y%m%d%H%M%S")
+    from_date = (today - timedelta(days=30)).strftime("%Y%m%d%H%M%S")
     to_date   = today.strftime("%Y%m%d%H%M%S")
     params = {
         "serviceKey": NARA_API_KEY,
