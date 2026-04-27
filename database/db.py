@@ -1929,3 +1929,58 @@ def get_ppt_job(task_id: str) -> dict | None:
             "SELECT * FROM ppt_jobs WHERE task_id=?", (task_id,)
         ).fetchone()
     return dict(row) if row else None
+
+
+# ── 나라장터 ──────────────────────────────────────────
+
+def get_nara_keywords() -> list:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT id, keyword, created_at FROM nara_keywords ORDER BY id DESC").fetchall()
+    return [dict(r) for r in rows]
+
+def add_nara_keyword(keyword: str) -> bool:
+    try:
+        with get_connection() as conn:
+            conn.execute("INSERT INTO nara_keywords (keyword) VALUES (?)", (keyword.strip(),))
+        return True
+    except Exception:
+        return False
+
+def delete_nara_keyword(keyword_id: int):
+    with get_connection() as conn:
+        conn.execute("DELETE FROM nara_keywords WHERE id=?", (keyword_id,))
+
+def save_nara_bid(bid: dict, matched_keyword: str = ""):
+    try:
+        with get_connection() as conn:
+            conn.execute("""
+                INSERT OR IGNORE INTO nara_bids
+                    (bid_ntce_no, bid_ntce_nm, ntce_instt_nm, dmnd_instt_nm,
+                     bid_mtd_nm, presmpt_prce, bid_ntce_dt, bid_clse_dt, ntce_url, matched_keyword)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (
+                bid.get("bid_ntce_no",""), bid.get("bid_ntce_nm",""),
+                bid.get("ntce_instt_nm",""), bid.get("dmnd_instt_nm",""),
+                bid.get("bid_mtd_nm",""), bid.get("presmpt_prce",""),
+                bid.get("bid_ntce_dt",""), bid.get("bid_clse_dt",""),
+                bid.get("ntce_url",""), matched_keyword,
+            ))
+    except Exception as e:
+        print(f"[db] save_nara_bid 오류: {e}")
+
+def is_nara_bid_seen(bid_ntce_no: str) -> bool:
+    with get_connection() as conn:
+        row = conn.execute("SELECT 1 FROM nara_bids WHERE bid_ntce_no=?", (bid_ntce_no,)).fetchone()
+    return row is not None
+
+def list_nara_bids(keyword: str = "", limit: int = 200) -> list:
+    with get_connection() as conn:
+        if keyword:
+            rows = conn.execute("SELECT * FROM nara_bids WHERE matched_keyword=? ORDER BY created_at DESC LIMIT ?", (keyword, limit)).fetchall()
+        else:
+            rows = conn.execute("SELECT * FROM nara_bids ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+    return [dict(r) for r in rows]
+
+def delete_nara_bid(bid_id: int):
+    with get_connection() as conn:
+        conn.execute("DELETE FROM nara_bids WHERE id=?", (bid_id,))

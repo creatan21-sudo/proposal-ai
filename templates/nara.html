@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}입찰 모니터링 — Prointerz{% endblock %}
+{% block head %}
+<style>
+.nara-wrap{max-width:1100px;margin:0 auto;padding:24px 16px}
+.nara-title{font-size:22px;font-weight:700;margin-bottom:6px}
+.nara-subtitle{font-size:13px;color:#6b7280;margin-bottom:28px}
+.kw-section{background:#f9fafb;border:1px solid #e5e7eb;border-radius:12px;padding:20px;margin-bottom:28px}
+.kw-section h3{font-size:14px;font-weight:600;margin:0 0 14px;color:#374151}
+.kw-input-row{display:flex;gap:8px;margin-bottom:14px}
+.kw-input-row input{flex:1;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;outline:none}
+.kw-input-row input:focus{border-color:#6366f1;box-shadow:0 0 0 2px #eef2ff}
+.btn{padding:9px 16px;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s}
+.btn-primary{background:#6366f1;color:#fff}
+.btn-primary:hover{background:#4f46e5}
+.btn-scan{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.btn-scan:hover{background:#d1fae5}
+.btn-scan.loading{opacity:.6;pointer-events:none}
+.kw-tags{display:flex;flex-wrap:wrap;gap:8px}
+.kw-tag{display:inline-flex;align-items:center;gap:6px;background:#eef2ff;color:#4338ca;border-radius:20px;padding:5px 12px;font-size:13px;font-weight:500}
+.kw-tag button{background:none;border:none;cursor:pointer;color:#6366f1;font-size:14px;line-height:1;padding:0}
+.kw-tag button:hover{color:#b91c1c}
+.kw-empty{font-size:13px;color:#9ca3af}
+.bid-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.bid-header h3{font-size:15px;font-weight:600;color:#111827;margin:0}
+.bid-filter select{padding:7px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;color:#374151;background:#fff}
+.bid-count{font-size:12px;color:#6b7280}
+.bid-table{width:100%;border-collapse:collapse;font-size:13px}
+.bid-table th{background:#f3f4f6;padding:10px 12px;text-align:left;font-weight:600;color:#374151;border-bottom:1px solid #e5e7eb}
+.bid-table td{padding:11px 12px;border-bottom:1px solid #f3f4f6;vertical-align:top;color:#374151}
+.bid-table tr:hover td{background:#fafafa}
+.bid-nm{font-weight:600;color:#1d4ed8}
+.bid-nm a{color:inherit;text-decoration:none}
+.bid-nm a:hover{text-decoration:underline}
+.bid-kw{display:inline-block;background:#f0fdf4;color:#166534;border-radius:4px;padding:2px 7px;font-size:11px;margin-top:3px}
+.bid-prce{font-weight:600;color:#059669;white-space:nowrap}
+.bid-date{color:#6b7280;white-space:nowrap;font-size:12px}
+.bid-empty{text-align:center;padding:48px;color:#9ca3af;font-size:14px}
+.toast{position:fixed;bottom:28px;right:28px;background:#1f2937;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;z-index:999;pointer-events:none}
+.toast.show{opacity:1}
+</style>
+{% endblock %}
+{% block content %}
+<div class="nara-wrap">
+  <div class="nara-title">📋 입찰 모니터링</div>
+  <div class="nara-subtitle">나라장터 입찰공고를 키워드로 자동 수집합니다 · 1시간마다 자동 스캔</div>
+  <div class="kw-section">
+    <h3>🔍 키워드 관리</h3>
+    <div class="kw-input-row">
+      <input type="text" id="kw-input" placeholder="예: 영상제작, 홍보영상, 다큐멘터리" maxlength="50"
+             onkeydown="if(event.key==='Enter') addKeyword()">
+      <button class="btn btn-primary" onclick="addKeyword()">추가</button>
+      <button class="btn btn-scan" id="scan-btn" onclick="manualScan()">⚡ 지금 스캔</button>
+    </div>
+    <div class="kw-tags" id="kw-tags">
+      {% if keywords %}
+        {% for kw in keywords %}
+        <span class="kw-tag" data-id="{{ kw.id }}">
+          {{ kw.keyword }}
+          <button onclick="deleteKeyword({{ kw.id }}, this)" title="삭제">×</button>
+        </span>
+        {% endfor %}
+      {% else %}
+        <span class="kw-empty" id="kw-empty">등록된 키워드가 없습니다</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="bid-header">
+    <h3>📌 수집된 공고 <span class="bid-count" id="bid-count">({{ bids|length }}건)</span></h3>
+    <div class="bid-filter">
+      <select id="kw-filter" onchange="filterBids()">
+        <option value="">전체 키워드</option>
+        {% for kw in keywords %}
+        <option value="{{ kw.keyword }}">{{ kw.keyword }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <table class="bid-table">
+    <thead>
+      <tr>
+        <th style="width:38%">공고명</th>
+        <th style="width:18%">공고기관</th>
+        <th style="width:12%">추정가격</th>
+        <th style="width:14%">마감일</th>
+        <th style="width:10%">수집일</th>
+        <th style="width:8%">공고</th>
+      </tr>
+    </thead>
+    <tbody id="bid-tbody">
+      {% if bids %}
+        {% for b in bids %}
+        <tr>
+          <td><div class="bid-nm">{% if b.ntce_url %}<a href="{{ b.ntce_url }}" target="_blank">{{ b.bid_ntce_nm }}</a>{% else %}{{ b.bid_ntce_nm }}{% endif %}</div>
+              <span class="bid-kw">{{ b.matched_keyword }}</span></td>
+          <td>{{ b.ntce_instt_nm or '-' }}</td>
+          <td class="bid-prce">{% if b.presmpt_prce and b.presmpt_prce.isdigit() %}{{ '{:,}'.format(b.presmpt_prce|int) }}원{% else %}-{% endif %}</td>
+          <td class="bid-date">{{ (b.bid_clse_dt or '-')[:10] }}</td>
+          <td class="bid-date">{{ (b.created_at or '-')[:10] }}</td>
+          <td>{% if b.ntce_url %}<a href="{{ b.ntce_url }}" target="_blank" class="btn btn-primary" style="padding:4px 10px;font-size:12px;">보기</a>{% else %}-{% endif %}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="6" class="bid-empty">수집된 공고가 없습니다</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+function showToast(msg,ok=true){const t=document.getElementById('toast');t.textContent=msg;t.style.background=ok?'#1f2937':'#b91c1c';t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800)}
+function addKeyword(){const inp=document.getElementById('kw-input');const kw=inp.value.trim();if(!kw)return;fetch('/nara/keyword',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:kw})}).then(r=>r.json()).then(d=>{if(d.ok){inp.value='';const empty=document.getElementById('kw-empty');if(empty)empty.remove();const wrap=document.getElementById('kw-tags');const span=document.createElement('span');span.className='kw-tag';span.dataset.id=d.id;span.innerHTML=`${kw} <button onclick="deleteKeyword(${d.id},this)" title="삭제">×</button>`;wrap.appendChild(span);const sel=document.getElementById('kw-filter');const opt=document.createElement('option');opt.value=kw;opt.textContent=kw;sel.appendChild(opt);showToast(`"${kw}" 추가됨`)}else{showToast(d.error||'추가 실패',false)}})}
+function deleteKeyword(id,btn){if(!confirm('키워드를 삭제할까요?'))return;fetch(`/nara/keyword/${id}`,{method:'DELETE'}).then(r=>r.json()).then(d=>{if(d.ok){const tag=btn.closest('.kw-tag');tag.remove();if(!document.querySelector('.kw-tag')){document.getElementById('kw-tags').innerHTML='<span class="kw-empty" id="kw-empty">등록된 키워드가 없습니다</span>'}showToast('키워드 삭제됨')}})}
+function manualScan(){const btn=document.getElementById('scan-btn');btn.textContent='⏳ 스캔 중...';btn.classList.add('loading');fetch('/nara/scan',{method:'POST'}).then(r=>r.json()).then(d=>{btn.textContent='⚡ 지금 스캔';btn.classList.remove('loading');showToast(d.message||'스캔 완료');setTimeout(()=>location.reload(),2000)}).catch(()=>{btn.textContent='⚡ 지금 스캔';btn.classList.remove('loading');showToast('스캔 오류',false)})}
+function filterBids(){const kw=document.getElementById('kw-filter').value;fetch(`/nara/bids?keyword=${encodeURIComponent(kw)}`).then(r=>r.json()).then(d=>{document.getElementById('bid-count').textContent=`(${d.bids.length}건)`;const rows=d.bids.length?d.bids.map(b=>{const prce=b.presmpt_prce&&!isNaN(b.presmpt_prce)?Number(b.presmpt_prce).toLocaleString()+'원':'-';const url=b.ntce_url?`<a href="${b.ntce_url}" target="_blank" class="btn btn-primary" style="padding:4px 10px;font-size:12px;">보기</a>`:'-';return`<tr><td><div class="bid-nm">${b.bid_ntce_nm||'-'}</div><span class="bid-kw">${b.matched_keyword||''}</span></td><td>${b.ntce_instt_nm||'-'}</td><td class="bid-prce">${prce}</td><td class="bid-date">${(b.bid_clse_dt||'-').slice(0,10)}</td><td class="bid-date">${(b.created_at||'-').slice(0,10)}</td><td>${url}</td></tr>`}).join(''):'<tr><td colspan="6" class="bid-empty">수집된 공고가 없습니다</td></tr>';document.getElementById('bid-tbody').innerHTML=rows})}
+</script>
+{% endblock %}

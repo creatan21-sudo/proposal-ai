@@ -62,6 +62,8 @@ from database.db import (
 from output.txt_writer import write_txt
 from utils.telegram_notify import send_telegram
 from config import GAMMA_API_KEY
+from utils.nara import start_scheduler, manual_scan
+from database.db import get_nara_keywords, delete_nara_keyword, list_nara_bids
 
 app = Flask(__name__)
 # Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
@@ -133,7 +135,8 @@ _ppt_jobs_lock = threading.Lock()
 # 큐 워커
 # ─────────────────────────────────────────────
 
-def _ensure_worker():
+def _ensure_worker()
+start_scheduler(app):
     global _worker_started
     if not _worker_started:
         _worker_started = True
@@ -3157,6 +3160,58 @@ def api_step_overrides(case_id):
 # ─────────────────────────────────────────────
 # 실행
 # ─────────────────────────────────────────────
+
+
+# ── 나라장터 입찰 모니터링 ──────────────────────────────
+
+@app.route("/nara")
+@login_required
+def nara_dashboard():
+    keywords = get_nara_keywords()
+    bids     = list_nara_bids(limit=200)
+    return render_template("nara.html", keywords=keywords, bids=bids)
+
+@app.route("/nara/keyword", methods=["POST"])
+@login_required
+def nara_add_keyword():
+    from database.db import get_connection
+    data    = request.get_json(force=True) or {}
+    keyword = (data.get("keyword") or "").strip()
+    if not keyword:
+        return jsonify({"ok": False, "error": "키워드를 입력하세요"})
+    if len(keyword) > 50:
+        return jsonify({"ok": False, "error": "키워드는 50자 이내로 입력하세요"})
+    try:
+        with get_connection() as conn:
+            cur    = conn.execute("INSERT INTO nara_keywords (keyword) VALUES (?)", (keyword,))
+            new_id = cur.lastrowid
+        return jsonify({"ok": True, "id": new_id, "keyword": keyword})
+    except Exception:
+        return jsonify({"ok": False, "error": "이미 등록된 키워드입니다"})
+
+@app.route("/nara/keyword/<int:keyword_id>", methods=["DELETE"])
+@login_required
+def nara_delete_keyword(keyword_id):
+    delete_nara_keyword(keyword_id)
+    return jsonify({"ok": True})
+
+@app.route("/nara/scan", methods=["POST"])
+@login_required
+def nara_manual_scan():
+    import threading
+    def _scan():
+        with app.app_context():
+            manual_scan()
+    threading.Thread(target=_scan, daemon=True).start()
+    return jsonify({"ok": True, "message": "스캔 시작! 잠시 후 목록을 확인하세요."})
+
+@app.route("/nara/bids")
+@login_required
+def nara_list_bids():
+    keyword = request.args.get("keyword", "").strip()
+    bids    = list_nara_bids(keyword=keyword, limit=200)
+    return jsonify({"ok": True, "bids": bids})
+
 
 if __name__ == "__main__":
     init_db()

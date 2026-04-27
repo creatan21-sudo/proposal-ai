@@ -39,7 +39,8 @@
       "Bash(python -c ':*)",
       "Bash(python3 -c ':*)",
       "Bash(/Users/jm/Library/Mobile Documents/com~apple~CloudDocs/proposal-ai/.venv/bin/python:*)",
-      "Bash(python3 -c \"import anthropic\")"
+      "Bash(python3 -c \"import anthropic\")",
+      "WebFetch(domain:developers.gamma.app)"
     ]
   }
 }
