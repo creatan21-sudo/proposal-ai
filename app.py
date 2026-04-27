@@ -66,7 +66,7 @@ from config import GAMMA_API_KEY
 app = Flask(__name__)
 # Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
-app.secret_key = os.environ.get("SECRET_KEY", "proposal-ai-web-secret-2024")
+app.secret_key = os.environ.get("SECRET_KEY", "prointerz-web-secret-2024")
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB
 
 _IS_PRODUCTION = os.environ.get("FLASK_ENV", "production") == "production"
