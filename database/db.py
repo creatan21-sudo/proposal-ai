@@ -302,6 +302,26 @@ def init_db() -> None:
             except Exception:
                 pass  # 이미 존재하는 컬럼 → 무시
 
+            CREATE TABLE IF NOT EXISTS nara_keywords (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                keyword TEXT NOT NULL UNIQUE,
+                created_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+            CREATE TABLE IF NOT EXISTS nara_bids (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bid_ntce_no TEXT NOT NULL UNIQUE,
+                bid_ntce_nm TEXT,
+                ntce_instt_nm TEXT,
+                dmnd_instt_nm TEXT,
+                bid_mtd_nm TEXT,
+                presmpt_prce TEXT,
+                bid_ntce_dt TEXT,
+                bid_clse_dt TEXT,
+                ntce_url TEXT,
+                matched_keyword TEXT,
+                created_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+
 
 def save_case(client_name: str, project_name: str, video_type: str,
               dna_json: str, result_json: str = "{}",
@@ -1178,29 +1198,6 @@ def find_similar_analyses(client_name: str, agency_type: str = "", limit: int = 
 # ─────────────────────────────────────────────
 
 
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS nara_keywords (
-            id         INTEGER PRIMARY KEY AUTOINCREMENT,
-            keyword    TEXT NOT NULL UNIQUE,
-            created_at TEXT DEFAULT (datetime('now','localtime'))
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS nara_bids (
-            id              INTEGER PRIMARY KEY AUTOINCREMENT,
-            bid_ntce_no     TEXT NOT NULL UNIQUE,
-            bid_ntce_nm     TEXT,
-            ntce_instt_nm   TEXT,
-            dmnd_instt_nm   TEXT,
-            bid_mtd_nm      TEXT,
-            presmpt_prce    TEXT,
-            bid_ntce_dt     TEXT,
-            bid_clse_dt     TEXT,
-            ntce_url        TEXT,
-            matched_keyword TEXT,
-            created_at      TEXT DEFAULT (datetime('now','localtime'))
-        )
-    """)
 
 def init_users() -> None:
     """users 테이블 생성 + rfp_cases user_id 마이그레이션 + admin 초기 계정."""
