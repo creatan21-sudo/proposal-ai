@@ -88,6 +88,8 @@ with app.app_context():
     init_db()
     init_users()
 
+start_scheduler(app)
+
 VIDEO_TYPES = ["홍보영상", "다큐멘터리", "교육영상", "캠페인영상", "뉴스형영상"]
 ALLOWED_EXT     = {".hwp", ".hwpx", ".pdf", ".txt"}
 ALLOWED_REF_EXT = {".hwp", ".hwpx", ".pdf", ".txt", ".docx", ".pptx"}
@@ -135,8 +137,7 @@ _ppt_jobs_lock = threading.Lock()
 # 큐 워커
 # ─────────────────────────────────────────────
 
-def _ensure_worker()
-start_scheduler(app):
+def _ensure_worker():
     global _worker_started
     if not _worker_started:
         _worker_started = True
