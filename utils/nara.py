@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timedelta
 
 NARA_API_KEY = os.environ.get("NARA_API_KEY", "YOUR_NARA_API_KEY")
-NARA_API_URL = "https://apis.data.go.kr/1230000/BidPublicInfoService04/getBidPblancListInfoServc"
+NARA_API_URL = "https://apis.data.go.kr/1230000/BidPublicInfoService/getBidPblancListInfoServcPPSSrch"
 
 _scheduler_started = False
 _scheduler_lock = threading.Lock()
