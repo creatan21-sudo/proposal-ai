@@ -278,6 +278,25 @@ def init_db() -> None:
                 created_at     TEXT    NOT NULL,
                 updated_at     TEXT    NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS nara_keywords (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                keyword TEXT NOT NULL UNIQUE,
+                created_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+            CREATE TABLE IF NOT EXISTS nara_bids (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bid_ntce_no TEXT NOT NULL UNIQUE,
+                bid_ntce_nm TEXT,
+                ntce_instt_nm TEXT,
+                dmnd_instt_nm TEXT,
+                bid_mtd_nm TEXT,
+                presmpt_prce TEXT,
+                bid_ntce_dt TEXT,
+                bid_clse_dt TEXT,
+                ntce_url TEXT,
+                matched_keyword TEXT,
+                created_at TEXT DEFAULT (datetime('now','localtime'))
+            );
         """)
         # ── 마이그레이션: 기존 DB에 누락된 컬럼 추가 ──
         for migration in [
@@ -301,27 +320,6 @@ def init_db() -> None:
                 conn.execute(migration)
             except Exception:
                 pass  # 이미 존재하는 컬럼 → 무시
-
-            CREATE TABLE IF NOT EXISTS nara_keywords (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                keyword TEXT NOT NULL UNIQUE,
-                created_at TEXT DEFAULT (datetime('now','localtime'))
-            );
-            CREATE TABLE IF NOT EXISTS nara_bids (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                bid_ntce_no TEXT NOT NULL UNIQUE,
-                bid_ntce_nm TEXT,
-                ntce_instt_nm TEXT,
-                dmnd_instt_nm TEXT,
-                bid_mtd_nm TEXT,
-                presmpt_prce TEXT,
-                bid_ntce_dt TEXT,
-                bid_clse_dt TEXT,
-                ntce_url TEXT,
-                matched_keyword TEXT,
-                created_at TEXT DEFAULT (datetime('now','localtime'))
-            );
-
 
 def save_case(client_name: str, project_name: str, video_type: str,
               dna_json: str, result_json: str = "{}",
