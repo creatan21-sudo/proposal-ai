@@ -115,6 +115,11 @@ _sessions_lock = threading.Lock()
 # ── PPT 설계 재실행 진행 중 case_id 집합 (폴링 충돌 방지)
 _ppt_generating: set = set()
 
+# ── 케이스별 재실행 충돌 방지 상태
+# case_id → {type:'step'|'ppt', step_key, step_label, sid?(step), abort_event?(ppt)}
+_case_rerun_state: dict = {}
+_case_rerun_lock  = threading.Lock()
+
 # ── 작업 큐 (FIFO, 메모리 전용 — 서버 재시작 시 자동 초기화)
 _job_queue: deque = deque()   # session_id 목록 (queued 순서 보존)
 _queue_lock = threading.Lock()
@@ -2898,6 +2903,46 @@ def api_ppt_narrative_rerun(case_id):
     comment = (data.get("comment") or "").strip()
     if not comment:
         return jsonify({"ok": False, "error": "코멘트를 입력해 주세요."}), 400
+    force = bool(data.get("force", False))
+
+    # ── 충돌 방지
+    with _case_rerun_lock:
+        existing_ppt = _case_rerun_state.get(case_id)
+    if existing_ppt and not force:
+        is_still_running = False
+        if existing_ppt.get("type") == "step":
+            sid_ = existing_ppt.get("sid")
+            with _sessions_lock:
+                sess_ = _sessions.get(sid_) if sid_ else None
+            is_still_running = bool(sess_ and sess_.get("status") in ("queued", "running"))
+        elif existing_ppt.get("type") == "ppt":
+            ae = existing_ppt.get("abort_event")
+            is_still_running = (case_id in _ppt_generating) and not (ae and ae.is_set())
+        if is_still_running:
+            return jsonify({
+                "ok": False, "conflict": True,
+                "step_key":   existing_ppt["step_key"],
+                "step_label": existing_ppt["step_label"],
+            }), 409
+        else:
+            with _case_rerun_lock:
+                _case_rerun_state.pop(case_id, None)
+
+    if force:
+        with _case_rerun_lock:
+            old_ppt = _case_rerun_state.pop(case_id, None)
+        if old_ppt:
+            if old_ppt.get("type") == "step":
+                sid_ = old_ppt.get("sid")
+                with _sessions_lock:
+                    sess_ = _sessions.get(sid_) if sid_ else None
+                if sess_:
+                    sess_["user_input"] = "__abort__"
+                    ev_ = sess_.get("sse_event")
+                    if ev_: ev_.set()
+            elif old_ppt.get("type") == "ppt":
+                ae = old_ppt.get("abort_event")
+                if ae: ae.set()
 
     target_slides = max(10, min(60, int(data.get("target_slides", 30))))
     scope_type    = data.get("scope_type", "all")   # "all" | "from" | "specific"
@@ -2949,13 +2994,27 @@ def api_ppt_narrative_rerun(case_id):
     detail["case"]["dna"]["step_instruction"]  = instruction
     detail["case"]["dna"]["step_prev_content"] = prev_content
 
-    # 폴링 충돌 방지 플래그
+    # 폴링 충돌 방지 플래그 + 재실행 상태 등록
+    abort_event = threading.Event()
     _ppt_generating.add(case_id)
+    with _case_rerun_lock:
+        _case_rerun_state[case_id] = {
+            "type":        "ppt",
+            "step_key":    "ppt_design",
+            "step_label":  "PPT 설계",
+            "abort_event": abort_event,
+        }
 
     def _generate():
         try:
             from agents.ppt_narrator import run as narrator_run
             result     = narrator_run(detail, target_slides)
+
+            # abort 요청이 들어온 경우 결과 저장 생략
+            if abort_event.is_set():
+                print(f"  [PPT재실행] case={case_id} abort 신호로 결과 저장 생략")
+                return
+
             new_slides = result["slides"]
 
             # ── 수정 범위에 따라 기존 슬라이드와 병합 ──
@@ -2989,6 +3048,10 @@ def api_ppt_narrative_rerun(case_id):
             print(f"  [PPT재실행] 생성 오류: {e}")
         finally:
             _ppt_generating.discard(case_id)
+            with _case_rerun_lock:
+                st = _case_rerun_state.get(case_id)
+                if st and st.get("abort_event") is abort_event:
+                    _case_rerun_state.pop(case_id, None)
 
     threading.Thread(target=_generate, daemon=True).start()
     return jsonify({"ok": True, "message": "PPT 설계 재실행 시작됨"})
@@ -3019,6 +3082,67 @@ def api_ppt_narrative_save(case_id):
         content_chars = existing.get("content_chars", 0),
     )
     return jsonify({"ok": True, "saved": len(slides)})
+
+
+# ─────────────────────────────────────────────
+# 재실행 충돌 방지 API
+# ─────────────────────────────────────────────
+
+@app.route("/api/rerun_status/<int:case_id>")
+@login_required
+def api_rerun_status(case_id):
+    """케이스의 현재 재실행 진행 상태 조회."""
+    with _case_rerun_lock:
+        state = dict(_case_rerun_state.get(case_id, {}))
+    if not state:
+        return jsonify({"running": False})
+
+    if state.get("type") == "step":
+        sid_ = state.get("sid")
+        with _sessions_lock:
+            sess_ = _sessions.get(sid_) if sid_ else None
+        if not sess_ or sess_.get("status") not in ("queued", "running"):
+            with _case_rerun_lock:
+                _case_rerun_state.pop(case_id, None)
+            return jsonify({"running": False})
+        return jsonify({"running": True, "type": "step",
+                        "step_key": state["step_key"], "step_label": state["step_label"]})
+
+    elif state.get("type") == "ppt":
+        ae = state.get("abort_event")
+        if (ae and ae.is_set()) or case_id not in _ppt_generating:
+            with _case_rerun_lock:
+                _case_rerun_state.pop(case_id, None)
+            return jsonify({"running": False})
+        return jsonify({"running": True, "type": "ppt",
+                        "step_key": "ppt_design", "step_label": "PPT 설계"})
+
+    return jsonify({"running": False})
+
+
+@app.route("/api/rerun_abort/<int:case_id>", methods=["POST"])
+@operator_or_admin_required
+def api_rerun_abort(case_id):
+    """케이스 재실행 강제 중단."""
+    with _case_rerun_lock:
+        state = _case_rerun_state.pop(case_id, None)
+    if not state:
+        return jsonify({"ok": True, "message": "실행 중인 재실행 없음"})
+
+    if state.get("type") == "step":
+        sid_ = state.get("sid")
+        if sid_:
+            with _sessions_lock:
+                sess_ = _sessions.get(sid_)
+            if sess_:
+                sess_["user_input"] = "__abort__"
+                ev_ = sess_.get("sse_event")
+                if ev_: ev_.set()
+    elif state.get("type") == "ppt":
+        ae = state.get("abort_event")
+        if ae: ae.set()
+
+    return jsonify({"ok": True, "message": "재실행 중단 요청됨"})
 
 
 # ─────────────────────────────────────────────
@@ -3107,7 +3231,8 @@ def rerun_from_step(case_id, step_key):
         return jsonify({"ok": False, "error": f"유효하지 않은 step_key: {step_key}"}), 400
 
     req_data = request.get_json(force=True) or {}
-    comment = str(req_data.get("comment", "")).strip()
+    comment  = str(req_data.get("comment", "")).strip()
+    force    = bool(req_data.get("force", False))
 
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM rfp_cases WHERE id=?", (case_id,)).fetchone()
@@ -3117,6 +3242,53 @@ def rerun_from_step(case_id, step_key):
     case = dict(row)
     if case["user_id"] != session["user_id"] and not session.get("is_admin"):
         return jsonify({"ok": False, "error": "권한 없음"}), 403
+
+    _STEP_LABELS = {
+        "rfp_analysis": "RFP 분석", "research": "리서치", "narrative": "내러티브",
+        "strategy": "전략", "creative": "컨셉", "plan": "기획",
+        "script": "시나리오", "storyboard": "스토리보드", "platform": "플랫폼 운영전략",
+        "marketing": "마케팅/홍보 전략", "final_proposal": "PT/Q&A",
+    }
+
+    # ── 충돌 방지: 같은 케이스에서 이미 재실행 중인지 확인
+    with _case_rerun_lock:
+        existing = _case_rerun_state.get(case_id)
+
+    if existing and not force:
+        is_still_running = False
+        if existing.get("type") == "step":
+            sid_ = existing.get("sid")
+            with _sessions_lock:
+                sess_ = _sessions.get(sid_) if sid_ else None
+            is_still_running = bool(sess_ and sess_.get("status") in ("queued", "running"))
+        elif existing.get("type") == "ppt":
+            ae = existing.get("abort_event")
+            is_still_running = (case_id in _ppt_generating) and not (ae and ae.is_set())
+        if is_still_running:
+            return jsonify({
+                "ok": False, "conflict": True,
+                "step_key":   existing["step_key"],
+                "step_label": existing["step_label"],
+            }), 409
+        else:
+            with _case_rerun_lock:
+                _case_rerun_state.pop(case_id, None)
+
+    if force:
+        with _case_rerun_lock:
+            old_state = _case_rerun_state.pop(case_id, None)
+        if old_state:
+            if old_state.get("type") == "step":
+                sid_ = old_state.get("sid")
+                with _sessions_lock:
+                    sess_ = _sessions.get(sid_) if sid_ else None
+                if sess_:
+                    sess_["user_input"] = "__abort__"
+                    ev_ = sess_.get("sse_event")
+                    if ev_: ev_.set()
+            elif old_state.get("type") == "ppt":
+                ae = old_state.get("abort_event")
+                if ae: ae.set()
 
     # DNA 복원
     from core.dna import ConceptDNA
@@ -3210,6 +3382,15 @@ def rerun_from_step(case_id, step_key):
     _ensure_worker()
     _dispatch_jobs()
     _broadcast_positions()
+
+    # 재실행 상태 등록
+    with _case_rerun_lock:
+        _case_rerun_state[case_id] = {
+            "type":       "step",
+            "step_key":   step_key,
+            "step_label": _STEP_LABELS.get(step_key, step_key),
+            "sid":        sid,
+        }
 
     session["current_run_sid"] = sid
     return jsonify({"ok": True, "sid": sid, "redirect": f"/run/{sid}"})

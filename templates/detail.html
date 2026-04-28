@@ -1504,6 +1504,37 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
   </div>
 </div>
 
+{# ── 재실행 충돌 경고 모달 ── #}
+<div id="conflict-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.55);
+     z-index:10000;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:14px;padding:28px;width:440px;max-width:92vw;
+              box-shadow:0 20px 60px rgba(0,0,0,.3);">
+    <div style="font-weight:700;font-size:16px;margin-bottom:12px;">⚠️ 재실행 충돌</div>
+    <div style="font-size:14px;color:#374151;margin-bottom:6px;">
+      현재 <strong id="conflict-modal-step-name"></strong> 재실행 중입니다.
+    </div>
+    <div style="font-size:13px;color:#6b7280;margin-bottom:20px;">
+      완료 후 다른 스텝을 실행할 수 있습니다.<br>
+      진행 중인 작업을 중단하고 새 작업을 시작할까요?
+    </div>
+    <div id="conflict-aborted-msg"
+         style="display:none;padding:8px 12px;background:#fef3c7;border:1px solid #fcd34d;
+                border-radius:6px;font-size:13px;color:#92400e;margin-bottom:14px;">
+      이전 작업이 중단되었습니다.
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="closeConflictModal()"
+              style="padding:8px 18px;background:#fff;color:#374151;border:1px solid #d1d5db;
+                     border-radius:7px;cursor:pointer;font-size:13px;">계속 기다리기</button>
+      <button id="conflict-abort-btn" onclick="abortAndRerun()"
+              style="padding:8px 18px;background:#dc2626;color:#fff;border:none;
+                     border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">
+        중단하고 새 작업 시작
+      </button>
+    </div>
+  </div>
+</div>
+
 {# ────────────────────────────────────────────────
    스타일
    ──────────────────────────────────────────────── #}
@@ -2158,33 +2189,150 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
-async function submitRerun() {
+// ── 재실행 충돌 방지 ──
+let _pendingRerunFn     = null;
+let _rerunStatusTimer   = null;
+
+function showConflictModal(stepLabel) {
+  document.getElementById('conflict-modal-step-name').textContent = stepLabel;
+  document.getElementById('conflict-aborted-msg').style.display = 'none';
+  const btn = document.getElementById('conflict-abort-btn');
+  btn.disabled = false; btn.textContent = '중단하고 새 작업 시작';
+  document.getElementById('conflict-modal').style.display = 'flex';
+}
+
+function closeConflictModal() {
+  document.getElementById('conflict-modal').style.display = 'none';
+  _pendingRerunFn = null;
+}
+
+async function abortAndRerun() {
+  const fn = _pendingRerunFn;
+  if (!fn) return;
+  _pendingRerunFn = null;
+  const btn = document.getElementById('conflict-abort-btn');
+  btn.disabled = true; btn.textContent = '중단 중...';
+  try { await fetch(`/api/rerun_abort/${_DETAIL_CASE_ID}`, { method: 'POST' }); } catch(_) {}
+  document.getElementById('conflict-aborted-msg').style.display = 'block';
+  document.getElementById('conflict-modal').style.display = 'none';
+  btn.disabled = false; btn.textContent = '중단하고 새 작업 시작';
+  fn();
+}
+
+// ── 재실행 중 상태 UI ──
+function _startRerunStatusPoll() {
+  _stopRerunStatusPoll();
+  _rerunStatusTimer = setInterval(_pollRerunStatus, 3000);
+  _pollRerunStatus();
+}
+function _stopRerunStatusPoll() {
+  if (_rerunStatusTimer) { clearInterval(_rerunStatusTimer); _rerunStatusTimer = null; }
+}
+async function _pollRerunStatus() {
+  try {
+    const r = await fetch(`/api/rerun_status/${_DETAIL_CASE_ID}`);
+    const d = await r.json();
+    if (d.running) { _applyRerunRunningUI(d.step_key, d.step_label); }
+    else           { _stopRerunStatusPoll(); _clearRerunRunningUI(); }
+  } catch(_) {}
+}
+function _applyRerunRunningUI(activeStep, activeLabel) {
+  document.querySelectorAll('button[onclick*="openRerunModal"]').forEach(btn => {
+    const m = btn.getAttribute('onclick').match(/openRerunModal\('([^']+)'\)/);
+    const sk = m ? m[1] : null;
+    if (!btn.dataset.origHtml) btn.dataset.origHtml = btn.innerHTML;
+    if (sk === activeStep) {
+      btn.innerHTML = '⏳ 재실행 중...';
+      btn.disabled = true; btn.style.opacity = '0.8'; btn.style.color = '#7c3aed';
+    } else {
+      btn.disabled = false; btn.style.opacity = '0.4'; btn.style.color = '';
+    }
+  });
+  document.querySelectorAll('button[onclick*="openPptRerunModal"]').forEach(btn => {
+    if (!btn.dataset.origHtml) btn.dataset.origHtml = btn.innerHTML;
+    if (activeStep === 'ppt_design') {
+      btn.innerHTML = '⏳ 재실행 중...';
+      btn.disabled = true; btn.style.opacity = '0.8'; btn.style.color = '#7c3aed';
+    } else {
+      btn.disabled = false; btn.style.opacity = '0.4'; btn.style.color = '';
+    }
+  });
+  // 탭 스피너
+  document.querySelectorAll('.detail-tab[data-step]').forEach(tab => {
+    let sp = tab.querySelector('.rerun-spinner');
+    if (tab.dataset.step === activeStep) {
+      if (!sp) {
+        sp = document.createElement('span');
+        sp.className = 'rerun-spinner';
+        sp.style.cssText = 'margin-left:3px;font-size:10px;';
+        sp.textContent = '⏳';
+        tab.appendChild(sp);
+      }
+    } else { if (sp) sp.remove(); }
+  });
+}
+function _clearRerunRunningUI() {
+  document.querySelectorAll('.rerun-spinner').forEach(el => el.remove());
+  document.querySelectorAll('button[onclick*="openRerunModal"]').forEach(btn => {
+    if (btn.dataset.origHtml) { btn.innerHTML = btn.dataset.origHtml; delete btn.dataset.origHtml; }
+    btn.disabled = false; btn.style.opacity = '1'; btn.style.color = '';
+  });
+  document.querySelectorAll('button[onclick*="openPptRerunModal"]').forEach(btn => {
+    if (btn.dataset.origHtml) { btn.innerHTML = btn.dataset.origHtml; delete btn.dataset.origHtml; }
+    btn.disabled = false; btn.style.opacity = '1'; btn.style.color = '';
+  });
+}
+async function _initRerunStatusCheck() {
+  try {
+    const r = await fetch(`/api/rerun_status/${_DETAIL_CASE_ID}`);
+    const d = await r.json();
+    if (d.running) { _applyRerunRunningUI(d.step_key, d.step_label); _startRerunStatusPoll(); }
+  } catch(_) {}
+}
+
+async function submitRerun(force = false) {
   if (!_rerunStepKey) return;
   const comment = document.getElementById('rerun-comment-input').value.trim();
   if (!comment) return;
   const btn = document.getElementById('rerun-submit-btn');
-  btn.disabled = true;
-  btn.textContent = '처리 중...';
+
+  if (!force) {
+    btn.disabled = true; btn.textContent = '확인 중...';
+    try {
+      const sr = await fetch(`/api/rerun_status/${_DETAIL_CASE_ID}`);
+      const sd = await sr.json();
+      if (sd.running) {
+        _pendingRerunFn = () => submitRerun(true);
+        showConflictModal(sd.step_label || sd.step_key);
+        btn.disabled = false; btn.textContent = '재실행';
+        btn.style.opacity = comment ? '1' : '0.5';
+        return;
+      }
+    } catch(_) {}
+  }
+
+  btn.disabled = true; btn.textContent = '처리 중...';
   try {
     const r = await fetch(`/rerun_from_step/${_DETAIL_CASE_ID}/${_rerunStepKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ comment }),
+      body: JSON.stringify({ comment, force }),
     });
     const d = await r.json();
     if (d.ok && d.redirect) {
+      closeRerunModal();
       window.location.href = d.redirect;
+    } else if (d.conflict) {
+      _pendingRerunFn = () => submitRerun(true);
+      showConflictModal(d.step_label || d.step_key);
+      btn.disabled = false; btn.textContent = '재실행'; btn.style.opacity = '1';
     } else {
       alert('재실행 오류: ' + (d.error || '알 수 없음'));
-      btn.disabled = false;
-      btn.textContent = '재실행';
-      btn.style.opacity = '1';
+      btn.disabled = false; btn.textContent = '재실행'; btn.style.opacity = '1';
     }
   } catch(e) {
     alert('재실행 요청 실패: ' + e);
-    btn.disabled = false;
-    btn.textContent = '재실행';
-    btn.style.opacity = '1';
+    btn.disabled = false; btn.textContent = '재실행'; btn.style.opacity = '1';
   }
 }
 
@@ -2239,14 +2387,34 @@ document.addEventListener('DOMContentLoaded', function() {
   document.getElementById('ppt-rerun-modal').addEventListener('click', function(e) {
     if (e.target === this) closePptRerunModal();
   });
+  document.getElementById('conflict-modal').addEventListener('click', function(e) {
+    if (e.target === this) closeConflictModal();
+  });
+  _initRerunStatusCheck();
 });
 
-async function submitPptRerun() {
+async function submitPptRerun(force = false) {
   if (!_pptRerunCaseId) return;
   const comment = document.getElementById('ppt-rerun-comment-input').value.trim();
   if (!comment) return;
   const cid = _pptRerunCaseId;
   const btn = document.getElementById('ppt-rerun-submit-btn');
+
+  if (!force) {
+    btn.disabled = true; btn.textContent = '확인 중...';
+    try {
+      const sr = await fetch(`/api/rerun_status/${_DETAIL_CASE_ID}`);
+      const sd = await sr.json();
+      if (sd.running) {
+        _pendingRerunFn = () => submitPptRerun(true);
+        showConflictModal(sd.step_label || sd.step_key);
+        btn.disabled = false; btn.textContent = '재실행';
+        btn.style.opacity = comment ? '1' : '0.5';
+        return;
+      }
+    } catch(_) {}
+  }
+
   btn.disabled = true; btn.textContent = '처리 중...';
 
   const scope_type = document.querySelector('input[name="ppt-rerun-scope"]:checked')?.value || 'all';
@@ -2264,15 +2432,21 @@ async function submitPptRerun() {
     const r = await fetch(`/api/ppt_narrative/${cid}/rerun`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ comment, target_slides: targetSlides, scope_type, scope_value }),
+      body: JSON.stringify({ comment, target_slides: targetSlides, scope_type, scope_value, force }),
     });
     const d = await r.json();
     if (!d.ok) {
-      alert('재실행 오류: ' + (d.error || '알 수 없음'));
+      if (d.conflict) {
+        _pendingRerunFn = () => submitPptRerun(true);
+        showConflictModal(d.step_label || 'PPT 설계');
+      } else {
+        alert('재실행 오류: ' + (d.error || '알 수 없음'));
+      }
       btn.disabled = false; btn.textContent = '재실행'; btn.style.opacity = '1';
       return;
     }
     closePptRerunModal();
+    _startRerunStatusPoll();
 
     const panelEl     = document.getElementById('ppt-design-panel');
     const isPanelOpen = panelEl && panelEl.style.display !== 'none';
