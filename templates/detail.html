@@ -1426,24 +1426,64 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
 {# ── PPT 재실행 모달 ── #}
 <div id="ppt-rerun-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);
      z-index:9999;align-items:center;justify-content:center;">
-  <div style="background:#fff;border-radius:14px;padding:28px;width:460px;max-width:92vw;
+  <div style="background:#fff;border-radius:14px;padding:28px;width:500px;max-width:92vw;
               box-shadow:0 20px 60px rgba(0,0,0,.25);">
-    <div style="font-weight:700;font-size:16px;margin-bottom:6px;">✏️ PPT 설계 재실행</div>
-    <div style="font-size:13px;color:#6b7280;margin-bottom:18px;">
-      코멘트를 반영해 PPT 설계안을 처음부터 새로 작성합니다.
+    <div style="font-weight:700;font-size:16px;margin-bottom:18px;">✏️ PPT 설계 재실행</div>
+
+    <div style="margin-bottom:16px;">
+      <div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;
+                  letter-spacing:.06em;margin-bottom:8px;">수정 범위</div>
+
+      <label id="ppt-scope-row-all"
+             style="display:flex;align-items:center;gap:10px;padding:9px 12px;
+                    border-radius:7px;border:2px solid #7c3aed;cursor:pointer;
+                    margin-bottom:6px;background:#faf5ff;transition:all .1s;">
+        <input type="radio" name="ppt-rerun-scope" value="all" checked
+               onchange="onPptScopeChange()" style="accent-color:#7c3aed;width:15px;height:15px;">
+        <span style="font-size:13px;color:#374151;font-weight:500;">전체 재설계</span>
+      </label>
+
+      <label id="ppt-scope-row-from"
+             style="display:flex;align-items:center;gap:10px;padding:9px 12px;
+                    border-radius:7px;border:2px solid #e5e7eb;cursor:pointer;
+                    margin-bottom:6px;background:#fff;transition:all .1s;">
+        <input type="radio" name="ppt-rerun-scope" value="from"
+               onchange="onPptScopeChange()" style="accent-color:#7c3aed;width:15px;height:15px;">
+        <input type="number" id="ppt-rerun-from-page" min="2" max="60" value="5" disabled
+               onclick="document.querySelector('[name=ppt-rerun-scope][value=from]').checked=true;onPptScopeChange();"
+               style="width:54px;padding:3px 7px;border:1px solid #d1d5db;border-radius:5px;
+                      font-size:13px;text-align:center;opacity:0.35;transition:opacity .15s;">
+        <span style="font-size:13px;color:#374151;">페이지 이후부터 수정</span>
+      </label>
+
+      <label id="ppt-scope-row-specific"
+             style="display:flex;align-items:center;gap:10px;padding:9px 12px;
+                    border-radius:7px;border:2px solid #e5e7eb;cursor:pointer;
+                    background:#fff;transition:all .1s;">
+        <input type="radio" name="ppt-rerun-scope" value="specific"
+               onchange="onPptScopeChange()" style="accent-color:#7c3aed;width:15px;height:15px;">
+        <input type="text" id="ppt-rerun-specific-pages"
+               placeholder="예: 3, 7, 12" disabled
+               onclick="document.querySelector('[name=ppt-rerun-scope][value=specific]').checked=true;onPptScopeChange();"
+               style="width:120px;padding:3px 8px;border:1px solid #d1d5db;border-radius:5px;
+                      font-size:12px;opacity:0.35;transition:opacity .15s;">
+        <span style="font-size:13px;color:#374151;">페이지만 수정</span>
+        <span style="font-size:11px;color:#9ca3af;">(콤마로 여러 장)</span>
+      </label>
     </div>
+
     <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">
-      PPT 설계를 어떻게 바꾸길 원하시나요?
+      어떻게 바꾸길 원하시나요?
       <span style="font-weight:400;color:#9ca3af;">구체적일수록 잘 반영됩니다.</span>
     </div>
-    <textarea id="ppt-rerun-comment-input" rows="4"
-              oninput="document.getElementById('ppt-rerun-submit-btn').disabled = !this.value.trim();
-                       document.getElementById('ppt-rerun-submit-btn').style.opacity = this.value.trim() ? '1' : '0.5';"
+    <textarea id="ppt-rerun-comment-input" rows="3"
+              oninput="onPptCommentInput()"
               placeholder="예: 슬라이드를 30장으로, 컨셉을 더 강하게, 특정 항목 더 강조 등"
               style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;
                      border-radius:8px;font-size:13px;resize:vertical;font-family:inherit;
                      outline:none;transition:border-color .15s;"
               onfocus="this.style.borderColor='#7c3aed'" onblur="this.style.borderColor='#d1d5db'"></textarea>
+
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
       <button onclick="closePptRerunModal()"
               style="padding:8px 18px;background:#fff;color:#374151;border:1px solid #d1d5db;
@@ -2145,16 +2185,43 @@ async function submitRerun() {
 // ── PPT 설계 재실행 ──
 let _pptRerunCaseId = null;
 
+function onPptScopeChange() {
+  const scope = document.querySelector('input[name="ppt-rerun-scope"]:checked')?.value || 'all';
+  const fromInput     = document.getElementById('ppt-rerun-from-page');
+  const specificInput = document.getElementById('ppt-rerun-specific-pages');
+
+  fromInput.disabled     = (scope !== 'from');
+  fromInput.style.opacity     = (scope === 'from')     ? '1' : '0.35';
+  specificInput.disabled = (scope !== 'specific');
+  specificInput.style.opacity = (scope === 'specific') ? '1' : '0.35';
+
+  ['all', 'from', 'specific'].forEach(v => {
+    const row = document.getElementById(`ppt-scope-row-${v}`);
+    if (!row) return;
+    row.style.borderColor  = (v === scope) ? '#7c3aed' : '#e5e7eb';
+    row.style.background   = (v === scope) ? '#faf5ff' : '#fff';
+  });
+
+  if (scope === 'from')     setTimeout(() => fromInput.focus(), 0);
+  if (scope === 'specific') setTimeout(() => specificInput.focus(), 0);
+}
+
+function onPptCommentInput() {
+  const val = document.getElementById('ppt-rerun-comment-input').value.trim();
+  const btn = document.getElementById('ppt-rerun-submit-btn');
+  btn.disabled     = !val;
+  btn.style.opacity = val ? '1' : '0.5';
+}
+
 function openPptRerunModal(caseId) {
   _pptRerunCaseId = caseId;
-  const ta = document.getElementById('ppt-rerun-comment-input');
-  ta.value = '';
+  const allRadio = document.querySelector('input[name="ppt-rerun-scope"][value="all"]');
+  if (allRadio) { allRadio.checked = true; onPptScopeChange(); }
+  document.getElementById('ppt-rerun-comment-input').value = '';
   const btn = document.getElementById('ppt-rerun-submit-btn');
-  btn.disabled = true;
-  btn.style.opacity = '0.5';
-  btn.textContent = '재실행';
+  btn.disabled = true; btn.style.opacity = '0.5'; btn.textContent = '재실행';
   document.getElementById('ppt-rerun-modal').style.display = 'flex';
-  setTimeout(() => ta.focus(), 50);
+  setTimeout(() => document.getElementById('ppt-rerun-comment-input').focus(), 50);
 }
 
 function closePptRerunModal() {
@@ -2174,45 +2241,47 @@ async function submitPptRerun() {
   if (!comment) return;
   const cid = _pptRerunCaseId;
   const btn = document.getElementById('ppt-rerun-submit-btn');
-  btn.disabled = true;
-  btn.textContent = '처리 중...';
+  btn.disabled = true; btn.textContent = '처리 중...';
 
-  const targetEl = document.getElementById('step13-target-slides');
+  const scope_type = document.querySelector('input[name="ppt-rerun-scope"]:checked')?.value || 'all';
+  let scope_value = null;
+  if (scope_type === 'from') {
+    scope_value = parseInt(document.getElementById('ppt-rerun-from-page').value) || 5;
+  } else if (scope_type === 'specific') {
+    scope_value = document.getElementById('ppt-rerun-specific-pages').value;
+  }
+
+  const targetEl    = document.getElementById('step13-target-slides');
   const targetSlides = targetEl ? (parseInt(targetEl.value) || 30) : 30;
 
   try {
     const r = await fetch(`/api/ppt_narrative/${cid}/rerun`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ comment, target_slides: targetSlides }),
+      body: JSON.stringify({ comment, target_slides: targetSlides, scope_type, scope_value }),
     });
     const d = await r.json();
     if (!d.ok) {
       alert('재실행 오류: ' + (d.error || '알 수 없음'));
-      btn.disabled = false;
-      btn.textContent = '재실행';
-      btn.style.opacity = '1';
+      btn.disabled = false; btn.textContent = '재실행'; btn.style.opacity = '1';
       return;
     }
     closePptRerunModal();
 
-    // 상태 표시 + 폴링
     const statusEl = document.getElementById(`step13-status-${cid}`);
-    if (statusEl) {
-      statusEl.style.display = 'block';
-      statusEl.textContent = '⏳ PPT 설계 재실행 중... (30초~2분)';
-    }
+    if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = '⏳ PPT 설계 재실행 중... (30초~2분)'; }
     const slidesEl = document.getElementById(`step13-slides-${cid}`);
     if (slidesEl) slidesEl.innerHTML = '';
 
+    // generating 플래그 기반 폴링 — 서버가 완료를 알릴 때까지 대기
     const poll = setInterval(async () => {
       try {
         const r2 = await fetch(`/api/ppt_narrative/${cid}`);
         const d2 = await r2.json();
+        if (d2.generating) return;  // 아직 생성 중 — 계속 대기
         if (d2.ok && d2.narrative && d2.narrative.slides && d2.narrative.slides.length) {
           clearInterval(poll);
           if (statusEl) statusEl.style.display = 'none';
-          // 같은 탭 스크립트의 renderSlides 호출
           if (typeof window._pptNarrativeReload === 'function') {
             window._pptNarrativeReload(cid, d2.narrative);
           } else {
@@ -2224,9 +2293,7 @@ async function submitPptRerun() {
     setTimeout(() => { clearInterval(poll); if (statusEl) statusEl.style.display = 'none'; }, 180000);
   } catch(e) {
     alert('재실행 요청 실패: ' + e);
-    btn.disabled = false;
-    btn.textContent = '재실행';
-    btn.style.opacity = '1';
+    btn.disabled = false; btn.textContent = '재실행'; btn.style.opacity = '1';
   }
 }
 

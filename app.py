@@ -112,6 +112,9 @@ def _safe_upload_name(original_filename: str, forced_ext: str) -> str:
 _sessions: dict = {}
 _sessions_lock = threading.Lock()
 
+# ── PPT 설계 재실행 진행 중 case_id 집합 (폴링 충돌 방지)
+_ppt_generating: set = set()
+
 # ── 작업 큐 (FIFO, 메모리 전용 — 서버 재시작 시 자동 초기화)
 _job_queue: deque = deque()   # session_id 목록 (queued 순서 보존)
 _queue_lock = threading.Lock()
@@ -2838,6 +2841,8 @@ def api_ppt_narrative_get(case_id):
         shares = get_case_shares(case_id)
         if not any(s["shared_with"] == uid for s in shares):
             return jsonify({"ok": False, "error": "권한 없음"}), 403
+    if case_id in _ppt_generating:
+        return jsonify({"ok": True, "narrative": None, "generating": True, "is_owner": is_owner})
     narrative = get_ppt_narrative(case_id)
     return jsonify({"ok": True, "narrative": narrative, "is_owner": is_owner})
 
@@ -2881,7 +2886,7 @@ def api_ppt_narrative_generate(case_id):
 @app.route("/api/ppt_narrative/<int:case_id>/rerun", methods=["POST"])
 @operator_or_admin_required
 def api_ppt_narrative_rerun(case_id):
-    """코멘트 기반 PPT 설계안 재실행. 소유자/admin 전용."""
+    """수정 범위 + 코멘트 기반 PPT 설계안 재실행. 소유자/admin 전용."""
     detail = get_case_detail(case_id)
     if not detail:
         return jsonify({"ok": False, "error": "케이스 없음"}), 404
@@ -2895,36 +2900,95 @@ def api_ppt_narrative_rerun(case_id):
         return jsonify({"ok": False, "error": "코멘트를 입력해 주세요."}), 400
 
     target_slides = max(10, min(60, int(data.get("target_slides", 30))))
+    scope_type    = data.get("scope_type", "all")   # "all" | "from" | "specific"
+    scope_value   = data.get("scope_value")          # int("from") | str("specific")
 
-    # 기존 설계안 앞부분을 참고용 prev_content로 준비
-    existing   = get_ppt_narrative(case_id) or {}
+    # 수정 범위 파싱
+    scope_from_page = None
+    scope_pages: list[int] = []
+    if scope_type == "from":
+        try:
+            scope_from_page = max(2, int(scope_value or 2))
+        except (TypeError, ValueError):
+            scope_from_page = 2
+    elif scope_type == "specific":
+        try:
+            scope_pages = sorted({
+                int(p.strip()) for p in str(scope_value or "").split(",")
+                if p.strip().isdigit() and int(p.strip()) >= 1
+            })
+        except Exception:
+            scope_pages = []
+
+    # step_instruction 구성 (범위 + 코멘트)
+    if scope_type == "from" and scope_from_page:
+        scope_desc  = f"{scope_from_page}페이지 이후부터 전체 수정"
+        keep_note   = (f"\n슬라이드 1~{scope_from_page - 1}번은 유지하고, "
+                       f"{scope_from_page}번부터 새로 설계하세요.\n"
+                       "위 범위 외 슬라이드는 절대 변경하지 마세요.")
+    elif scope_type == "specific" and scope_pages:
+        pages_str  = ", ".join(str(p) for p in scope_pages)
+        scope_desc = f"{pages_str}페이지만 수정"
+        keep_note  = (f"\n슬라이드 {pages_str}번만 새로 작성하고, "
+                      "나머지 슬라이드는 절대 변경하지 마세요.\n"
+                      "위 범위 외 슬라이드는 절대 변경하지 마세요.")
+    else:
+        scope_desc = "전체 재설계"
+        keep_note  = ""
+
+    instruction = f"수정 범위: {scope_desc}\n수정 지시사항: {comment}{keep_note}"
+
+    # 기존 설계안 — 범위 처리용 + 참고용
+    existing    = get_ppt_narrative(case_id) or {}
     prev_slides = existing.get("slides", [])
     prev_content = ""
     if prev_slides:
-        prev_content = json.dumps(prev_slides[:5], ensure_ascii=False)[:2000]
+        prev_content = json.dumps(prev_slides[:8], ensure_ascii=False)[:3000]
 
-    # case_detail["case"]["dna"] 에 step_instruction / step_prev_content 주입
     detail["case"].setdefault("dna", {})
-    detail["case"]["dna"]["step_instruction"] = comment
-    if prev_content:
-        detail["case"]["dna"]["step_prev_content"] = prev_content
+    detail["case"]["dna"]["step_instruction"]  = instruction
+    detail["case"]["dna"]["step_prev_content"] = prev_content
+
+    # 폴링 충돌 방지 플래그
+    _ppt_generating.add(case_id)
 
     def _generate():
         try:
             from agents.ppt_narrator import run as narrator_run
-            result = narrator_run(detail, target_slides)
+            result     = narrator_run(detail, target_slides)
+            new_slides = result["slides"]
+
+            # ── 수정 범위에 따라 기존 슬라이드와 병합 ──
+            if scope_type == "from" and scope_from_page and prev_slides:
+                keep     = list(prev_slides[: scope_from_page - 1])
+                new_part = list(new_slides[scope_from_page - 1 :]) if len(new_slides) >= scope_from_page else new_slides
+                merged   = keep + new_part
+                for i, s in enumerate(merged):
+                    s["number"] = i + 1
+                new_slides = merged
+
+            elif scope_type == "specific" and scope_pages and prev_slides:
+                merged = list(prev_slides)
+                for page in scope_pages:
+                    idx = page - 1
+                    if 0 <= idx < len(new_slides) and idx < len(merged):
+                        merged[idx] = {**new_slides[idx], "number": page}
+                new_slides = merged
+
             save_ppt_narrative(
                 case_id       = case_id,
-                slides        = result["slides"],
+                slides        = new_slides,
                 rfp_coverage  = result["rfp_coverage"],
-                target_slides = target_slides,
+                target_slides = len(new_slides),
                 content_chars = result["content_chars"],
             )
-            print(f"  [PPT재실행] case={case_id} {result['total_slides']}장 저장 완료")
+            print(f"  [PPT재실행] case={case_id} 범위={scope_type} {len(new_slides)}장 저장 완료")
         except Exception as e:
             import traceback as _tb
             _tb.print_exc()
             print(f"  [PPT재실행] 생성 오류: {e}")
+        finally:
+            _ppt_generating.discard(case_id)
 
     threading.Thread(target=_generate, daemon=True).start()
     return jsonify({"ok": True, "message": "PPT 설계 재실행 시작됨"})
