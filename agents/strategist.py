@@ -17,7 +17,7 @@ import re
 import json
 
 from core import claude_client
-from core.dna import ConceptDNA, update_dna, dna_to_context_string
+from core.dna import ConceptDNA, update_dna, dna_to_context_string, wrap_prompt_with_instruction
 from database.db import save_strategy
 
 
@@ -53,7 +53,7 @@ def run(dna: ConceptDNA) -> dict:
 
     # 3. Claude API로 설득 구조 생성
     print("  설득 구조 생성 중...")
-    prompt = _build_prompt(dna, sorted_eval, priority_keywords)
+    prompt = wrap_prompt_with_instruction(_build_prompt(dna, sorted_eval, priority_keywords), dna)
     result = claude_client.call_json(prompt, max_tokens=2000)
 
     # 4. 필수 키 보정 (Claude 응답 누락 방지)

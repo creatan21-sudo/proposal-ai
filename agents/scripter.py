@@ -20,7 +20,7 @@ import re
 import threading
 
 from core import claude_client
-from core.dna import ConceptDNA, update_dna, dna_to_context_string, dna_lock_block
+from core.dna import ConceptDNA, update_dna, dna_to_context_string, dna_lock_block, wrap_prompt_with_instruction
 from database.db import save_script
 
 
@@ -296,8 +296,9 @@ def _generate_longform_outline(
     for scene_num in range(1, scene_count + 1):
         scene_obj = None
         for attempt in range(3):
-            scene_prompt = _build_scene_text_prompt_v2(
-                dna, ep_plan, ep_num, scene_num, scene_count, duration_s, word_count
+            scene_prompt = wrap_prompt_with_instruction(
+                _build_scene_text_prompt_v2(dna, ep_plan, ep_num, scene_num, scene_count, duration_s, word_count),
+                dna,
             )
             scene_text = claude_client.call(scene_prompt, max_tokens=2000)
             scene_obj  = _parse_scene_text_v2(scene_text, scene_num, duration_s, scene_count)
@@ -593,8 +594,9 @@ def _generate_shortform_outline(
 
     raw = None
     scenes = []
+    _wrapped_prompt = wrap_prompt_with_instruction(prompt, dna)
     for attempt in range(3):
-        raw = claude_client.call_json(prompt, max_tokens=max(1000, n * 150), _validate=False)
+        raw = claude_client.call_json(_wrapped_prompt, max_tokens=max(1000, n * 150), _validate=False)
         _ver_scenes = sum(len((raw.get("versions") or {}).get(v, {}).get("scenes", []))
                           for v in ("15sec", "30sec", "60sec"))
         if _ver_scenes == 0:

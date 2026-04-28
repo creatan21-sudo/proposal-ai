@@ -18,7 +18,7 @@ import re
 from datetime import datetime, timedelta
 
 from core import claude_client
-from core.dna import ConceptDNA, update_dna, dna_to_context_string, dna_lock_block
+from core.dna import ConceptDNA, update_dna, dna_to_context_string, dna_lock_block, wrap_prompt_with_instruction
 from database.db import save_plan
 
 
@@ -90,7 +90,7 @@ def run(dna: ConceptDNA) -> dict:
 
     # 3. Claude API로 전체 계획 생성
     print("  제작 계획 생성 중...")
-    prompt = _build_prompt(dna, is_youtube, schedule_skeleton, budget_skeleton)
+    prompt = wrap_prompt_with_instruction(_build_prompt(dna, is_youtube, schedule_skeleton, budget_skeleton), dna)
     result = claude_client.call_json(prompt, max_tokens=8000)
 
     # DNA 잠금 검증 — 슬로건 미포함 시 재시도 1회

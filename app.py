@@ -3053,18 +3053,11 @@ def rerun_from_step(case_id, step_key):
                 except Exception:
                     pass
 
-    # 코멘트 → step_instruction 구성
+    # 코멘트 → step_instruction / step_prev_content 주입
     if comment:
-        parts = [
-            f"사용자 요청사항: {comment}",
-            "위 요청사항을 최우선으로 반영해서 작성하세요.",
-        ]
+        dna.step_instruction = comment
         if prev_content_text:
-            parts += [
-                f"\n이전 결과: {prev_content_text}",
-                "위 내용에서 사용자 요청사항을 반영해 개선하세요.",
-            ]
-        dna.step_instruction = "\n".join(parts)
+            dna.step_prev_content = prev_content_text
 
     with get_connection() as conn:
         for sk in steps_to_clear:

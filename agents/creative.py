@@ -15,7 +15,7 @@
 #   - 확정된 컨셉·슬로건은 이후 모든 에이전트의 기준점이 됨
 
 from core import claude_client
-from core.dna import ConceptDNA, update_dna, dna_to_context_string
+from core.dna import ConceptDNA, update_dna, dna_to_context_string, wrap_prompt_with_instruction
 from database.db import save_creative
 
 
@@ -94,7 +94,7 @@ def run(dna: ConceptDNA) -> dict:
 
     # 2. Claude API로 크리에이티브 생성
     print("  크리에이티브 컨셉 생성 중...")
-    prompt = _build_prompt(dna, preset)
+    prompt = wrap_prompt_with_instruction(_build_prompt(dna, preset), dna)
     result = claude_client.call_json(prompt, max_tokens=4096)
 
     # 3. 필수 키 보정

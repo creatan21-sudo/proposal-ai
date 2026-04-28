@@ -80,6 +80,7 @@ class ConceptDNA:
     # 파이프라인 인터랙티브 제어용 (에이전트 재실행 시 주입, 완료 후 초기화)
     user_feedback: str = ""                                    # 사용자 수정 지시 (임시)
     step_instruction: str = ""                                 # 스텝별 사전 지시 (confirm 시 주입, 스텝 실행 후 초기화)
+    step_prev_content: str = ""                               # 재실행 시 이전 결과물 (참고용 — 에이전트 프롬프트에 주입)
     pages: int = 30                                            # 목표 제안서 페이지 수
 
     # 대본 사전 설정 (index.html에서 미리 설정, 0/""이면 런타임 다이얼로그로 확인)
@@ -168,7 +169,21 @@ def dna_to_context_string(dna: ConceptDNA) -> str:
     Returns:
         프롬프트 삽입용 요약 문자열
     """
-    lines = [
+    lines = []
+    if dna.step_instruction:
+        lines.append(
+            "========================================\n"
+            "🚨 사용자 지시사항 (최우선 절대 준수)\n"
+            "========================================\n"
+            f"{dna.step_instruction}\n\n"
+            "위 지시사항은 아래 모든 내용보다 우선합니다.\n"
+            "기존 방향, 이전 결과물, 일반적인 패턴을\n"
+            "모두 무시하고 위 지시사항을 중심으로\n"
+            "처음부터 새로 작성하세요.\n"
+            "위 지시사항에 반하는 내용은 절대 포함하지 마세요.\n"
+            "========================================"
+        )
+    lines += [
         f"- 발주처: {dna.client_name}",
         f"- 사업명: {dna.project_name}",
         f"- 영상 종류: {dna.video_type}",
@@ -254,8 +269,6 @@ def dna_to_context_string(dna: ConceptDNA) -> str:
         lines.append(f"- 목표 제안서 페이지: {dna.pages}페이지")
     if dna.user_direction:
         lines.append(f"\n【사용자 사전 지시】\n{dna.user_direction}")
-    if dna.step_instruction:
-        lines.append(f"\n【이 스텝 특별 지시】\n{dna.step_instruction}")
     if dna.reference_structure:
         lines.append(
             f"\n【참고 제안서 구조】\n{dna.reference_structure}\n"
@@ -275,6 +288,40 @@ def dna_to_context_string(dna: ConceptDNA) -> str:
             .format(dna=dna)
         )
     return "\n".join(lines)
+
+
+def wrap_prompt_with_instruction(prompt: str, dna: "ConceptDNA") -> str:
+    """step_instruction이 있으면 프롬프트 최상단·최하단에 강제 주입."""
+    if not dna.step_instruction:
+        return prompt
+
+    instruction = dna.step_instruction
+    prev_content = getattr(dna, "step_prev_content", "")
+
+    header = (
+        "========================================\n"
+        "🚨 사용자 지시사항 (최우선 절대 준수)\n"
+        "========================================\n"
+        f"{instruction}\n\n"
+        "위 지시사항은 아래 모든 내용보다 우선합니다.\n"
+        "기존 방향, 이전 결과물, 일반적인 패턴을\n"
+        "모두 무시하고 위 지시사항을 중심으로\n"
+        "처음부터 새로 작성하세요.\n"
+        "위 지시사항에 반하는 내용은 절대 포함하지 마세요.\n"
+        "========================================\n\n"
+    )
+    footer = (
+        f"\n\n최종 확인: 위 사용자 지시사항 '{instruction}'이\n"
+        "결과물 전체에 명확히 반영되었는지 검토 후 출력하세요.\n"
+        "반영 안 됐으면 다시 작성하세요."
+    )
+    if prev_content:
+        prev_block = (
+            "\n\n## 이전 결과물 (참고만 — 방향 따르지 말 것)\n"
+            f"{prev_content}"
+        )
+        return header + prompt + prev_block + footer
+    return header + prompt + footer
 
 
 def dna_lock_block(dna: "ConceptDNA") -> str:

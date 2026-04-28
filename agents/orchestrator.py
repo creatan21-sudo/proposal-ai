@@ -14,7 +14,7 @@ import dataclasses
 from dataclasses import asdict
 
 from core import claude_client
-from core.dna import ConceptDNA, update_dna, dna_to_context_string, dna_lock_block
+from core.dna import ConceptDNA, update_dna, dna_to_context_string, dna_lock_block, wrap_prompt_with_instruction
 from database.db import save_final_proposal, get_winning_patterns
 
 _OPUS_MODEL = "claude-opus-4-6"   # orchestrator 전용 고성능 모델
@@ -373,7 +373,7 @@ def _calc_pre_score(pre_checks: dict) -> float:
 
 def _deep_consistency_check(dna: ConceptDNA, pre_checks: dict, winning_patterns: list = None) -> dict:
     """서사 완성도·톤 일관성·미흡 섹션 자동 보완 + 예상 점수 + 경쟁사 강약점 (Claude)."""
-    prompt  = _build_consistency_prompt(dna, pre_checks, winning_patterns or [])
+    prompt  = wrap_prompt_with_instruction(_build_consistency_prompt(dna, pre_checks, winning_patterns or []), dna)
     result  = claude_client.call_json(prompt, model=_OPUS_MODEL, max_tokens=3000)
     result.setdefault("narrative_score", 0.7)
     result.setdefault("issues", [])
@@ -752,7 +752,7 @@ def _generate_pt_script(
     company_profile: dict,
 ) -> dict:
     """PT 발표 원고 — 순수 텍스트로 생성 후 dict에 래핑."""
-    prompt = _build_pt_script_prompt(dna, consistency, company_profile)
+    prompt = wrap_prompt_with_instruction(_build_pt_script_prompt(dna, consistency, company_profile), dna)
     pt_min = max(3, min(30, getattr(dna, "pt_duration_min", 10) or 10))
     target_chars = pt_min * 250
 

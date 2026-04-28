@@ -4,6 +4,7 @@
 import anthropic
 
 from core.claude_client import call_json
+from core.dna import wrap_prompt_with_instruction as _wrap_instruction
 
 
 def _measure_content(case_detail: dict) -> int:
@@ -551,7 +552,17 @@ STEP 11 ─ 기대효과 & 마무리 (2~3장)
 
         print(f"  [PPT설계] 컨텍스트 {len(context):,}자 ({cfg['label']}) — API 호출 중...")
         try:
-            result = call_json(_build_prompt(context), max_tokens=16000)
+            _raw_prompt = _build_prompt(context)
+            _step_instr = case_detail.get("case", {}).get("dna", {}).get("step_instruction", "")
+            if _step_instr:
+                _prev = case_detail.get("case", {}).get("dna", {}).get("step_prev_content", "")
+
+                class _FakeDNA:
+                    step_instruction = _step_instr
+                    step_prev_content = _prev
+
+                _raw_prompt = _wrap_instruction(_raw_prompt, _FakeDNA())
+            result = call_json(_raw_prompt, max_tokens=16000)
             break
         except Exception as exc:
             if _is_context_overflow(exc) and i < len(attempts) - 1:

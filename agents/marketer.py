@@ -400,7 +400,21 @@ def _calc_marketing_budget(dna: ConceptDNA) -> dict:
 
 def _compact_dna_ctx(dna: ConceptDNA) -> str:
     """마케팅 프롬프트용 간결 컨텍스트 (dna_to_context_string 대비 절반 이하 분량)."""
-    lines = [
+    lines = []
+    if dna.step_instruction:
+        lines.append(
+            "========================================\n"
+            "🚨 사용자 지시사항 (최우선 절대 준수)\n"
+            "========================================\n"
+            f"{dna.step_instruction}\n\n"
+            "위 지시사항은 아래 모든 내용보다 우선합니다.\n"
+            "기존 방향, 이전 결과물, 일반적인 패턴을\n"
+            "모두 무시하고 위 지시사항을 중심으로\n"
+            "처음부터 새로 작성하세요.\n"
+            "위 지시사항에 반하는 내용은 절대 포함하지 마세요.\n"
+            "========================================"
+        )
+    lines += [
         f"발주처: {dna.client_name}",
         f"사업명: {dna.project_name}",
         f"기관유형: {dna.agency_type or '공공기관'}",
