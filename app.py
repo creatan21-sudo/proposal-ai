@@ -2878,6 +2878,58 @@ def api_ppt_narrative_generate(case_id):
     return jsonify({"ok": True, "message": "설계 시작됨", "target_slides": target_slides})
 
 
+@app.route("/api/ppt_narrative/<int:case_id>/rerun", methods=["POST"])
+@operator_or_admin_required
+def api_ppt_narrative_rerun(case_id):
+    """코멘트 기반 PPT 설계안 재실행. 소유자/admin 전용."""
+    detail = get_case_detail(case_id)
+    if not detail:
+        return jsonify({"ok": False, "error": "케이스 없음"}), 404
+    uid = session["user_id"]
+    if detail["case"].get("user_id") != uid and not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+
+    data    = request.get_json(force=True) or {}
+    comment = (data.get("comment") or "").strip()
+    if not comment:
+        return jsonify({"ok": False, "error": "코멘트를 입력해 주세요."}), 400
+
+    target_slides = max(10, min(60, int(data.get("target_slides", 30))))
+
+    # 기존 설계안 앞부분을 참고용 prev_content로 준비
+    existing   = get_ppt_narrative(case_id) or {}
+    prev_slides = existing.get("slides", [])
+    prev_content = ""
+    if prev_slides:
+        prev_content = json.dumps(prev_slides[:5], ensure_ascii=False)[:2000]
+
+    # case_detail["case"]["dna"] 에 step_instruction / step_prev_content 주입
+    detail["case"].setdefault("dna", {})
+    detail["case"]["dna"]["step_instruction"] = comment
+    if prev_content:
+        detail["case"]["dna"]["step_prev_content"] = prev_content
+
+    def _generate():
+        try:
+            from agents.ppt_narrator import run as narrator_run
+            result = narrator_run(detail, target_slides)
+            save_ppt_narrative(
+                case_id       = case_id,
+                slides        = result["slides"],
+                rfp_coverage  = result["rfp_coverage"],
+                target_slides = target_slides,
+                content_chars = result["content_chars"],
+            )
+            print(f"  [PPT재실행] case={case_id} {result['total_slides']}장 저장 완료")
+        except Exception as e:
+            import traceback as _tb
+            _tb.print_exc()
+            print(f"  [PPT재실행] 생성 오류: {e}")
+
+    threading.Thread(target=_generate, daemon=True).start()
+    return jsonify({"ok": True, "message": "PPT 설계 재실행 시작됨"})
+
+
 @app.route("/api/ppt_narrative/<int:case_id>/save", methods=["POST"])
 @operator_or_admin_required
 def api_ppt_narrative_save(case_id):

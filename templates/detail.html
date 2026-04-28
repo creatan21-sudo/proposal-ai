@@ -680,6 +680,11 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
               <input type="number" id="step13-target-slides" min="10" max="60" value="30"
                      style="width:52px;padding:3px 6px;border:1px solid #d1d5db;border-radius:5px;font-size:.82rem;">
             </div>
+            <button onclick="openPptRerunModal({{ case_id }})"
+                    style="padding:6px 14px;font-size:12px;background:#7c3aed;color:#fff;
+                           border:none;border-radius:6px;cursor:pointer;font-weight:600;">
+              ✏️ PPT 재실행
+            </button>
             <button onclick="regenPptDesign({{ case_id }})"
                     style="padding:6px 14px;font-size:12px;background:#4f46e5;color:#fff;
                            border:none;border-radius:6px;cursor:pointer;font-weight:600;">
@@ -897,6 +902,17 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
           } else {
             alert('설계안 저장 완료. PPT 생성 버튼을 클릭하세요.');
           }
+        };
+
+        // PPT 재실행 완료 시 탭 내부에서 바로 갱신
+        window._pptNarrativeReload = function(cid, narrative) {
+          if (cid !== CID) return;
+          _slides = narrative.slides || [];
+          renderSlides(_slides);
+          renderCoverage(narrative.rfp_coverage || {});
+          const ts = narrative.target_slides || _slides.length;
+          const inp = document.getElementById('step13-target-slides');
+          if (inp) inp.value = ts;
         };
 
         init();
@@ -1403,6 +1419,41 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
                      opacity:0.5;transition:opacity .15s;"
               onmouseenter="if(!this.disabled)this.style.background='#4338ca'"
               onmouseleave="this.style.background='#4f46e5'">재실행</button>
+    </div>
+  </div>
+</div>
+
+{# ── PPT 재실행 모달 ── #}
+<div id="ppt-rerun-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);
+     z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:14px;padding:28px;width:460px;max-width:92vw;
+              box-shadow:0 20px 60px rgba(0,0,0,.25);">
+    <div style="font-weight:700;font-size:16px;margin-bottom:6px;">✏️ PPT 설계 재실행</div>
+    <div style="font-size:13px;color:#6b7280;margin-bottom:18px;">
+      코멘트를 반영해 PPT 설계안을 처음부터 새로 작성합니다.
+    </div>
+    <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">
+      PPT 설계를 어떻게 바꾸길 원하시나요?
+      <span style="font-weight:400;color:#9ca3af;">구체적일수록 잘 반영됩니다.</span>
+    </div>
+    <textarea id="ppt-rerun-comment-input" rows="4"
+              oninput="document.getElementById('ppt-rerun-submit-btn').disabled = !this.value.trim();
+                       document.getElementById('ppt-rerun-submit-btn').style.opacity = this.value.trim() ? '1' : '0.5';"
+              placeholder="예: 슬라이드를 30장으로, 컨셉을 더 강하게, 특정 항목 더 강조 등"
+              style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;
+                     border-radius:8px;font-size:13px;resize:vertical;font-family:inherit;
+                     outline:none;transition:border-color .15s;"
+              onfocus="this.style.borderColor='#7c3aed'" onblur="this.style.borderColor='#d1d5db'"></textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px;">
+      <button onclick="closePptRerunModal()"
+              style="padding:8px 18px;background:#fff;color:#374151;border:1px solid #d1d5db;
+                     border-radius:7px;cursor:pointer;font-size:13px;">취소</button>
+      <button id="ppt-rerun-submit-btn" onclick="submitPptRerun()" disabled
+              style="padding:8px 20px;background:#7c3aed;color:#fff;border:none;
+                     border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;
+                     opacity:0.5;transition:opacity .15s;"
+              onmouseenter="if(!this.disabled)this.style.background='#6d28d9'"
+              onmouseleave="this.style.background='#7c3aed'">재실행</button>
     </div>
   </div>
 </div>
@@ -2083,6 +2134,94 @@ async function submitRerun() {
       btn.textContent = '재실행';
       btn.style.opacity = '1';
     }
+  } catch(e) {
+    alert('재실행 요청 실패: ' + e);
+    btn.disabled = false;
+    btn.textContent = '재실행';
+    btn.style.opacity = '1';
+  }
+}
+
+// ── PPT 설계 재실행 ──
+let _pptRerunCaseId = null;
+
+function openPptRerunModal(caseId) {
+  _pptRerunCaseId = caseId;
+  const ta = document.getElementById('ppt-rerun-comment-input');
+  ta.value = '';
+  const btn = document.getElementById('ppt-rerun-submit-btn');
+  btn.disabled = true;
+  btn.style.opacity = '0.5';
+  btn.textContent = '재실행';
+  document.getElementById('ppt-rerun-modal').style.display = 'flex';
+  setTimeout(() => ta.focus(), 50);
+}
+
+function closePptRerunModal() {
+  document.getElementById('ppt-rerun-modal').style.display = 'none';
+  _pptRerunCaseId = null;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+  document.getElementById('ppt-rerun-modal').addEventListener('click', function(e) {
+    if (e.target === this) closePptRerunModal();
+  });
+});
+
+async function submitPptRerun() {
+  if (!_pptRerunCaseId) return;
+  const comment = document.getElementById('ppt-rerun-comment-input').value.trim();
+  if (!comment) return;
+  const cid = _pptRerunCaseId;
+  const btn = document.getElementById('ppt-rerun-submit-btn');
+  btn.disabled = true;
+  btn.textContent = '처리 중...';
+
+  const targetEl = document.getElementById('step13-target-slides');
+  const targetSlides = targetEl ? (parseInt(targetEl.value) || 30) : 30;
+
+  try {
+    const r = await fetch(`/api/ppt_narrative/${cid}/rerun`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comment, target_slides: targetSlides }),
+    });
+    const d = await r.json();
+    if (!d.ok) {
+      alert('재실행 오류: ' + (d.error || '알 수 없음'));
+      btn.disabled = false;
+      btn.textContent = '재실행';
+      btn.style.opacity = '1';
+      return;
+    }
+    closePptRerunModal();
+
+    // 상태 표시 + 폴링
+    const statusEl = document.getElementById(`step13-status-${cid}`);
+    if (statusEl) {
+      statusEl.style.display = 'block';
+      statusEl.textContent = '⏳ PPT 설계 재실행 중... (30초~2분)';
+    }
+    const slidesEl = document.getElementById(`step13-slides-${cid}`);
+    if (slidesEl) slidesEl.innerHTML = '';
+
+    const poll = setInterval(async () => {
+      try {
+        const r2 = await fetch(`/api/ppt_narrative/${cid}`);
+        const d2 = await r2.json();
+        if (d2.ok && d2.narrative && d2.narrative.slides && d2.narrative.slides.length) {
+          clearInterval(poll);
+          if (statusEl) statusEl.style.display = 'none';
+          // 같은 탭 스크립트의 renderSlides 호출
+          if (typeof window._pptNarrativeReload === 'function') {
+            window._pptNarrativeReload(cid, d2.narrative);
+          } else {
+            location.reload();
+          }
+        }
+      } catch (_) {}
+    }, 3000);
+    setTimeout(() => { clearInterval(poll); if (statusEl) statusEl.style.display = 'none'; }, 180000);
   } catch(e) {
     alert('재실행 요청 실패: ' + e);
     btn.disabled = false;
