@@ -466,6 +466,12 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
                        background:#4f46e5;color:#fff;border:none;border-radius:8px;cursor:pointer;">
           ✨ 설계 생성
         </button>
+        <button onclick="openPptRerunModal({{ case_id }})"
+                id="btn-ppt-panel-rerun"
+                style="padding:8px 18px;font-size:.85rem;font-weight:700;
+                       background:#7c3aed;color:#fff;border:none;border-radius:8px;cursor:pointer;">
+          ✏️ 재실행
+        </button>
       </div>
       {% endif %}
     </div>
@@ -2251,7 +2257,7 @@ async function submitPptRerun() {
     scope_value = document.getElementById('ppt-rerun-specific-pages').value;
   }
 
-  const targetEl    = document.getElementById('step13-target-slides');
+  const targetEl    = document.getElementById('step13-target-slides') || document.getElementById('ppt-target-slides');
   const targetSlides = targetEl ? (parseInt(targetEl.value) || 30) : 30;
 
   try {
@@ -2268,10 +2274,16 @@ async function submitPptRerun() {
     }
     closePptRerunModal();
 
+    const panelEl     = document.getElementById('ppt-design-panel');
+    const isPanelOpen = panelEl && panelEl.style.display !== 'none';
+    const panelStatus = document.getElementById('ppt-design-status');
+
     const statusEl = document.getElementById(`step13-status-${cid}`);
     if (statusEl) { statusEl.style.display = 'block'; statusEl.textContent = '⏳ PPT 설계 재실행 중... (30초~2분)'; }
+    if (isPanelOpen && panelStatus) { panelStatus.style.display = 'block'; panelStatus.textContent = '⏳ PPT 설계 재실행 중... (30초~2분)'; }
     const slidesEl = document.getElementById(`step13-slides-${cid}`);
     if (slidesEl) slidesEl.innerHTML = '';
+    if (isPanelOpen) { const sl = document.getElementById('ppt-slide-list'); if (sl) sl.innerHTML = ''; }
 
     // generating 플래그 기반 폴링 — 서버가 완료를 알릴 때까지 대기
     const poll = setInterval(async () => {
@@ -2282,7 +2294,10 @@ async function submitPptRerun() {
         if (d2.ok && d2.narrative && d2.narrative.slides && d2.narrative.slides.length) {
           clearInterval(poll);
           if (statusEl) statusEl.style.display = 'none';
-          if (typeof window._pptNarrativeReload === 'function') {
+          if (isPanelOpen && panelStatus) panelStatus.style.display = 'none';
+          if (isPanelOpen && typeof _renderPptDesign === 'function') {
+            _renderPptDesign(d2.narrative);
+          } else if (typeof window._pptNarrativeReload === 'function') {
             window._pptNarrativeReload(cid, d2.narrative);
           } else {
             location.reload();
@@ -2290,7 +2305,11 @@ async function submitPptRerun() {
         }
       } catch (_) {}
     }, 3000);
-    setTimeout(() => { clearInterval(poll); if (statusEl) statusEl.style.display = 'none'; }, 180000);
+    setTimeout(() => {
+      clearInterval(poll);
+      if (statusEl) statusEl.style.display = 'none';
+      if (isPanelOpen && panelStatus) panelStatus.style.display = 'none';
+    }, 180000);
   } catch(e) {
     alert('재실행 요청 실패: ' + e);
     btn.disabled = false; btn.textContent = '재실행'; btn.style.opacity = '1';
