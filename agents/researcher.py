@@ -31,6 +31,24 @@ from database.db import (find_similar_analyses, find_past_research, save_researc
                           get_learning_cases_for_researcher,
                           get_research_cache, save_research_cache)
 
+_DATA_RELIABILITY_BLOCK = """
+========================================
+🚨 데이터 신뢰성 절대 원칙 (반드시 준수)
+========================================
+1. 모든 수치/통계/데이터는 실제 존재하는 자료만 사용
+2. 출처 없는 수치 사용 절대 금지
+3. 상상하거나 추정한 수치 사용 절대 금지
+4. 유사한 주제의 데이터로 대체 절대 금지
+   (데이트폭력 주제에 가정폭력 통계 사용 금지 등)
+5. 확실하지 않으면 데이터 없이 서술
+6. 출처 표기 형식: (출처: 기관명, 연도, 자료명)
+7. Perplexity 검색으로 확인된 데이터만 수치로 인용
+8. AI가 생성한 추정값은 반드시 '추정' 명시
+
+위 원칙 위반 시 해당 내용 삭제 후 재작성하세요.
+========================================
+"""
+
 _SONNET_MODEL = "claude-sonnet-4-6"
 
 _AGENCY_PROFILES_PATH = Path(__file__).parent.parent / "database" / "agency_profiles.json"
@@ -314,7 +332,7 @@ def _perplexity_search(client_name: str, project_name: str, agency_type: str) ->
         print(f"  [Perplexity] 검색 중: {query[:60]}...")
         try:
             payload = {
-                "model": "sonar",
+                "model": "sonar-pro",
                 "messages": [
                     {"role": "system",
                      "content": "한국어로 답변하세요. 구체적인 수치와 출처(기관명, 연도)를 반드시 포함하세요."},
@@ -524,6 +542,7 @@ def _analyze(dna: ConceptDNA, profile: dict, past_cases: list,
         prompt = (
             f"당신은 대한민국 정부 입찰 전략 전문가이자 공공 홍보 분야 수석 리서처입니다.\n\n"
             f"아래 정보를 바탕으로 [{label}]을 최소 500자 이상 마크다운 텍스트로 작성하십시오.\n\n"
+            f"{_DATA_RELIABILITY_BLOCK}\n\n"
             f"【절대 원칙】\n"
             f"1. 최소 500자 이상 작성. 짧은 답변은 품질 기준 미달.\n"
             f"2. ## 소제목으로 반드시 구분 (아래 지침의 ## 항목 모두 포함).\n"
