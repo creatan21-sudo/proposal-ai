@@ -21,8 +21,9 @@ DEFAULT_MODEL: str = "claude-sonnet-4-6"
 MAX_TOKENS: int = 8192
 
 # 웹서치 API
-TAVILY_API_KEY: str = os.getenv("TAVILY_API_KEY", "")
-SERP_API_KEY:   str = os.getenv("SERP_API_KEY", "")
+TAVILY_API_KEY:      str = os.getenv("TAVILY_API_KEY", "")
+SERP_API_KEY:        str = os.getenv("SERP_API_KEY", "")
+PERPLEXITY_API_KEY:  str = os.getenv("PERPLEXITY_API_KEY", "")
 
 # Gamma PPT API
 GAMMA_API_KEY: str = os.getenv("GAMMA_API_KEY", "")

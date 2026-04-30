@@ -2,9 +2,48 @@
 # PPT 설계 에이전트: 전체 제안서 내용을 N장 슬라이드 설계안으로 압축
 
 import anthropic
+import requests as _requests
 
 from core.claude_client import call_json
 from core.dna import wrap_prompt_with_instruction as _wrap_instruction
+
+_PERPLEXITY_URL = "https://api.perplexity.ai/chat/completions"
+
+
+def _lookup_perplexity(query: str, api_key: str) -> str:
+    """슬라이드 데이터·수치 필요 시 Perplexity로 실시간 검색.
+
+    Returns:
+        answer + citations 문자열 (API 키 없거나 실패 시 빈 문자열)
+    """
+    try:
+        payload = {
+            "model": "sonar",
+            "messages": [
+                {"role": "system",
+                 "content": "한국어로 답변하세요. 수치와 출처(기관명, 연도)를 반드시 포함하세요."},
+                {"role": "user", "content": query},
+            ],
+            "max_tokens": 768,
+        }
+        resp = _requests.post(
+            _PERPLEXITY_URL,
+            headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+            json=payload,
+            timeout=25,
+        )
+        resp.raise_for_status()
+        data      = resp.json()
+        content   = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+        citations = data.get("citations", [])
+        n = len(citations)
+        print(f"  [Perplexity PPT] {n}건 출처 포함 결과 수신")
+        if citations:
+            content += "\n출처: " + " | ".join(citations[:5])
+        return content
+    except Exception as e:
+        print(f"  [Perplexity PPT] 검색 실패: {e}")
+        return ""
 
 
 def _measure_content(case_detail: dict) -> int:
@@ -328,6 +367,20 @@ def run(case_detail: dict, target_slides: int = 30) -> dict:
                     or dna.get("rfp_raw_text", "")
                     or dna.get("rfp_text", ""))
 
+    # ── Perplexity 실시간 통계 보강 ──────────────────────────────
+    _perplexity_supplement = ""
+    try:
+        from config import PERPLEXITY_API_KEY as _PPX_KEY
+        if _PPX_KEY and case.get("client_name"):
+            _q = (f"{case['client_name']} {case.get('project_name','')} "
+                  f"관련 최신 통계·수치·현황 2024 2025")
+            print(f"  [PPT설계] Perplexity 최신 통계 조회 중...")
+            _perplexity_supplement = _lookup_perplexity(_q, _PPX_KEY)
+            if _perplexity_supplement:
+                print(f"  [PPT설계] Perplexity 보강 데이터 {len(_perplexity_supplement)}자 수신")
+    except Exception as _ppx_err:
+        print(f"  [PPT설계] Perplexity 보강 생략: {_ppx_err}")
+
     body_slides = target_slides - 3  # 표지(1) + 목차(1) + 마무리(1) 고정
 
     def _build_rfp_raw_section() -> str:
@@ -347,9 +400,18 @@ def run(case_detail: dict, target_slides: int = 30) -> dict:
         )
 
     def _build_prompt(context: str) -> str:
+        _ppx_section = ""
+        if _perplexity_supplement:
+            _ppx_section = (
+                "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                "🌐 Perplexity 실시간 통계 (슬라이드 수치 근거로 활용)\n"
+                "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+                + _perplexity_supplement
+                + "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            )
         return f"""당신은 영상 제작 제안서 PT의 스토리 디렉터입니다.
 아래 제안서 데이터({content_chars:,}자)를 바탕으로 정확히 {target_slides}장의 PPT 설계안을 만드세요.
-{_build_rfp_raw_section()}
+{_build_rfp_raw_section()}{_ppx_section}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [제안서 전체 데이터]
 {context}

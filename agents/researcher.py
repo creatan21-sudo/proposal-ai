@@ -20,10 +20,11 @@ import json
 import concurrent.futures as _cf
 from pathlib import Path
 
+import requests as _requests
 from serpapi import GoogleSearch
 from tavily import TavilyClient
 
-from config import SERP_API_KEY, TAVILY_API_KEY
+from config import SERP_API_KEY, TAVILY_API_KEY, PERPLEXITY_API_KEY
 from core import claude_client
 from core.dna import ConceptDNA, update_dna, dna_to_context_string
 from database.db import (find_similar_analyses, find_past_research, save_research,
@@ -88,9 +89,10 @@ def run(dna: ConceptDNA) -> dict:
     )
     print(f"[학습데이터] {len(learning_cases)}건 참조")
 
-    # ── SerpAPI + Tavily 병렬 검색 ────────────
-    serp_results: dict[str, list] = {}
-    tavily_results: list[dict] = []
+    # ── SerpAPI + Tavily + Perplexity 3방향 병렬 검색 ────────────
+    serp_results: dict[str, list]  = {}
+    tavily_results: list[dict]     = []
+    perplexity_results: list[dict] = []
     tavily = _get_tavily()
 
     def _run_serp():
@@ -112,18 +114,30 @@ def run(dna: ConceptDNA) -> dict:
         print(f"  Tavily 완료: {len(r)}건")
         return r
 
-    with _cf.ThreadPoolExecutor(max_workers=2) as ex:
-        f_serp   = ex.submit(_run_serp)
-        f_tavily = ex.submit(_run_tavily)
-        serp_results   = f_serp.result()
-        tavily_results = f_tavily.result()
+    def _run_perplexity():
+        if not PERPLEXITY_API_KEY:
+            print("  [경고] PERPLEXITY_API_KEY 없음 — Perplexity 검색 생략")
+            return []
+        print("  Perplexity 실시간 검색 중...")
+        r = _perplexity_search(dna.client_name, dna.project_name, dna.agency_type)
+        print(f"  Perplexity 완료: {len(r)}건 쿼리")
+        return r
 
-    if not serp_results and not tavily_results:
+    with _cf.ThreadPoolExecutor(max_workers=3) as ex:
+        f_serp        = ex.submit(_run_serp)
+        f_tavily      = ex.submit(_run_tavily)
+        f_perplexity  = ex.submit(_run_perplexity)
+        serp_results       = f_serp.result()
+        tavily_results     = f_tavily.result()
+        perplexity_results = f_perplexity.result()
+
+    if not serp_results and not tavily_results and not perplexity_results:
         print("  웹서치 결과 없음 — Claude 지식 활용")
 
     # ── Claude 분석 (Sonnet, 고품질) ──────────
     print("  Claude 10개 항목 분석 중... (항목당 최소 500자, max_tokens=30000)")
-    result = _analyze(dna, profile, past_cases, serp_results, tavily_results, learning_cases)
+    result = _analyze(dna, profile, past_cases, serp_results, tavily_results, learning_cases,
+                      perplexity_results)
 
     # ── 500자 미만 항목 재생성 ────────────────
     short_keys = [k for k, v in result.items() if isinstance(v, str) and 0 < len(v) < _MIN_ITEM_CHARS]
@@ -273,6 +287,82 @@ def _tavily_search(tavily: TavilyClient, agency_type: str) -> list[dict]:
 
 
 # ─────────────────────────────────────────────
+# Perplexity 실시간 검색
+# ─────────────────────────────────────────────
+
+_PERPLEXITY_URL = "https://api.perplexity.ai/chat/completions"
+
+
+def _perplexity_search(client_name: str, project_name: str, agency_type: str) -> list[dict]:
+    """Perplexity sonar로 기관 현황·이슈·통계 실시간 검색.
+
+    Returns:
+        [{query, answer, citations}] 리스트
+    """
+    queries = [
+        f"{client_name} 2025 최신 현황 주요 정책 사업 통계 수치",
+        f"{client_name} 2024 2025 최근 이슈 뉴스 보도",
+        f"{agency_type} 공공기관 홍보영상 제작 성과 통계 데이터 2024 2025",
+    ]
+
+    headers = {
+        "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    def _fetch_one(query: str) -> dict:
+        print(f"  [Perplexity] 검색 중: {query[:60]}...")
+        try:
+            payload = {
+                "model": "sonar",
+                "messages": [
+                    {"role": "system",
+                     "content": "한국어로 답변하세요. 구체적인 수치와 출처(기관명, 연도)를 반드시 포함하세요."},
+                    {"role": "user", "content": query},
+                ],
+                "max_tokens": 1024,
+            }
+            resp = _requests.post(_PERPLEXITY_URL, headers=headers, json=payload, timeout=30)
+            resp.raise_for_status()
+            data = resp.json()
+            content   = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+            citations = data.get("citations", [])
+            n = len(citations)
+            print(f"  [Perplexity] {n}건 출처 포함 결과 수신")
+            return {"query": query, "answer": content, "citations": citations}
+        except Exception as e:
+            print(f"  [Perplexity] 검색 실패: {e}")
+            return {"query": query, "answer": "", "citations": []}
+
+    results: list[dict] = []
+    with _cf.ThreadPoolExecutor(max_workers=3) as ex:
+        futures = [ex.submit(_fetch_one, q) for q in queries]
+        for f in _cf.as_completed(futures):
+            try:
+                results.append(f.result())
+            except Exception as e:
+                print(f"  [Perplexity] 결과 수집 오류: {e}")
+    return results
+
+
+def _fmt_perplexity_block(results: list[dict], max_chars: int = 800) -> str:
+    """Perplexity 결과를 Claude 프롬프트 주입용 텍스트로 포맷."""
+    if not results:
+        return "(검색 결과 없음)"
+    parts = []
+    for r in results:
+        if not r.get("answer"):
+            continue
+        answer = r["answer"][:max_chars]
+        cites  = r.get("citations", [])
+        cite_str = ""
+        if cites:
+            cite_str = "\n출처 URL: " + " | ".join(cites[:5])
+        parts.append(f"[질의: {r['query'][:70]}]\n{answer}{cite_str}")
+    return "\n\n".join(parts) if parts else "(결과 없음)"
+
+
+# ─────────────────────────────────────────────
 # Claude 분석
 # ─────────────────────────────────────────────
 
@@ -314,7 +404,7 @@ def _fmt_tavily_block(items: list[dict], max_chars: int = 600) -> str:
 # ─────────────────────────────────────────────
 _ITEM_DEFS = [
     ("agency_policy",             "① 기관 특성/정책",
-     ["agency", "policy"],
+     ["agency", "policy", "perplexity"],
      "## 기관 소개 — 공식명·설립 목적·주요 역할\n"
      "## 미션·비전 — 공식 미션/비전 문장·핵심 가치\n"
      "## 조직 규모 — 직원 수·예산 규모(원)·산하기관\n"
@@ -335,7 +425,7 @@ _ITEM_DEFS = [
      "## 성공작·실패작 사례 — 구체적 사례 2개 이상·성공/실패 요인 분석\n"
      "## 콘텐츠 개선 여지 — 현재 문제점과 개선 방향"),
     ("recent_issues_news",        "④ 최근 이슈/뉴스",
-     ["news"],
+     ["news", "perplexity"],
      "## 최근 6개월 주요 뉴스 — 2024.10~2025.04 주요 보도 3건 이상\n"
      "## 긍정 이슈 — 기관 성과·포상·정책 성공 사례\n"
      "## 부정 이슈 — 논란·비판·문제 제기 사안 (없으면 '없음' 명시)\n"
@@ -346,7 +436,7 @@ _ITEM_DEFS = [
      "## 성공 요인 분석 — 공통 성공 패턴·차별화 포인트\n"
      "## 우리 제안서 적용 포인트 — 이 사례에서 벤치마킹할 전략"),
     ("task_patterns",             "⑥ 유사과업 분석",
-     ["pricing", "policy"],
+     ["pricing", "policy", "perplexity"],
      "## 유사 과업 규모 분석 — 최근 유사 사업 예산 범위·납품 수량·기간 패턴\n"
      "## 요구사항 공통점 — 유사 RFP에서 반복 등장하는 필수 항목·스펙\n"
      "## 심사 기준 패턴 — 높이 평가받는 요소·필수 제출 서류\n"
@@ -380,7 +470,8 @@ _ITEM_DEFS = [
 
 def _analyze(dna: ConceptDNA, profile: dict, past_cases: list,
              serp_results: dict[str, list], tavily_results: list[dict],
-             learning_cases: list = None) -> dict:
+             learning_cases: list = None,
+             perplexity_results: list[dict] = None) -> dict:
     """10개 항목을 개별 Claude 호출로 분석 (ThreadPoolExecutor max_workers=3).
 
     각 항목은 claude_client.call()로 일반 텍스트를 받아 저장 — JSON 파싱 없음.
@@ -388,14 +479,15 @@ def _analyze(dna: ConceptDNA, profile: dict, past_cases: list,
     """
     s = serp_results or {}
     ctx = {
-        "agency":   _fmt_serp_block(s.get("agency",  [])),
-        "leader":   _fmt_serp_block(s.get("leader",  [])),
-        "content":  _fmt_serp_block(s.get("content", [])),
-        "news":     _fmt_serp_block(s.get("news",    [])),
-        "cases":    _fmt_serp_block(s.get("cases",   [])),
-        "pricing":  _fmt_serp_block(s.get("pricing", [])),
-        "policy":   _fmt_serp_block(s.get("policy",  [])),
-        "tavily":   _fmt_tavily_block(tavily_results or []),
+        "agency":      _fmt_serp_block(s.get("agency",  [])),
+        "leader":      _fmt_serp_block(s.get("leader",  [])),
+        "content":     _fmt_serp_block(s.get("content", [])),
+        "news":        _fmt_serp_block(s.get("news",    [])),
+        "cases":       _fmt_serp_block(s.get("cases",   [])),
+        "pricing":     _fmt_serp_block(s.get("pricing", [])),
+        "policy":      _fmt_serp_block(s.get("policy",  [])),
+        "tavily":      _fmt_tavily_block(tavily_results or []),
+        "perplexity":  _fmt_perplexity_block(perplexity_results or []),
     }
 
     dna_ctx   = dna_to_context_string(dna)
