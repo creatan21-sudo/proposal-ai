@@ -14,11 +14,17 @@ _scheduler_started = False
 _scheduler_lock = threading.Lock()
 
 def fetch_bids(keyword: str, page: int = 1, rows: int = 20) -> list:
+    if not NARA_API_KEY or NARA_API_KEY == "YOUR_NARA_API_KEY":
+        print(f"[nara] NARA_API_KEY 미설정 — 검색 생략 ({keyword})")
+        return []
+
     today     = datetime.now()
     from_date = (today - timedelta(days=30)).strftime("%Y%m%d%H%M%S")
     to_date   = today.strftime("%Y%m%d%H%M%S")
-    params = {
-        "serviceKey": NARA_API_KEY,
+
+    # serviceKey는 urlencode에서 분리해 이중 인코딩 방지
+    # (data.go.kr API 키는 +, = 포함 가능 → urlencode 시 손상됨)
+    other_params = urllib.parse.urlencode({
         "numOfRows":  str(rows),
         "pageNo":     str(page),
         "inqryDiv":   "1",
@@ -26,13 +32,22 @@ def fetch_bids(keyword: str, page: int = 1, rows: int = 20) -> list:
         "inqryEndDt": to_date,
         "bidNtceNm":  keyword,
         "type":       "json",
-    }
-    url = NARA_API_URL + "?" + urllib.parse.urlencode(params, encoding="utf-8")
+    }, encoding="utf-8")
+    url = (NARA_API_URL
+           + "?serviceKey=" + urllib.parse.quote(NARA_API_KEY, safe='')
+           + "&" + other_params)
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=15) as resp:
             raw = resp.read().decode("utf-8")
+        print(f"[nara 응답] {resp.status}: {raw[:200]}")
         data  = json.loads(raw)
+        # 오류 응답 감지
+        err_msg = data.get("response", {}).get("header", {}).get("returnReasonCode", "")
+        err_auth = data.get("response", {}).get("header", {}).get("returnAuthMsg", "")
+        if err_auth:
+            print(f"[nara] API 인증 오류: {err_auth} (코드: {err_msg})")
+            return []
         items = data.get("response", {}).get("body", {}).get("items", {})
         if not items:
             return []
@@ -41,7 +56,12 @@ def fetch_bids(keyword: str, page: int = 1, rows: int = 20) -> list:
             items = [items]
         return [_normalize(i) for i in items]
     except Exception as e:
-        print(f"[nara] API 오류 ({keyword}): {e}")
+        body = ""
+        if hasattr(e, 'read'):
+            try: body = e.read().decode("utf-8")[:300]
+            except: pass
+        print(f"[nara] API 오류 ({keyword}): {type(e).__name__}: {e}"
+              + (f"\n  응답 body: {body}" if body else ""))
         return []
 
 def _normalize(item: dict) -> dict:
