@@ -7,14 +7,18 @@ import urllib.parse
 import json
 from datetime import datetime, timedelta
 
-NARA_API_KEY = os.environ.get("NARA_API_KEY", "YOUR_NARA_API_KEY")
+NARA_API_KEY = os.environ.get("NARA_API_KEY", "")
 NARA_API_URL = "https://apis.data.go.kr/1230000/BidPublicInfoService/getBidPblancListInfoServcPPSSrch"
+
+print(f"[nara] NARA_API_KEY: {'SET' if os.environ.get('NARA_API_KEY') else 'NOT SET'}")
 
 _scheduler_started = False
 _scheduler_lock = threading.Lock()
 
 def fetch_bids(keyword: str, page: int = 1, rows: int = 20) -> list:
-    if not NARA_API_KEY or NARA_API_KEY == "YOUR_NARA_API_KEY":
+    key = os.environ.get("NARA_API_KEY", "")
+    print(f"[nara] 사용 키: {key[:10]}...")
+    if not key:
         print(f"[nara] NARA_API_KEY 미설정 — 검색 생략 ({keyword})")
         return []
 
@@ -34,7 +38,7 @@ def fetch_bids(keyword: str, page: int = 1, rows: int = 20) -> list:
         "type":       "json",
     }, encoding="utf-8")
     url = (NARA_API_URL
-           + "?serviceKey=" + urllib.parse.quote(NARA_API_KEY, safe='')
+           + "?serviceKey=" + urllib.parse.quote(key, safe='')
            + "&" + other_params)
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
