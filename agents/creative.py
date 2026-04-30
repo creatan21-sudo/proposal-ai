@@ -174,6 +174,24 @@ def _get_tone_preset(agency_type: str) -> dict:
 # 프롬프트 생성
 # ─────────────────────────────────────────────
 
+def _build_rfp_raw_section(dna: ConceptDNA, max_chars: int = 15000) -> str:
+    raw = getattr(dna, "rfp_raw_text", "") or getattr(dna, "rfp_text", "")
+    if not raw:
+        return ""
+    truncated = raw[:max_chars]
+    suffix = "\n...(이하 생략)" if len(raw) > max_chars else ""
+    return (
+        "\n━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "⚡ RFP 원본 전문 — 배점 역설계의 핵심 근거\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "아래는 RFP 원본 전문입니다.\n"
+        "평가배점표를 직접 읽고 배점이 높은 항목일수록 컨셉·슬로건을 그 항목 중심으로 설계하세요.\n"
+        "배점 역설계가 이 제안서의 핵심입니다.\n\n"
+        + truncated + suffix
+        + "\n━━━━━━━━━━━━━━━━━━━━━━━\n"
+    )
+
+
 def _build_prompt(dna: ConceptDNA, preset: dict) -> str:
     """크리에이티브 생성용 Claude 프롬프트.
 
@@ -203,9 +221,11 @@ def _build_prompt(dna: ConceptDNA, preset: dict) -> str:
     else:
         forbidden_block = "  (RFP에서 별도 명시 없음)"
 
+    rfp_raw_section = _build_rfp_raw_section(dna)
+
     return f"""당신은 대한민국 최고의 공공 캠페인 크리에이티브 디렉터입니다.
 아래 전략 분석을 바탕으로 영상콘텐츠 캠페인의 크리에이티브 방향을 설계해주세요.
-
+{rfp_raw_section}
 【절대 원칙】
 - 개요나 목차가 아닌 실제 크리에이티브 결과물을 작성하라.
 - 컨셉은 단순 슬로건이 아니라 영상 전체를 관통하는 캠페인 빅아이디어여야 한다.

@@ -102,12 +102,14 @@ def run(dna: ConceptDNA, file_path: str = None) -> dict:
         "forbidden_notes":    result.get("forbidden_notes", []),
         "agency_characteristics": result.get("agency_tone_hint", ""),
         "rfp_text":           rfp_text[:2000] if rfp_text else "",
+        "rfp_raw_text":       rfp_text[:30000] if rfp_text else "",
     })
 
     # 4. DB 저장
     try:
         save_rfp_analysis(dna.client_name, dna.project_name, result,
-                          case_id=getattr(dna, "case_id", 0) or 0)
+                          case_id=getattr(dna, "case_id", 0) or 0,
+                          raw_text=rfp_text[:30000] if rfp_text else "")
         print("  분석 결과 DB 저장 완료")
     except Exception as e:
         print(f"  [경고] DB 저장 실패 (계속 진행): {e}")

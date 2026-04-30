@@ -48,7 +48,8 @@ def init_db() -> None:
                 top_keywords_json     TEXT DEFAULT '[]',
                 core_tasks_json       TEXT DEFAULT '[]',
                 forbidden_notes_json  TEXT DEFAULT '[]',
-                agency_tone_hint      TEXT DEFAULT ''
+                agency_tone_hint      TEXT DEFAULT '',
+                raw_text              TEXT DEFAULT ''
             );
 
             CREATE TABLE IF NOT EXISTS final_proposals (
@@ -307,6 +308,7 @@ def init_db() -> None:
             "ALTER TABLE script_results ADD COLUMN case_id INTEGER DEFAULT 0",
             "ALTER TABLE marketing_results ADD COLUMN case_id INTEGER DEFAULT 0",
             "ALTER TABLE rfp_analyses ADD COLUMN case_id INTEGER DEFAULT 0",
+            "ALTER TABLE rfp_analyses ADD COLUMN raw_text TEXT DEFAULT ''",
             "ALTER TABLE research_results ADD COLUMN case_id INTEGER DEFAULT 0",
             "ALTER TABLE strategy_results ADD COLUMN case_id INTEGER DEFAULT 0",
             "ALTER TABLE creative_results ADD COLUMN case_id INTEGER DEFAULT 0",
@@ -387,7 +389,7 @@ def unhide_case(case_id: int) -> None:
 
 
 def save_rfp_analysis(client_name: str, project_name: str, analysis: dict,
-                      case_id: int = 0) -> int:
+                      case_id: int = 0, raw_text: str = "") -> int:
     """RFP 분석 결과 저장."""
     import json
     with get_connection() as conn:
@@ -395,8 +397,8 @@ def save_rfp_analysis(client_name: str, project_name: str, analysis: dict,
             """INSERT INTO rfp_analyses
                (created_at, client_name, project_name, agency_type,
                 evaluation_items_json, top_keywords_json,
-                core_tasks_json, forbidden_notes_json, agency_tone_hint, case_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                core_tasks_json, forbidden_notes_json, agency_tone_hint, case_id, raw_text)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 datetime.now().isoformat(),
                 client_name,
@@ -408,6 +410,7 @@ def save_rfp_analysis(client_name: str, project_name: str, analysis: dict,
                 json.dumps(analysis.get("forbidden_notes", []), ensure_ascii=False),
                 analysis.get("agency_tone_hint", ""),
                 case_id,
+                raw_text,
             ),
         )
         return cursor.lastrowid

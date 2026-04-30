@@ -202,6 +202,24 @@ def _extract_priority_keywords(sorted_eval: list, eval_keywords: list) -> list:
 # 프롬프트 생성
 # ─────────────────────────────────────────────
 
+def _build_rfp_raw_section(dna: ConceptDNA, max_chars: int = 15000) -> str:
+    raw = getattr(dna, "rfp_raw_text", "") or getattr(dna, "rfp_text", "")
+    if not raw:
+        return ""
+    truncated = raw[:max_chars]
+    suffix = "\n...(이하 생략)" if len(raw) > max_chars else ""
+    return (
+        "\n━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "⚡ RFP 원본 전문 — 배점 역설계의 핵심 근거\n"
+        "━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "아래는 RFP 원본 전문입니다.\n"
+        "평가배점표를 직접 읽고 배점이 높은 항목일수록 전략을 더 집중 배치하세요.\n"
+        "배점 역설계가 이 제안서의 핵심입니다.\n\n"
+        + truncated + suffix
+        + "\n━━━━━━━━━━━━━━━━━━━━━━━\n"
+    )
+
+
 def _build_prompt(dna: ConceptDNA, sorted_eval: list, priority_keywords: list) -> str:
     """설득 구조 생성용 Claude 프롬프트.
 
@@ -249,9 +267,11 @@ def _build_prompt(dna: ConceptDNA, sorted_eval: list, priority_keywords: list) -
     # 핵심 과업 블록
     tasks_block = "\n".join(f"  - {t}" for t in dna.core_tasks[:5]) if dna.core_tasks else "  (없음)"
 
+    rfp_raw_section = _build_rfp_raw_section(dna)
+
     return f"""당신은 대한민국 정부 입찰 전문 전략 컨설턴트입니다.
 아래 정보를 바탕으로 영상콘텐츠 제안서의 핵심 설득 전략을 수립해주세요.
-
+{rfp_raw_section}
 【절대 원칙】
 - 개요나 목차가 아닌 실제 내용을 작성하라.
 - 각 body 필드는 반드시 300자 이상의 구체적 문장으로 채워라.

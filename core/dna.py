@@ -20,6 +20,7 @@ class ConceptDNA:
     budget: str = ""                  # 예산
     deadline: str = ""                # 납품기한
     rfp_text: str = ""                # 추출된 RFP 원문 (일부)
+    rfp_raw_text: str = ""            # RFP 원본 전문 (최대 30k자 — strategist/creative/ppt_narrator 주입용)
     core_tasks: list = field(default_factory=list)            # 핵심 과업 목록
     evaluation_items: list = field(default_factory=list)      # 평가항목 + 배점 (raw list)
     evaluation_criteria: str = ""                             # 평가 배점표 (프롬프트 주입용 포맷)

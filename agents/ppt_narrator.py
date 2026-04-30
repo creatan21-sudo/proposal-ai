@@ -268,6 +268,7 @@ def _case_detail_from_dna(dna, results: dict) -> dict:
             "core_tasks":          dna.core_tasks,
             "top_keywords":        dna.evaluation_keywords,
             "forbidden_notes":     dna.forbidden_notes,
+            "raw_text":            getattr(dna, "rfp_raw_text", "") or getattr(dna, "rfp_text", ""),
         },
         "research":  results.get("research", {}),
         "strategy":  results.get("strategy", {}),
@@ -320,16 +321,35 @@ def run(case_detail: dict, target_slides: int = 30) -> dict:
     rfp   = steps.get("rfp_analysis", {})
     cr    = steps.get("creative", {})
 
-    core_tasks = rfp.get("core_tasks", []) or dna.get("core_tasks", [])
-    concept    = cr.get("concept", "")        or dna.get("concept", "")
-    slogan     = cr.get("confirmed_slogan", "") or dna.get("slogan", "")
+    core_tasks   = rfp.get("core_tasks", []) or dna.get("core_tasks", [])
+    concept      = cr.get("concept", "")        or dna.get("concept", "")
+    slogan       = cr.get("confirmed_slogan", "") or dna.get("slogan", "")
+    rfp_raw_text = (rfp.get("raw_text", "")
+                    or dna.get("rfp_raw_text", "")
+                    or dna.get("rfp_text", ""))
 
     body_slides = target_slides - 3  # 표지(1) + 목차(1) + 마무리(1) 고정
+
+    def _build_rfp_raw_section() -> str:
+        if not rfp_raw_text:
+            return ""
+        truncated = rfp_raw_text[:25000]
+        suffix = "\n...(이하 생략)" if len(rfp_raw_text) > 25000 else ""
+        return (
+            "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "⚡ RFP 원본 전문 — 배점 역설계의 핵심 근거\n"
+            "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+            "아래는 RFP 원본 전문입니다.\n"
+            "평가배점표를 직접 읽고 배점이 높은 항목일수록 슬라이드를 더 많이 배정하세요.\n"
+            "배점 역설계가 이 제안서의 핵심입니다.\n\n"
+            + truncated + suffix
+            + "\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        )
 
     def _build_prompt(context: str) -> str:
         return f"""당신은 영상 제작 제안서 PT의 스토리 디렉터입니다.
 아래 제안서 데이터({content_chars:,}자)를 바탕으로 정확히 {target_slides}장의 PPT 설계안을 만드세요.
-
+{_build_rfp_raw_section()}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [제안서 전체 데이터]
 {context}
