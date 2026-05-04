@@ -385,6 +385,34 @@ def run(case_detail: dict, target_slides: int = 30) -> dict:
                     or dna.get("rfp_raw_text", "")
                     or dna.get("rfp_text", ""))
 
+    print(f"[PPT설계] RFP 원문 길이: {len(rfp_raw_text)}자")
+
+    # 원문이 없으면 rfp_analyses 테이블에서 직접 조회
+    if not rfp_raw_text:
+        _cid = (case.get("id")
+                or case.get("case_id")
+                or case.get("dna", {}).get("case_id"))
+        if _cid:
+            print(f"  [PPT설계] rfp_raw_text 없음 — DB 직접 조회 (case_id={_cid})")
+            try:
+                from database.db import get_connection as _get_conn
+                with _get_conn() as _conn:
+                    _row = _conn.execute(
+                        "SELECT raw_text FROM rfp_analyses"
+                        " WHERE case_id=? AND raw_text != ''"
+                        " ORDER BY created_at DESC LIMIT 1",
+                        (_cid,),
+                    ).fetchone()
+                if _row and _row[0]:
+                    rfp_raw_text = _row[0]
+                    print(f"  [PPT설계] DB에서 RFP 원문 {len(rfp_raw_text)}자 로드 성공")
+                else:
+                    print(f"  [PPT설계] DB에도 RFP 원문 없음 — 원문 없이 진행")
+            except Exception as _db_err:
+                print(f"  [PPT설계] DB 조회 오류: {_db_err}")
+        else:
+            print(f"  [PPT설계] case_id 없음 — DB 조회 불가 (파이프라인 실행 중)")
+
     # ── Perplexity 실시간 통계 보강 ──────────────────────────────
     _perplexity_supplement = ""
     try:
