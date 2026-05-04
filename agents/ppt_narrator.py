@@ -459,7 +459,7 @@ def run(case_detail: dict, target_slides: int = 30) -> dict:
         return f"""당신은 영상 제작 제안서 PT의 스토리 디렉터입니다.
 아래 제안서 데이터({content_chars:,}자)를 바탕으로 정확히 {target_slides}장의 PPT 설계안을 만드세요.
 반드시 {target_slides}장의 슬라이드를 설계하세요. {target_slides}장 미만이면 실패입니다.
-부족하면 배점 낮은 항목을 세분화하거나 슬라이드를 추가해서 정확히 {target_slides}장을 채우세요.
+절대 임의로 줄이지 마세요. 부족하면 배점 낮은 항목을 세분화하거나 슬라이드를 추가해서 정확히 {target_slides}장을 채우세요.
 {_build_rfp_raw_section()}{_ppx_section}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [제안서 전체 데이터]
@@ -746,6 +746,7 @@ STEP 11 ─ 기대효과 & 마무리 (2~3장)
     missing = result.get("rfp_coverage", {}).get("missing", [])
     if missing:
         print(f"  [PPT설계] 경고: 미커버 RFP 항목 {len(missing)}개 — {missing[:3]}")
+    print(f"[PPT설계] 목표: {target_slides}장 / 실제: {len(slides)}장")
     print(f"  [PPT설계] 최종 {len(slides)}/{target_slides}장 확정")
 
     return {

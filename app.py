@@ -2945,6 +2945,7 @@ def api_ppt_narrative_rerun(case_id):
                 if ae: ae.set()
 
     target_slides = max(10, min(60, int(data.get("target_slides", 30))))
+    print(f"  [PPT재실행] 목표 슬라이드: {target_slides}장")
     scope_type    = data.get("scope_type", "all")   # "all" | "from" | "specific"
     scope_value   = data.get("scope_value")          # int("from") | str("specific")
 
@@ -2993,6 +2994,7 @@ def api_ppt_narrative_rerun(case_id):
     detail["case"].setdefault("dna", {})
     detail["case"]["dna"]["step_instruction"]  = instruction
     detail["case"]["dna"]["step_prev_content"] = prev_content
+    detail["case"]["dna"]["ppt_target_slides"] = target_slides
 
     # 폴링 충돌 방지 플래그 + 재실행 상태 등록
     abort_event = threading.Event()

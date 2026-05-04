@@ -1478,6 +1478,17 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
       </label>
     </div>
 
+    <div style="margin-bottom:14px;">
+      <div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;
+                  letter-spacing:.06em;margin-bottom:8px;">목표 슬라이드 수</div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <input type="number" id="ppt-rerun-target-slides" min="10" max="60" value="30"
+               style="width:70px;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;
+                      font-size:14px;font-weight:600;text-align:center;">
+        <span style="font-size:13px;color:#6b7280;">장 (10~60)</span>
+      </div>
+    </div>
+
     <div style="font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;">
       어떻게 바꾸길 원하시나요?
       <span style="font-weight:400;color:#9ca3af;">구체적일수록 잘 반영됩니다.</span>
@@ -2372,6 +2383,11 @@ function openPptRerunModal(caseId) {
   const allRadio = document.querySelector('input[name="ppt-rerun-scope"][value="all"]');
   if (allRadio) { allRadio.checked = true; onPptScopeChange(); }
   document.getElementById('ppt-rerun-comment-input').value = '';
+  // 현재 설계안 슬라이드 수를 기본값으로 설정
+  const _curTs = document.getElementById('step13-target-slides')
+                 || document.getElementById('ppt-target-slides');
+  const _tsInput = document.getElementById('ppt-rerun-target-slides');
+  if (_tsInput) _tsInput.value = (_curTs ? (parseInt(_curTs.value) || 30) : 30);
   const btn = document.getElementById('ppt-rerun-submit-btn');
   btn.disabled = true; btn.style.opacity = '0.5'; btn.textContent = '재실행';
   document.getElementById('ppt-rerun-modal').style.display = 'flex';
@@ -2425,7 +2441,9 @@ async function submitPptRerun(force = false) {
     scope_value = document.getElementById('ppt-rerun-specific-pages').value;
   }
 
-  const targetEl    = document.getElementById('step13-target-slides') || document.getElementById('ppt-target-slides');
+  const targetEl    = document.getElementById('ppt-rerun-target-slides')
+                      || document.getElementById('step13-target-slides')
+                      || document.getElementById('ppt-target-slides');
   const targetSlides = targetEl ? (parseInt(targetEl.value) || 30) : 30;
 
   try {
