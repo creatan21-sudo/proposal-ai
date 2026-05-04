@@ -1,6 +1,7 @@
 # agents/ppt_narrator.py
 # PPT 설계 에이전트: 전체 제안서 내용을 N장 슬라이드 설계안으로 압축
 
+import math
 import anthropic
 import requests as _requests
 
@@ -24,6 +25,79 @@ _DATA_RELIABILITY_BLOCK = """
 위 원칙 위반 시 해당 내용 삭제 후 재작성하세요.
 ========================================
 """
+
+_CHUNK_SIZE = 15  # 청크당 최대 슬라이드 수 (타임아웃 방지)
+
+
+def _build_toc_prompt(context: str, target_slides: int, concept: str, slogan: str,
+                      rfp_raw_section: str = "", ppx_supplement: str = "") -> str:
+    """전체 목차(번호·섹션·헤드카피·slide_type) 생성 프롬프트."""
+    body_slides = target_slides - 3
+    ppx_block = (
+        f"\n🌐 Perplexity 실시간 통계 (참고):\n{ppx_supplement[:800]}\n"
+        if ppx_supplement else ""
+    )
+    rfp_block = rfp_raw_section[:2000] if rfp_raw_section else ""
+    return f"""당신은 PPT 스토리 디렉터입니다.
+아래 제안서 데이터를 바탕으로 정확히 {target_slides}장의 슬라이드 목차(뼈대)를 만드세요.
+{rfp_block}{ppx_block}
+[제안서 핵심 데이터]
+{context[:4000]}
+
+컨셉: {concept or "(제안서에서 추출)"}
+슬로건: {slogan or "(제안서에서 추출)"}
+
+【목차 설계 원칙】
+- 표지(1) + 목차(1) + 본문({body_slides}장) + 마무리 message(1) = 총 {target_slides}장
+- 배점 높은 RFP 항목 → 더 많은 슬라이드 배분
+- 마지막 슬라이드: head_copy = 슬로건 전문, slide_type = message
+- 각 head_copy는 15자 이내 주장 문장
+
+반드시 {target_slides}개 항목을 아래 JSON으로만 출력 (설명 없이):
+{{"toc": [
+  {{"number": 1, "section": "표지", "head_copy": "슬로건 전문", "slide_type": "cover"}},
+  {{"number": 2, "section": "목차", "head_copy": "오늘 이 자리에서 말씀드릴 것들", "slide_type": "toc"}},
+  {{"number": 3, "section": "섹션명", "head_copy": "주장 문장", "slide_type": "content"}},
+  ...
+  {{"number": {target_slides}, "section": "마무리", "head_copy": "슬로건 전문", "slide_type": "message"}}
+]}}"""
+
+
+def _build_chunk_fill_prompt(chunk_toc: list, all_toc_text: str, context: str,
+                              chunk_idx: int, total_chunks: int) -> str:
+    """목차의 특정 청크 슬라이드 내용 채우기 프롬프트."""
+    import json as _j
+    start_num = chunk_toc[0]["number"]
+    end_num   = chunk_toc[-1]["number"]
+    n         = len(chunk_toc)
+    toc_snip  = _j.dumps(chunk_toc, ensure_ascii=False)
+    return f"""PPT 슬라이드 내용을 작성합니다. [{chunk_idx + 1}/{total_chunks} 청크, {n}장]
+
+[전체 목차 개요]
+{all_toc_text}
+
+[제안서 핵심 데이터]
+{context[:2500]}
+
+{start_num}번~{end_num}번 슬라이드({n}장)의 세부 내용을 아래 목차 뼈대를 기반으로 작성하세요:
+{toc_snip}
+
+{_DATA_RELIABILITY_BLOCK}
+
+【작성 원칙】
+1. key_message: 2~4줄 핵심 내용 (수치 포함, 줄바꿈은 \n)
+2. evidence: 구체적 수치·근거 (출처: 기관명, 연도)
+3. rfp_tags: 해당 RFP 평가항목 1~3개
+4. head_copy·section·slide_type은 목차에서 그대로 사용
+
+아래 JSON만 출력 (설명 없이):
+{{"slides": [
+  {{"number": {start_num}, "section": "...", "head_copy": "...",
+    "key_message": "...", "evidence": "...",
+    "rfp_tags": [], "slide_type": "..."}},
+  ...
+]}}"""
+
 
 _PERPLEXITY_URL = "https://api.perplexity.ai/chat/completions"
 
@@ -341,13 +415,13 @@ def _case_detail_from_dna(dna, results: dict) -> dict:
     return {"case": case, "steps": steps}
 
 
-def run_from_dna(dna, results: dict, target_slides: int = 30) -> dict:
+def run_from_dna(dna, results: dict, target_slides: int = 30, push_event=None) -> dict:
     """파이프라인 실행 중 dna + results에서 직접 설계안 생성."""
     case_detail = _case_detail_from_dna(dna, results)
-    return run(case_detail, target_slides)
+    return run(case_detail, target_slides, push_event=push_event)
 
 
-def run(case_detail: dict, target_slides: int = 30) -> dict:
+def run(case_detail: dict, target_slides: int = 30, push_event=None) -> dict:
     """PPT 슬라이드 설계안 생성.
 
     Returns:
@@ -379,6 +453,7 @@ def run(case_detail: dict, target_slides: int = 30) -> dict:
     rfp   = steps.get("rfp_analysis", {})
     cr    = steps.get("creative", {})
 
+    case_id      = (case.get("id") or case.get("case_id") or dna.get("case_id"))
     core_tasks   = rfp.get("core_tasks", []) or dna.get("core_tasks", [])
     concept      = cr.get("concept", "")        or dna.get("concept", "")
     slogan       = cr.get("confirmed_slogan", "") or dna.get("slogan", "")
@@ -668,6 +743,107 @@ STEP 11 ─ 기대효과 & 마무리 (2~3장)
 □ number·compare 타입 슬라이드의 evidence에 출처가 명시되어 있는가?
 □ 출처 없는 수치를 확정 사실처럼 쓴 슬라이드가 없는가?
 □ 리서치 데이터의 수치는 "(출처: 리서치 결과)" 또는 원본 출처로 표기했는가?"""
+
+
+    # ── 청크 분할 생성 모드 (CHUNK_SIZE 초과 시 타임아웃 방지) ──────────
+    if target_slides > _CHUNK_SIZE:
+        _context_c  = _build_context(case_detail, 3_000, 80_000)
+        _rfp_raw_s  = _build_rfp_raw_section()  # closure 호출
+        _n_chunks   = math.ceil(target_slides / _CHUNK_SIZE)
+        print(f"  [PPT설계] 청크 분할 생성: {target_slides}장 → {_n_chunks}개 청크 ({_CHUNK_SIZE}장/청크)")
+
+        # ① 전체 목차 생성
+        if push_event:
+            push_event({"type": "log", "message": "✦ PPT 전체 목차 생성 중..."})
+        try:
+            _toc_p  = _build_toc_prompt(_context_c, target_slides, concept, slogan,
+                                         _rfp_raw_s, _perplexity_supplement)
+            _toc    = call_json(_toc_p, max_tokens=4000).get("toc", [])
+            print(f"  [PPT설계] 목차 {len(_toc)}장 생성")
+        except Exception as _te:
+            print(f"  [PPT설계] 목차 생성 오류: {_te} — 단일 호출로 폴백")
+            _toc = []
+
+        # 목차 수 보완
+        if len(_toc) < target_slides:
+            for _n in range(len(_toc) + 1, target_slides + 1):
+                _toc.append({"number": _n, "section": "본문",
+                              "head_copy": f"슬라이드 {_n}", "slide_type": "content"})
+        _toc = _toc[:target_slides]
+        for _idx, _t in enumerate(_toc):
+            _t["number"] = _idx + 1  # 번호 재정렬
+
+        _all_toc_text = "\n".join(
+            f"  {t['number']}번: [{t.get('section','')}] {t.get('head_copy','')}"
+            for t in _toc
+        )
+
+        # ② 청크별 내용 채우기
+        _chunks       = [_toc[i:i+_CHUNK_SIZE] for i in range(0, len(_toc), _CHUNK_SIZE)]
+        _all_slides   = []
+        _rfp_cov      = {"covered": [], "missing": []}
+
+        for _ci, _chunk in enumerate(_chunks):
+            _c_start = _chunk[0]["number"]
+            _c_end   = _chunk[-1]["number"]
+            print(f"  [PPT설계] 청크 {_ci+1}/{_n_chunks}: {_c_start}~{_c_end}번 생성 중...")
+            if push_event:
+                push_event({"type": "log",
+                            "message": f"✦ PPT 청크 {_ci+1}/{_n_chunks} 생성 중 ({_c_start}~{_c_end}번)..."})
+            try:
+                _fp = _build_chunk_fill_prompt(_chunk, _all_toc_text, _context_c, _ci, _n_chunks)
+                _cr = call_json(_fp, max_tokens=6000)
+                _chunk_slides = _cr.get("slides", [])
+            except Exception as _ce:
+                print(f"  [PPT설계] 청크 {_ci+1} 오류: {_ce} — TOC 항목으로 대체")
+                _chunk_slides = []
+
+            # 빈 슬라이드 보완 — TOC 항목으로 채움
+            if len(_chunk_slides) < len(_chunk):
+                _existing_nums = {s.get("number") for s in _chunk_slides}
+                for _t in _chunk:
+                    if _t["number"] not in _existing_nums:
+                        _chunk_slides.append({
+                            "number": _t["number"], "section": _t.get("section",""),
+                            "head_copy": _t.get("head_copy",""), "key_message": "",
+                            "evidence": "", "rfp_tags": [],
+                            "slide_type": _t.get("slide_type","content"),
+                        })
+            # 번호 강제 보정
+            _chunk_slides.sort(key=lambda s: s.get("number", 0))
+            for _ji, _s in enumerate(_chunk_slides[:len(_chunk)]):
+                _s["number"] = _chunk[_ji]["number"]
+            _all_slides.extend(_chunk_slides[:len(_chunk)])
+
+            print(f"  [PPT설계] 청크 {_ci+1}/{_n_chunks} 완료 → 누적 {len(_all_slides)}장")
+
+            # 청크 완료 후 즉시 중간 DB 저장
+            if case_id:
+                try:
+                    from database.db import save_ppt_narrative
+                    save_ppt_narrative(
+                        case_id=case_id, slides=list(_all_slides),
+                        rfp_coverage=_rfp_cov,
+                        target_slides=target_slides,
+                        content_chars=content_chars,
+                    )
+                    print(f"  [PPT설계] 중간 저장 완료 ({len(_all_slides)}장, 청크 {_ci+1}/{_n_chunks})")
+                except Exception as _se:
+                    print(f"  [PPT설계] 중간 저장 오류: {_se}")
+
+            if push_event:
+                push_event({"type": "log",
+                            "message": f"[PPT설계] {_ci+1}/{_n_chunks} 완료 ({len(_all_slides)}장)"})
+
+        _all_slides.sort(key=lambda s: s.get("number", 0))
+        print(f"[PPT설계] 목표: {target_slides}장 / 실제: {len(_all_slides)}장")
+        print(f"  [PPT설계] 최종 {len(_all_slides)}/{target_slides}장 확정")
+        return {
+            "slides":        _all_slides,
+            "total_slides":  len(_all_slides),
+            "content_chars": content_chars,
+            "rfp_coverage":  _rfp_cov,
+        }
 
     # ── 3단계 재시도: 3000자 → 1500자 → 필수만 ──────────────────────────
     attempts = [

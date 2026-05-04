@@ -219,7 +219,7 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
             target_slides = getattr(dna, "ppt_target_slides", 30) or 30
             _ka_stop_ppt = _keepalive_start(push_event, step_key)
             try:
-                result = ppt_narrator.run_from_dna(dna, results, target_slides)
+                result = ppt_narrator.run_from_dna(dna, results, target_slides, push_event=push_event)
                 elapsed = 0.0
                 pipe_exc = None
             except Exception as _ppt_e:
