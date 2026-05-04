@@ -370,6 +370,7 @@ def run(case_detail: dict, target_slides: int = 30) -> dict:
         }
     """
     target_slides = max(10, min(60, target_slides))
+    print(f"[PPT설계] 목표 슬라이드 수: {target_slides}")
     content_chars = _measure_content(case_detail)
 
     case  = case_detail.get("case", {})
@@ -457,6 +458,8 @@ def run(case_detail: dict, target_slides: int = 30) -> dict:
             )
         return f"""당신은 영상 제작 제안서 PT의 스토리 디렉터입니다.
 아래 제안서 데이터({content_chars:,}자)를 바탕으로 정확히 {target_slides}장의 PPT 설계안을 만드세요.
+반드시 {target_slides}장의 슬라이드를 설계하세요. {target_slides}장 미만이면 실패입니다.
+부족하면 배점 낮은 항목을 세분화하거나 슬라이드를 추가해서 정확히 {target_slides}장을 채우세요.
 {_build_rfp_raw_section()}{_ppx_section}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 [제안서 전체 데이터]
@@ -705,9 +708,45 @@ STEP 11 ─ 기대효과 & 마무리 (2~3장)
 
     slides = result.get("slides", [])
     print(f"  [PPT설계] {len(slides)}/{target_slides}장 설계안 생성 완료")
+
+    # ── 슬라이드 수 부족 시 자동 재시도 (최대 2회) ──────────────
+    for _retry in range(2):
+        if len(slides) >= target_slides:
+            break
+        n_existing = len(slides)
+        shortage   = target_slides - n_existing
+        print(f"  [PPT설계] 슬라이드 부족 ({n_existing}/{target_slides}) — 추가 생성 재시도 {_retry + 1}/2")
+        _tail_ctx = "\n".join(
+            f"  {s.get('number', n_existing - len(slides) + idx + 1)}번: "
+            f"[{s.get('section', '')}] {s.get('head_copy', '')}"
+            for idx, s in enumerate(slides[-5:])
+        )
+        _retry_prompt = (
+            f"앞서 {n_existing}장만 생성됨. "
+            f"{n_existing + 1}번부터 {target_slides}번까지 나머지 {shortage}장을 추가로 생성해줘.\n\n"
+            f"기존 마지막 슬라이드 (참고):\n{_tail_ctx}\n\n"
+            f"{n_existing + 1}번부터 {target_slides}번까지 {shortage}장을 아래 JSON 형식으로만 출력:\n"
+            '{{"slides": ['
+            f'{{"number": {n_existing + 1}, "section": "...", "head_copy": "...", '
+            '"key_message": "...", "evidence": "...", "rfp_tags": [], "slide_type": "content"}},'
+            ' ...]}'
+        )
+        try:
+            _extra = call_json(_retry_prompt, max_tokens=8000)
+            _extra_slides = _extra.get("slides", [])
+            if _extra_slides:
+                for _j, _s in enumerate(_extra_slides):
+                    _s["number"] = n_existing + _j + 1
+                slides = slides + _extra_slides
+                print(f"  [PPT설계] 추가 {len(_extra_slides)}장 생성 — 현재 {len(slides)}장")
+        except Exception as _re:
+            print(f"  [PPT설계] 추가 생성 오류: {_re}")
+            break
+
     missing = result.get("rfp_coverage", {}).get("missing", [])
     if missing:
         print(f"  [PPT설계] 경고: 미커버 RFP 항목 {len(missing)}개 — {missing[:3]}")
+    print(f"  [PPT설계] 최종 {len(slides)}/{target_slides}장 확정")
 
     return {
         "slides":        slides,
