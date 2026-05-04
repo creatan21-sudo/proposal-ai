@@ -317,6 +317,10 @@ def init_db() -> None:
             "ALTER TABLE research_cache ADD COLUMN project_name TEXT NOT NULL DEFAULT ''",
             "ALTER TABLE storyboard_results ADD COLUMN client_name TEXT DEFAULT ''",
             "ALTER TABLE storyboard_results ADD COLUMN project_name TEXT DEFAULT ''",
+            # ppt_narratives 중복 row 정리 + unique index (UNIQUE 제약 없는 구버전 DB 대응)
+            """DELETE FROM ppt_narratives WHERE id NOT IN (
+                SELECT MAX(id) FROM ppt_narratives GROUP BY case_id)""",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_ppt_narratives_case_id ON ppt_narratives(case_id)",
         ]:
             try:
                 conn.execute(migration)
@@ -986,7 +990,8 @@ def get_case_detail(case_id: int) -> "dict | None":
         if case_id_val:
             try:
                 ppt_row = conn.execute(
-                    "SELECT target_slides FROM ppt_narratives WHERE case_id=?",
+                    "SELECT target_slides FROM ppt_narratives"
+                    " WHERE case_id=? ORDER BY updated_at DESC LIMIT 1",
                     (case_id_val,),
                 ).fetchone()
                 if ppt_row:
@@ -1904,7 +1909,9 @@ def get_ppt_narrative(case_id: int) -> "dict | None":
     import json
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT * FROM ppt_narratives WHERE case_id=?", (case_id,)
+            "SELECT * FROM ppt_narratives WHERE case_id=?"
+            " ORDER BY updated_at DESC LIMIT 1",
+            (case_id,),
         ).fetchone()
         if not row:
             return None
@@ -1917,6 +1924,7 @@ def get_ppt_narrative(case_id: int) -> "dict | None":
             d["rfp_coverage"] = json.loads(d.pop("rfp_coverage_json", "{}") or "{}")
         except Exception:
             d["rfp_coverage"] = {}
+        print(f"[PPT설계 조회] case={case_id} 최신 슬라이드 수: {len(d['slides'])}장")
         return d
 
 
