@@ -193,8 +193,8 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
                     print(f"  [대본] {ep_num}편 부분 저장 ({len(_ep_scenes)}씬, 타임아웃)")
             except Exception as e:
                 print(f"  [경고] 대본 DB 저장 실패: {e}")
-        elif script.get("_timeout") and not is_short:
-            # 씬 0개 + 타임아웃 → max_tokens 절반으로 재시도
+        elif script.get("_timeout"):
+            # 씬 0개 + 타임아웃 → max_tokens 절반으로 재시도 (숏폼/롱폼 공통)
             print(f"  [대본] {ep_num}편 타임아웃+씬0 — max_tokens=800으로 재시도")
             try:
                 _retry = _generate_one(idx, ep_plan, _scene_max_tokens=800)
@@ -711,8 +711,8 @@ def _generate_shortform_outline(
     raw.setdefault("series_hook", {})
 
     # retry 루프에서 scenes를 못 채운 경우 fallback 추출
+    versions = raw.get("versions") or {}  # UnboundLocalError 방지: 항상 초기화
     if not scenes:
-        versions = raw.get("versions") or {}
         for ver_key in ("60sec", "30sec", "15sec"):
             ver_data = versions.get(ver_key)
             if isinstance(ver_data, dict):

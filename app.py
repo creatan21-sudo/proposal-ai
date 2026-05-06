@@ -198,7 +198,7 @@ def _dispatch_jobs():
             sess["status"]     = "running"
             sess["started_at"] = time.time()
 
-        threading.Thread(target=_run_job, args=(sid,), daemon=True).start()
+        threading.Thread(target=_run_job, args=(sid,), daemon=False).start()
 
 
 def _run_job(sid: str):
@@ -2272,7 +2272,7 @@ def ppt_start():
             except Exception:
                 pass
 
-    threading.Thread(target=_worker, daemon=True).start()
+    threading.Thread(target=_worker, daemon=False).start()
     return jsonify({"ok": True, "job_id": job_id, "use_gamma": use_gamma})
 
 
@@ -2741,7 +2741,7 @@ def ppt_gamma_start():
                     job["status"] = "error"
             _ppt_db_error(job_id, str(e))
 
-    threading.Thread(target=_worker, daemon=True).start()
+    threading.Thread(target=_worker, daemon=False).start()
     return jsonify({"ok": True, "job_id": job_id})
 
 
@@ -2890,7 +2890,7 @@ def api_ppt_narrative_generate(case_id):
             _tb.print_exc()
             print(f"  [PPT설계] 생성 오류: {e}")
 
-    t = threading.Thread(target=_generate, daemon=True)
+    t = threading.Thread(target=_generate, daemon=False)
     t.start()
     return jsonify({"ok": True, "message": "설계 시작됨", "target_slides": target_slides})
 
@@ -3062,7 +3062,7 @@ def api_ppt_narrative_rerun(case_id):
                 if st and st.get("abort_event") is abort_event:
                     _case_rerun_state.pop(case_id, None)
 
-    threading.Thread(target=_generate, daemon=True).start()
+    threading.Thread(target=_generate, daemon=False).start()
     return jsonify({"ok": True, "message": "PPT 설계 재실행 시작됨"})
 
 
@@ -3203,7 +3203,7 @@ def api_storyboard_regenerate(case_id):
         result = sb_run(dna, style=style)
         print(f"  [스토리보드 재생성] case={case_id} style={style} 완료 {result.get('total_scenes')}컷")
 
-    t = threading.Thread(target=_regen, daemon=True)
+    t = threading.Thread(target=_regen, daemon=False)
     t.start()
     return jsonify({"ok": True, "message": "재생성 시작됨"})
 
