@@ -102,7 +102,7 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
     if completed:
         print(f"  [재시도] 이미 완료된 편: {sorted(completed.keys())} → 스킵")
 
-    def _generate_one(idx: int, ep_plan: dict) -> dict:
+    def _generate_one(idx: int, ep_plan: dict, _scene_max_tokens: int = 2000) -> dict:
         ep_num = idx + 1
         if is_short:
             return _generate_shortform_outline(dna, ep_plan, ep_num, ep_plans, is_series)
@@ -110,7 +110,8 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
         if script_mode == "summary":
             return _generate_longform_summary(dna, ep_plan, ep_num)
         is_sample = (ep_num == 1)
-        return _generate_longform_outline(dna, ep_plan, ep_num, ep_plans, is_series, is_sample)
+        return _generate_longform_outline(dna, ep_plan, ep_num, ep_plans, is_series, is_sample,
+                                           _scene_max_tokens=_scene_max_tokens)
 
     def _fallback_script(idx: int, ep_plan: dict) -> dict:
         ep_num = idx + 1
@@ -151,14 +152,23 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
             except Exception:
                 pass
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
-            future = pool.submit(_generate_one, idx, ep_plan)
+        if is_short:
+            # 숏폼: 기존 타임아웃 래퍼 유지
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+                future = pool.submit(_generate_one, idx, ep_plan)
+                try:
+                    script = future.result(timeout=_EP_TIMEOUT)
+                except concurrent.futures.TimeoutError:
+                    print(f"  [경고] {ep_num}편 대본 생성 타임아웃 ({_EP_TIMEOUT}초) — 빈 개요로 대체")
+                    future.cancel()
+                    script = _fallback_script(idx, ep_plan)
+                except Exception as e:
+                    print(f"  [경고] {ep_num}편 대본 생성 오류: {e} — 빈 개요로 대체")
+                    script = _fallback_script(idx, ep_plan)
+        else:
+            # 롱폼: 외부 타임아웃 없이 직접 호출 (씬별 90s 타임아웃은 내부 처리)
             try:
-                script = future.result(timeout=_EP_TIMEOUT)
-            except concurrent.futures.TimeoutError:
-                print(f"  [경고] {ep_num}편 대본 생성 타임아웃 ({_EP_TIMEOUT}초) — 빈 개요로 대체")
-                future.cancel()
-                script = _fallback_script(idx, ep_plan)
+                script = _generate_one(idx, ep_plan)
             except Exception as e:
                 print(f"  [경고] {ep_num}편 대본 생성 오류: {e} — 빈 개요로 대체")
                 script = _fallback_script(idx, ep_plan)
@@ -172,14 +182,32 @@ def run(dna: ConceptDNA, progress_fn=None, max_episodes: int = 0) -> dict:
             print(f"  [대본 raw키] {list(script.keys())}")
             print(f"  [대본 raw내용] {str(script)[:300]}")
 
-        # 편별 DB 저장 (성공 시에만)
-        if not script.get("_timeout"):
+        # 편별 DB 저장 (부분 완료라도 씬이 있으면 저장)
+        _ep_scenes = script.get("scenes", [])
+        if _ep_scenes:
             try:
                 save_script(dna.client_name, dna.project_name, script,
                             case_id=case_id)
-                completed[ep_num] = script  # 로컬 캐시 갱신
+                completed[ep_num] = script
+                if script.get("_timeout"):
+                    print(f"  [대본] {ep_num}편 부분 저장 ({len(_ep_scenes)}씬, 타임아웃)")
             except Exception as e:
                 print(f"  [경고] 대본 DB 저장 실패: {e}")
+        elif script.get("_timeout") and not is_short:
+            # 씬 0개 + 타임아웃 → max_tokens 절반으로 재시도
+            print(f"  [대본] {ep_num}편 타임아웃+씬0 — max_tokens=800으로 재시도")
+            try:
+                _retry = _generate_one(idx, ep_plan, _scene_max_tokens=800)
+                _retry_scenes = _retry.get("scenes", [])
+                if _retry_scenes:
+                    save_script(dna.client_name, dna.project_name, _retry, case_id=case_id)
+                    completed[ep_num] = _retry
+                    scripts[-1] = _retry
+                    print(f"  [대본] {ep_num}편 재시도 성공: {len(_retry_scenes)}씬")
+                else:
+                    print(f"  [대본] {ep_num}편 재시도도 씬 0개")
+            except Exception as _re:
+                print(f"  [대본] {ep_num}편 재시도 실패: {_re}")
 
     # 시리즈 연결고리 후처리 (2편 이상)
     series_hooks = []
@@ -285,6 +313,7 @@ def _generate_longform_outline(
     all_plans: list,
     is_series: bool,
     is_sample: bool,
+    _scene_max_tokens: int = 2000,
 ) -> dict:
     """제안서 개요용 대본 생성.
 
@@ -310,22 +339,60 @@ def _generate_longform_outline(
     if meta.get("_parse_failed"):
         meta = {}
 
-    # 2단계: 씬별 개별 텍스트 API 호출 (max_tokens=2000), 씬당 최대 2회 재시도
+    # 2단계: 씬별 개별 텍스트 API 호출, 씬당 타임아웃+최대 2회 재시도
+    _SCENE_CALL_TIMEOUT = 90  # 씬당 API 호출 타임아웃 (초)
     scenes = []
     for scene_num in range(1, scene_count + 1):
         scene_obj = None
+        scene_text = ""
+        _cur_max_tokens = _scene_max_tokens
+        _scene_timed_out = False
         for attempt in range(3):
             scene_prompt = wrap_prompt_with_instruction(
                 _build_scene_text_prompt_v2(dna, ep_plan, ep_num, scene_num, scene_count, duration_s, word_count),
                 dna,
             )
-            scene_text = claude_client.call(scene_prompt, max_tokens=2000)
-            scene_obj  = _parse_scene_text_v2(scene_text, scene_num, duration_s, scene_count)
+            try:
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _sp:
+                    _sf = _sp.submit(
+                        lambda p=scene_prompt, t=_cur_max_tokens: claude_client.call(p, max_tokens=t))
+                    scene_text = _sf.result(timeout=_SCENE_CALL_TIMEOUT)
+            except concurrent.futures.TimeoutError:
+                if attempt < 2:
+                    _cur_max_tokens = max(600, _cur_max_tokens // 2)
+                    print(f"  [씬] {ep_num}편 S#{scene_num} 타임아웃 → max_tokens={_cur_max_tokens}, 재시도")
+                    continue
+                print(f"  [씬] {ep_num}편 S#{scene_num} 최종 타임아웃 — {len(scenes)}씬 저장 후 종료")
+                _scene_timed_out = True
+                break
+            scene_obj = _parse_scene_text_v2(scene_text, scene_num, duration_s, scene_count)
             if scene_obj.get("narration") or scene_obj.get("visual"):
                 break
             if attempt < 2:
+                _cur_max_tokens = max(600, _cur_max_tokens // 2)
                 print(f"  [씬] {ep_num}편 S#{scene_num} 내용 부족, 재시도 {attempt+1}/2")
-        scenes.append(scene_obj)
+
+        if _scene_timed_out:
+            _partial = {
+                "episode":             ep_num,
+                "title":               meta.get("title", title),
+                "format":              "longform",
+                "duration":            dna.duration,
+                "opening_hook":        {"hook_line": meta.get("opening_hook", "")},
+                "scenes":              scenes,
+                "interview_questions": meta.get("interview_questions", []),
+                "closing_cta":         {"cta_direction": meta.get("closing_cta", "")},
+                "series_hook": {
+                    "cliffhanger_line": meta.get("cliffhanger_line") if is_series else None,
+                    "callback_line":    None,
+                },
+                "_timeout": True,
+            }
+            print(f"  [확인] {ep_num}편 부분 대본: {len(scenes)}씬 (타임아웃)")
+            return _partial
+
+        if scene_obj is not None:
+            scenes.append(scene_obj)
         print(f"  [씬] {ep_num}편 S#{scene_num}/{scene_count} 완료 ({len(scene_text)}자)")
 
     result = {
