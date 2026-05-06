@@ -535,6 +535,15 @@ def run(dna: ConceptDNA, push_event, wait_confirm,
         results[step_key] = result
         step_executed[step_key] = step_executed.get(step_key, 0) + 1
 
+        # pipeline_run_status: worker 재시작 후 이어서 실행용 체크포인트
+        _case_id_chk = getattr(dna, 'case_id', 0) or 0
+        if _case_id_chk:
+            try:
+                from database.db import save_pipeline_step
+                save_pipeline_step(_case_id_chk, step_key)
+            except Exception:
+                pass
+
         _push_summary(push_event, step_key, step_name, elapsed,
                       _build_summary(step_key, dna, result))
 

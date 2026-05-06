@@ -16,6 +16,7 @@
 #
 # 출력: 10개 항목, 항목당 최소 500자 (max_tokens=30000)
 
+import os
 import json
 import concurrent.futures as _cf
 from pathlib import Path
@@ -25,6 +26,8 @@ from serpapi import GoogleSearch
 from tavily import TavilyClient
 
 from config import SERP_API_KEY, TAVILY_API_KEY, PERPLEXITY_API_KEY
+
+print(f"[Perplexity] API_KEY: {'SET' if os.environ.get('PERPLEXITY_API_KEY') else 'NOT SET'}")
 from core import claude_client
 from core.dna import ConceptDNA, update_dna, dna_to_context_string
 from database.db import (find_similar_analyses, find_past_research, save_research,
@@ -133,11 +136,12 @@ def run(dna: ConceptDNA) -> dict:
         return r
 
     def _run_perplexity():
-        if not PERPLEXITY_API_KEY:
+        _key = os.environ.get('PERPLEXITY_API_KEY') or PERPLEXITY_API_KEY
+        if not _key:
             print("  [경고] PERPLEXITY_API_KEY 없음 — Perplexity 검색 생략")
             return []
         print("  Perplexity 실시간 검색 중...")
-        r = _perplexity_search(dna.client_name, dna.project_name, dna.agency_type)
+        r = _perplexity_search(dna.client_name, dna.project_name, dna.agency_type, api_key=_key)
         print(f"  Perplexity 완료: {len(r)}건 쿼리")
         return r
 
@@ -311,7 +315,7 @@ def _tavily_search(tavily: TavilyClient, agency_type: str) -> list[dict]:
 _PERPLEXITY_URL = "https://api.perplexity.ai/chat/completions"
 
 
-def _perplexity_search(client_name: str, project_name: str, agency_type: str) -> list[dict]:
+def _perplexity_search(client_name: str, project_name: str, agency_type: str, api_key: str = "") -> list[dict]:
     """Perplexity sonar로 기관 현황·이슈·통계 실시간 검색.
 
     Returns:
@@ -324,12 +328,12 @@ def _perplexity_search(client_name: str, project_name: str, agency_type: str) ->
     ]
 
     headers = {
-        "Authorization": f"Bearer {PERPLEXITY_API_KEY}",
+        "Authorization": f"Bearer {api_key or PERPLEXITY_API_KEY}",
         "Content-Type": "application/json",
     }
 
     def _fetch_one(query: str) -> dict:
-        print(f"  [Perplexity] 검색 중: {query[:60]}...")
+        print(f"[Perplexity] 검색 중: {query[:50]}")
         try:
             payload = {
                 "model": "sonar-pro",
@@ -346,7 +350,7 @@ def _perplexity_search(client_name: str, project_name: str, agency_type: str) ->
             content   = data.get("choices", [{}])[0].get("message", {}).get("content", "")
             citations = data.get("citations", [])
             n = len(citations)
-            print(f"  [Perplexity] {n}건 출처 포함 결과 수신")
+            print(f"[Perplexity] 결과: {n}건")
             return {"query": query, "answer": content, "citations": citations}
         except Exception as e:
             print(f"  [Perplexity] 검색 실패: {e}")

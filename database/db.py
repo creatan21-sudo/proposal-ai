@@ -298,6 +298,13 @@ def init_db() -> None:
                 matched_keyword TEXT,
                 created_at TEXT DEFAULT (datetime('now','localtime'))
             );
+
+            CREATE TABLE IF NOT EXISTS pipeline_run_status (
+                case_id      INTEGER NOT NULL,
+                step_key     TEXT    NOT NULL,
+                completed_at TEXT    NOT NULL,
+                PRIMARY KEY (case_id, step_key)
+            );
         """)
         # ── 마이그레이션: 기존 DB에 누락된 컬럼 추가 ──
         for migration in [
@@ -2015,3 +2022,41 @@ def list_nara_bids(keyword: str = "", limit: int = 200) -> list:
 def delete_nara_bid(bid_id: int):
     with get_connection() as conn:
         conn.execute("DELETE FROM nara_bids WHERE id=?", (bid_id,))
+
+
+def save_pipeline_step(case_id: int, step_key: str) -> None:
+    """파이프라인 스텝 완료 상태 저장 (worker 재시작 후 이어서 실행 지원)."""
+    if not case_id:
+        return
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO pipeline_run_status (case_id, step_key, completed_at)
+               VALUES (?, ?, ?)""",
+            (case_id, step_key, datetime.now().isoformat()),
+        )
+
+
+def get_pipeline_last_step(case_id: int) -> str:
+    """마지막으로 완료된 파이프라인 스텝 키 반환. 없으면 빈 문자열."""
+    if not case_id:
+        return ""
+    with get_connection() as conn:
+        row = conn.execute(
+            """SELECT step_key FROM pipeline_run_status
+               WHERE case_id=? ORDER BY completed_at DESC LIMIT 1""",
+            (case_id,),
+        ).fetchone()
+    return row["step_key"] if row else ""
+
+
+def get_pipeline_completed_steps(case_id: int) -> list:
+    """완료된 모든 파이프라인 스텝 키 목록 반환."""
+    if not case_id:
+        return []
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT step_key FROM pipeline_run_status WHERE case_id=? ORDER BY completed_at",
+            (case_id,),
+        ).fetchall()
+    return [r["step_key"] for r in rows]
+

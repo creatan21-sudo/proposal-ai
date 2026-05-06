@@ -95,7 +95,7 @@ def start_scheduler(app):
                     _run_scan()
             except Exception as e:
                 print(f"[nara] 스캔 오류: {e}")
-            time.sleep(3600)
+            time.sleep(86400)
     threading.Thread(target=_loop, daemon=True).start()
 
 def _run_scan():

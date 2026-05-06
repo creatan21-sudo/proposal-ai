@@ -127,7 +127,7 @@ _queue_notify = threading.Event()
 _worker_started = False
 
 # ── 동시 실행 제어
-_MAX_CONCURRENT = 5           # 동시 실행 최대 작업 수 (5명 동시 사용)
+_MAX_CONCURRENT = 2           # 동시 실행 최대 작업 수 (최대 2개)
 _active_sids: set = set()     # 현재 실행 중인 sid 집합
 _active_lock = threading.Lock()
 
@@ -776,6 +776,13 @@ def start():
     if existing_sid:
         flash("이미 진행 중인 작업이 있습니다. 완료 후 새 제안서를 시작하세요.", "warning")
         return redirect(url_for("run_page", sid=existing_sid))
+
+    # ── 시스템 전체 동시 실행 한도 초과 시 즉시 거부
+    with _active_lock:
+        _system_full = len(_active_sids) >= _MAX_CONCURRENT
+    if _system_full:
+        flash("현재 다른 작업 진행 중입니다. 잠시 후 시도해주세요.", "warning")
+        return redirect(url_for("index"))
 
     sid = str(uuid.uuid4())
     with _sessions_lock:
