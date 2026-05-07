@@ -134,7 +134,7 @@ _active_lock = threading.Lock()
 # ── 작업 타임아웃 / 세션 보존
 _JOB_TIMEOUT_SEC      = 1800  # 30분 이상 running이면 장기실행 로그 (강제 종료 안 함)
 _SESSION_RETENTION_SEC = 1800 # 30분 — 완료/중지/오류 세션 메모리 보존 기간
-_STALE_WAITING_SEC     = 1800 # 30분 이상 waiting_confirm 상태면 사용자 이탈로 간주
+_STALE_WAITING_SEC     = 3600 # 60분 이상 waiting_confirm 무응답이면 사용자 이탈로 간주
 
 # ── PPT 생성 작업
 _ppt_jobs: dict = {}
@@ -268,16 +268,25 @@ def _timeout_monitor():
                         _sessions.pop(sid, None)
                     print(f"  [정리] {sid} 완료 세션 해제 (status={status})")
 
-            # ③ waiting_confirm 30분 초과 → 사용자 이탈로 간주, abort 신호
+            # ③ waiting_confirm 60분 초과 → 사용자 이탈로 간주, abort 신호
             elif status == "waiting_confirm":
-                started = sess.get("started_at") or sess.get("created_at_ts", now)
-                if (now - started) > _STALE_WAITING_SEC:
-                    print(f"  [정리] {sid} 장시간 응답 없음 → abort")
-                    with _sessions_lock:
-                        s = _sessions.get(sid)
-                        if s:
-                            s["user_input"] = "__abort__"
-                            s["confirm_event"].set()
+                # platform / marketing 완료 후 대기: abort 제외 (장시간 생성 스텝)
+                _last_step = sess.get("last_completed_step", "")
+                if _last_step in ("platform", "marketing", "platform_ops"):
+                    pass  # 이 스텝 완료 후 대기는 abort하지 않음
+                else:
+                    # waiting_since: wait_confirm 진입 시각 (없으면 started_at 폴백)
+                    _since = (sess.get("waiting_since")
+                              or sess.get("last_active_at")
+                              or sess.get("started_at")
+                              or sess.get("created_at_ts", now))
+                    if (now - _since) > _STALE_WAITING_SEC:
+                        print(f"  [정리] {sid} {int((now-_since)//60)}분 응답 없음 → abort")
+                        with _sessions_lock:
+                            s = _sessions.get(sid)
+                            if s:
+                                s["user_input"] = "__abort__"
+                                s["confirm_event"].set()
 
 
 def _broadcast_positions():
@@ -302,6 +311,10 @@ def _push(sid: str, event: dict):
         if sess:
             sess["events"].append(event)
             sess["sse_event"].set()
+            # 스텝 완료 시 활성 시간 갱신 (abort 타이머 리셋)
+            if event.get("type") == "step_summary":
+                sess["last_active_at"]      = time.time()
+                sess["last_completed_step"] = event.get("step", "")
 
 
 def _run_pipeline_sync(sid: str, sess: dict):
@@ -327,7 +340,8 @@ def _run_pipeline_sync(sid: str, sess: dict):
             if s.get("user_input") == "__abort__":
                 s["user_input"] = None
                 return "__abort__"
-            s["status"] = "waiting_confirm"
+            s["status"]        = "waiting_confirm"
+            s["waiting_since"] = time.time()  # abort 타이머 기준점
         s = _sessions.get(sid)
         if not s:
             return "__abort__"
