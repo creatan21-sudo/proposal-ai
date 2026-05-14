@@ -58,6 +58,8 @@ from database.db import (
     set_session_token, get_session_token,
     # 시나리오 재시도용
     get_completed_episodes,
+    # 제안서 수정
+    save_case_revision,
 )
 from output.txt_writer import write_txt
 from utils.telegram_notify import send_telegram
@@ -3238,6 +3240,168 @@ def storyboard_image(case_id, scene_num):
 # ─────────────────────────────────────────────
 # 스텝 재실행
 # ─────────────────────────────────────────────
+
+
+# ─────────────────────────────────────────────
+# 제안서 수정 (선택 스텝 재실행)
+# ─────────────────────────────────────────────
+
+_REVISION_STEP_LABELS = {
+    "research":       "STEP1 리서치",
+    "strategy":       "STEP2 전략",
+    "creative":       "STEP3 컨셉",
+    "plan":           "STEP4 기획",
+    "script":         "STEP5 대본",
+    "marketing":      "STEP6 마케팅",
+    "final_proposal": "STEP7 최종검수",
+}
+_REVISION_STEP_TABLE = {
+    "research":       "research_results",
+    "strategy":       "strategy_results",
+    "creative":       "creative_results",
+    "plan":           "plan_results",
+    "script":         "script_results",
+    "marketing":      "marketing_results",
+    "final_proposal": "final_proposals",
+}
+_REVISION_ALLOWED_EXT = {".hwp", ".hwpx", ".pdf", ".txt", ".jpg", ".jpeg", ".png", ".gif"}
+
+
+@app.route("/api/revise/<int:case_id>", methods=["POST"])
+@operator_or_admin_required
+def api_revise(case_id):
+    """제안서 수정: 선택 스텝만 재실행."""
+    import dataclasses as _dcr
+
+    scope               = request.form.get("scope", "all")
+    selected_steps_raw  = request.form.getlist("selected_steps")
+    request_text        = (request.form.get("request_text") or "").strip()
+
+    # ── 권한 확인
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM rfp_cases WHERE id=?", (case_id,)).fetchone()
+    if not row:
+        return jsonify({"ok": False, "error": "케이스 없음"}), 404
+    case = dict(row)
+    if case["user_id"] != session["user_id"] and not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+
+    # ── 선택 스텝 결정
+    all_revision_steps = list(_REVISION_STEP_LABELS.keys())
+    if scope == "all":
+        selected = set(all_revision_steps)
+    else:
+        selected = {s for s in selected_steps_raw if s in _REVISION_STEP_LABELS}
+    if not selected:
+        return jsonify({"ok": False, "error": "선택된 스텝이 없습니다"}), 400
+
+    # ── 첨부파일 처리 (텍스트 추출 가능한 파일만)
+    attached_names = []
+    file_texts     = []
+    for f in request.files.getlist("files"):
+        if not f or not f.filename:
+            continue
+        ext = Path(f.filename).suffix.lower()
+        if ext not in _REVISION_ALLOWED_EXT:
+            continue
+        safe  = "rev_" + _safe_upload_name(f.filename, ext)
+        fpath = str(UPLOAD_DIR / safe)
+        f.save(fpath)
+        attached_names.append(f.filename)
+        if ext in ALLOWED_EXT:
+            try:
+                from agents.rfp_parser import extract_text as _et
+                txt = _et(fpath)
+                if txt.strip():
+                    file_texts.append(f"[첨부파일: {f.filename}]\n{txt[:3000]}")
+            except Exception as _fe:
+                print(f"[수정] 파일 파싱 실패 ({f.filename}): {_fe}")
+
+    # ── 수정 지시 조합
+    instruction_parts = []
+    if request_text:
+        instruction_parts.append(f"[수정 요청사항]\n{request_text}")
+    if file_texts:
+        instruction_parts.extend(file_texts)
+    instruction = "\n\n".join(instruction_parts)
+
+    # ── DNA 복원
+    from core.dna import ConceptDNA
+    dna_dict = json.loads(case.get("dna_json") or "{}")
+    dna = ConceptDNA()
+    for _f in _dcr.fields(dna):
+        if _f.name in dna_dict:
+            try:
+                setattr(dna, _f.name, dna_dict[_f.name])
+            except Exception:
+                pass
+    dna.case_id = case_id
+    if instruction:
+        dna.step_instruction = instruction
+
+    # ── 선택 스텝 DB 레코드 삭제 (재실행을 위해)
+    with get_connection() as conn:
+        for sk in selected:
+            tbl = _REVISION_STEP_TABLE.get(sk)
+            if tbl:
+                conn.execute(f"DELETE FROM {tbl} WHERE case_id=?", (case_id,))
+
+    # ── 세션 생성
+    sid = str(uuid.uuid4())
+    with _sessions_lock:
+        _sessions[sid] = {
+            "status":           "queued",
+            "user_id":          session["user_id"],
+            "username":         session["username"],
+            "dna":              dna,
+            "rfp_file":         None,
+            "concept":          dna.concept or None,
+            "results":          {},
+            "events":           [],
+            "sse_event":        threading.Event(),
+            "confirm_event":    threading.Event(),
+            "user_input":       None,
+            "step_instruction": None,
+            "txt_path":         None,
+            "client":           case["client_name"],
+            "project":          case["project_name"],
+            "created_at":       datetime.now().isoformat(),
+            "created_at_ts":    time.time(),
+            "case_id":          case_id,
+            "retry_from":       None,
+            "auto_run":         True,
+            "selected_steps":   selected,
+        }
+
+    with _queue_lock:
+        _job_queue.append(sid)
+    _ensure_worker()
+    _dispatch_jobs()
+    _broadcast_positions()
+
+    # ── 수정 이력 저장
+    try:
+        save_case_revision(
+            case_id=case_id, scope=scope,
+            selected_steps=list(selected),
+            request_text=request_text,
+            attached_files=attached_names,
+            session_id=sid,
+        )
+    except Exception as _re:
+        print(f"[수정] 이력 저장 실패: {_re}")
+
+    # ── 충돌 방지 상태 등록
+    with _case_rerun_lock:
+        _case_rerun_state[case_id] = {
+            "type":       "step",
+            "step_key":   next(iter(selected)),
+            "step_label": "수정 재실행",
+            "sid":        sid,
+        }
+
+    session["current_run_sid"] = sid
+    return jsonify({"ok": True, "sid": sid, "redirect": f"/run/{sid}"})
 
 @app.route("/rerun_from_step/<int:case_id>/<step_key>", methods=["POST"])
 @operator_or_admin_required

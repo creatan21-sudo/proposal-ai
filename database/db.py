@@ -305,6 +305,18 @@ def init_db() -> None:
                 completed_at TEXT    NOT NULL,
                 PRIMARY KEY (case_id, step_key)
             );
+
+            CREATE TABLE IF NOT EXISTS case_revisions (
+                id             INTEGER PRIMARY KEY AUTOINCREMENT,
+                case_id        INTEGER NOT NULL,
+                created_at     TEXT    NOT NULL,
+                scope          TEXT    DEFAULT 'all',
+                selected_steps TEXT    DEFAULT '[]',
+                request_text   TEXT    DEFAULT '',
+                attached_files TEXT    DEFAULT '[]',
+                session_id     TEXT    DEFAULT '',
+                status         TEXT    DEFAULT 'pending'
+            );
         """)
         # ── 마이그레이션: 기존 DB에 누락된 컬럼 추가 ──
         for migration in [
@@ -2059,4 +2071,38 @@ def get_pipeline_completed_steps(case_id: int) -> list:
             (case_id,),
         ).fetchall()
     return [r["step_key"] for r in rows]
+
+
+def save_case_revision(case_id: int, scope: str, selected_steps: list,
+                       request_text: str, attached_files: list,
+                       session_id: str = "") -> int:
+    """수정 요청 이력 저장."""
+    with get_connection() as conn:
+        cur = conn.execute(
+            """INSERT INTO case_revisions
+               (case_id, created_at, scope, selected_steps, request_text, attached_files, session_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (case_id, datetime.now().isoformat(), scope,
+             json.dumps(selected_steps, ensure_ascii=False),
+             request_text,
+             json.dumps(attached_files, ensure_ascii=False),
+             session_id),
+        )
+        return cur.lastrowid
+
+
+def get_case_revisions(case_id: int) -> list:
+    """케이스의 수정 이력 반환 (최신순)."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM case_revisions WHERE case_id=? ORDER BY created_at DESC",
+            (case_id,),
+        ).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        d["selected_steps"] = json.loads(d.get("selected_steps") or "[]")
+        d["attached_files"] = json.loads(d.get("attached_files") or "[]")
+        result.append(d)
+    return result
 
