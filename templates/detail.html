@@ -667,6 +667,11 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
       <button onclick="openRerunModal('{{ step_key }}')"
               style="padding:4px 10px;font-size:12px;background:#fff;border:1px solid #d1d5db;
                      border-radius:6px;cursor:pointer;color:#374151;font-weight:500;">🔄 재실행</button>
+      {% if is_owner %}
+      <button onclick="openPreviewRerunModal('{{ step_key }}', '{{ step_label }}')"
+              style="padding:4px 10px;font-size:12px;background:#eff6ff;border:1px solid #bfdbfe;
+                     border-radius:6px;cursor:pointer;color:#1d4ed8;font-weight:500;">🔍 재실행·미리보기</button>
+      {% endif %}
     </div>
     {% endif %}
   </div>
@@ -1504,6 +1509,75 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
 </div>
 
 {# ── 재실행 코멘트 모달 ── #}
+
+<!-- ── 스텝 미리보기 재실행 모달 ─────────────────────── -->
+<div id="preview-rerun-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);
+     z-index:9500;align-items:center;justify-content:center;">
+  <div style="background:#fff;border-radius:16px;padding:28px;width:min(680px,96vw);
+              max-height:88vh;overflow-y:auto;position:relative;">
+    <!-- 단계별 UI -->
+    <!-- [A] 로딩 -->
+    <div id="prm-loading" style="text-align:center;padding:40px 0;">
+      <div style="font-size:2rem;margin-bottom:12px;">⏳</div>
+      <div style="font-size:1rem;font-weight:700;color:#1e293b;margin-bottom:8px;" id="prm-loading-title">재실행 중...</div>
+      <div style="font-size:.85rem;color:#6b7280;" id="prm-loading-sub">잠시 기다려주세요.</div>
+    </div>
+    <!-- [B] 미리보기 -->
+    <div id="prm-preview" style="display:none;">
+      <div style="font-size:1rem;font-weight:700;color:#1e293b;margin-bottom:4px;" id="prm-step-label"></div>
+      <div style="font-size:.78rem;color:#9ca3af;margin-bottom:16px;" id="prm-created-at"></div>
+      <div id="prm-preview-body"
+           style="max-height:340px;overflow-y:auto;background:#f9fafb;border-radius:10px;
+                  padding:16px;font-size:.83rem;color:#374151;line-height:1.7;
+                  white-space:pre-wrap;word-break:break-word;border:1px solid #e5e7eb;">
+      </div>
+      <div style="display:flex;gap:10px;margin-top:20px;flex-wrap:wrap;">
+        <button onclick="prm_adopt()"
+                style="padding:10px 22px;background:#16a34a;color:#fff;border:none;border-radius:8px;
+                       font-size:.9rem;font-weight:700;cursor:pointer;">✅ 채택하기</button>
+        <button onclick="prm_retryRerun()"
+                style="padding:10px 18px;background:#f3f4f6;color:#374151;border:1px solid #d1d5db;
+                       border-radius:8px;font-size:.9rem;cursor:pointer;">🔄 다시 재실행</button>
+        <button onclick="prm_discard()"
+                style="padding:10px 18px;background:#fff;color:#ef4444;border:1px solid #fca5a5;
+                       border-radius:8px;font-size:.9rem;cursor:pointer;">❌ 취소</button>
+      </div>
+    </div>
+    <!-- [C] 채택 선택 -->
+    <div id="prm-adopt-choice" style="display:none;">
+      <div style="font-size:1rem;font-weight:700;color:#1e293b;margin-bottom:16px;">어떻게 저장할까요?</div>
+      <div style="display:flex;gap:12px;flex-direction:column;">
+        <button onclick="prm_confirmAdopt(true)"
+                style="padding:14px 20px;background:#1d4ed8;color:#fff;border:none;border-radius:10px;
+                       font-size:.9rem;font-weight:700;cursor:pointer;text-align:left;">
+          🔁 덮어쓰기 — 기존 결과를 새 결과로 교체
+        </button>
+        <button onclick="prm_confirmAdopt(false)"
+                style="padding:14px 20px;background:#7c3aed;color:#fff;border:none;border-radius:10px;
+                       font-size:.9rem;font-weight:700;cursor:pointer;text-align:left;">
+          ➕ 새 버전으로 저장 — 기존 결과도 유지
+        </button>
+        <button onclick="prm_showPreview()"
+                style="padding:10px 18px;background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;
+                       border-radius:8px;font-size:.88rem;cursor:pointer;">← 미리보기로 돌아가기</button>
+      </div>
+    </div>
+    <!-- [D] 완료 -->
+    <div id="prm-done" style="display:none;text-align:center;padding:32px 0;">
+      <div style="font-size:2rem;margin-bottom:12px;" id="prm-done-icon">✅</div>
+      <div style="font-size:1rem;font-weight:700;color:#1e293b;" id="prm-done-msg">저장 완료</div>
+      <button onclick="location.reload()"
+              style="margin-top:20px;padding:10px 24px;background:#1d4ed8;color:#fff;border:none;
+                     border-radius:8px;font-size:.9rem;font-weight:700;cursor:pointer;">
+        페이지 새로고침
+      </button>
+    </div>
+    <!-- 닫기 -->
+    <button onclick="prm_close()"
+            style="position:absolute;top:14px;right:18px;background:none;border:none;
+                   font-size:1.4rem;cursor:pointer;color:#9ca3af;">×</button>
+  </div>
+</div>
 <div id="rerun-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);
      z-index:9999;align-items:center;justify-content:center;">
   <div style="background:#fff;border-radius:14px;padding:28px;width:440px;max-width:92vw;
@@ -3495,6 +3569,160 @@ async function submitRevise() {
     alert('네트워크 오류: ' + e.message);
     if (btn) { btn.disabled = false; btn.textContent = '수정 실행'; }
   }
+}
+
+
+// ── 스텝 미리보기 재실행 모달 ──────────────────────────────
+let _prm_caseId   = {{ case_id }};
+let _prm_stepKey  = '';
+let _prm_stepLabel = '';
+let _prm_sid      = null;
+let _prm_pollTimer = null;
+let _prm_rowId    = null;
+
+function openPreviewRerunModal(stepKey, stepLabel) {
+  _prm_stepKey   = stepKey;
+  _prm_stepLabel = stepLabel || stepKey;
+  _prm_sid       = null;
+  _prm_rowId     = null;
+  document.getElementById('prm-loading-title').textContent = `${_prm_stepLabel} 재실행 중...`;
+  document.getElementById('prm-loading-sub').textContent   = '잠시 기다려주세요.';
+  prm_showSection('loading');
+  document.getElementById('preview-rerun-modal').style.display = 'flex';
+  prm_startRerun();
+}
+
+async function prm_startRerun(comment) {
+  try {
+    const resp = await fetch(`/api/rerun_step/${_prm_caseId}/${_prm_stepKey}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({comment: comment || ''})
+    });
+    const data = await resp.json();
+    if (!data.ok) { alert(data.error || '재실행 시작 실패'); prm_close(); return; }
+    _prm_sid = data.sid;
+    prm_poll();
+  } catch(e) {
+    alert('네트워크 오류: ' + e); prm_close();
+  }
+}
+
+function prm_poll() {
+  if (_prm_pollTimer) clearInterval(_prm_pollTimer);
+  _prm_pollTimer = setInterval(async () => {
+    try {
+      const resp = await fetch(`/api/rerun_step_status/${_prm_sid}`);
+      const data = await resp.json();
+      if (!data.ok) return;
+      if (data.status === 'done' || data.status === 'stopped') {
+        clearInterval(_prm_pollTimer);
+        await prm_fetchPreview();
+      } else if (data.status === 'error') {
+        clearInterval(_prm_pollTimer);
+        alert('재실행 중 오류가 발생했습니다.');
+        prm_close();
+      }
+    } catch(e) {}
+  }, 2500);
+}
+
+async function prm_fetchPreview() {
+  try {
+    const resp = await fetch(`/api/step_preview/${_prm_caseId}/${_prm_stepKey}`);
+    const data = await resp.json();
+    if (!data.ok) {
+      alert('미리보기 결과를 가져올 수 없습니다.');
+      prm_close(); return;
+    }
+    _prm_rowId = data.row_id;
+    document.getElementById('prm-step-label').textContent =
+      `${_prm_stepLabel} — 새 결과 미리보기`;
+    document.getElementById('prm-created-at').textContent =
+      `생성 시각: ${data.created_at || ''}`;
+    // 결과 텍스트 포맷
+    document.getElementById('prm-preview-body').textContent =
+      prm_formatData(data.data);
+    prm_showSection('preview');
+  } catch(e) {
+    alert('미리보기 로드 실패: ' + e); prm_close();
+  }
+}
+
+function prm_formatData(data) {
+  if (!data) return '(결과 없음)';
+  const lines = [];
+  const skipKeys = new Set(['_parse_failed', '_timeout', 'episode', 'format']);
+  function fmt(key, val, depth) {
+    const indent = '  '.repeat(depth);
+    if (val === null || val === undefined || val === '') return;
+    if (skipKeys.has(key)) return;
+    if (Array.isArray(val)) {
+      if (!val.length) return;
+      lines.push(`${indent}▶ ${key}`);
+      val.slice(0, 5).forEach((v, i) => fmt(String(i+1), v, depth+1));
+      if (val.length > 5) lines.push(`${indent}  ... 외 ${val.length-5}개`);
+    } else if (typeof val === 'object') {
+      lines.push(`${indent}▶ ${key}`);
+      Object.entries(val).slice(0, 6).forEach(([k,v]) => fmt(k, v, depth+1));
+    } else {
+      const str = String(val);
+      lines.push(`${indent}${key}: ${str.slice(0, 200)}${str.length > 200 ? '...' : ''}`);
+    }
+  }
+  Object.entries(data).forEach(([k,v]) => fmt(k, v, 0));
+  return lines.join('\n') || '(결과 없음)';
+}
+
+function prm_adopt() { prm_showSection('adopt-choice'); }
+function prm_showPreview() { prm_showSection('preview'); }
+
+async function prm_confirmAdopt(overwrite) {
+  try {
+    const resp = await fetch(`/api/adopt_step/${_prm_caseId}/${_prm_stepKey}`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({row_id: _prm_rowId, overwrite: overwrite})
+    });
+    const data = await resp.json();
+    if (data.ok) {
+      document.getElementById('prm-done-icon').textContent = '✅';
+      document.getElementById('prm-done-msg').textContent  =
+        overwrite ? '기존 결과를 새 결과로 교체했습니다.' : '새 버전으로 저장했습니다.';
+      prm_showSection('done');
+    } else {
+      alert(data.error || '채택 실패');
+    }
+  } catch(e) { alert('네트워크 오류: ' + e); }
+}
+
+async function prm_discard() {
+  if (!confirm('미리보기 결과를 삭제하고 기존 결과를 유지할까요?')) return;
+  try {
+    await fetch(`/api/discard_step/${_prm_caseId}/${_prm_stepKey}`,
+                {method:'POST', headers:{'Content-Type':'application/json'}, body:'{}'});
+    document.getElementById('prm-done-icon').textContent = '🗑';
+    document.getElementById('prm-done-msg').textContent  = '미리보기 결과를 폐기했습니다.';
+    prm_showSection('done');
+  } catch(e) { alert('네트워크 오류: ' + e); }
+}
+
+async function prm_retryRerun() {
+  prm_showSection('loading');
+  _prm_rowId = null;
+  await prm_startRerun();
+}
+
+function prm_close() {
+  if (_prm_pollTimer) clearInterval(_prm_pollTimer);
+  document.getElementById('preview-rerun-modal').style.display = 'none';
+}
+
+function prm_showSection(sec) {
+  ['loading','preview','adopt-choice','done'].forEach(s => {
+    const el = document.getElementById('prm-' + s);
+    if (el) el.style.display = (s === sec) ? 'block' : 'none';
+  });
 }
 
 </script>

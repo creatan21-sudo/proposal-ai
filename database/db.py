@@ -340,6 +340,16 @@ def init_db() -> None:
             """DELETE FROM ppt_narratives WHERE id NOT IN (
                 SELECT MAX(id) FROM ppt_narratives GROUP BY case_id)""",
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_ppt_narratives_case_id ON ppt_narratives(case_id)",
+            # is_active: 스텝 결과 활성/비활성 (미리보기-채택 플로우 지원)
+            "ALTER TABLE rfp_analyses     ADD COLUMN is_active INTEGER DEFAULT 1",
+            "ALTER TABLE research_results ADD COLUMN is_active INTEGER DEFAULT 1",
+            "ALTER TABLE strategy_results ADD COLUMN is_active INTEGER DEFAULT 1",
+            "ALTER TABLE creative_results ADD COLUMN is_active INTEGER DEFAULT 1",
+            "ALTER TABLE plan_results     ADD COLUMN is_active INTEGER DEFAULT 1",
+            "ALTER TABLE script_results   ADD COLUMN is_active INTEGER DEFAULT 1",
+            "ALTER TABLE platform_results ADD COLUMN is_active INTEGER DEFAULT 1",
+            "ALTER TABLE marketing_results ADD COLUMN is_active INTEGER DEFAULT 1",
+            "ALTER TABLE final_proposals  ADD COLUMN is_active INTEGER DEFAULT 1",
         ]:
             try:
                 conn.execute(migration)
@@ -2105,4 +2115,55 @@ def get_case_revisions(case_id: int) -> list:
         d["attached_files"] = json.loads(d.get("attached_files") or "[]")
         result.append(d)
     return result
+
+
+# ── 스텝 결과 미리보기 채택 플로우 ──────────────────────────
+_RERUN_STEP_TABLE_MAP = {
+    "rfp_analysis":  "rfp_analyses",
+    "research":      "research_results",
+    "strategy":      "strategy_results",
+    "creative":      "creative_results",
+    "plan":          "plan_results",
+    "script":        "script_results",
+    "platform":      "platform_results",
+    "marketing":     "marketing_results",
+    "final_proposal":"final_proposals",
+}
+
+
+def activate_step_result(table: str, row_id: int, case_id: int) -> None:
+    """특정 row를 active(1)로, 나머지 같은 case_id는 inactive(0)로."""
+    with get_connection() as conn:
+        conn.execute(f"UPDATE {table} SET is_active=0 WHERE case_id=?", (case_id,))
+        conn.execute(f"UPDATE {table} SET is_active=1 WHERE id=?", (row_id,))
+
+
+def get_step_candidates(table: str, case_id: int) -> list:
+    """케이스의 스텝 모든 버전 조회 (최신순)."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"SELECT id, created_at, is_active FROM {table} WHERE case_id=? ORDER BY created_at DESC",
+            (case_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_step_preview_row(table: str, case_id: int) -> dict | None:
+    """is_active=0인 최신 미리보기 row 반환."""
+    with get_connection() as conn:
+        row = conn.execute(
+            f"SELECT * FROM {table} WHERE case_id=? AND is_active=0 ORDER BY created_at DESC LIMIT 1",
+            (case_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def mark_rows_inactive_after(table: str, case_id: int, after_id: int) -> int:
+    """after_id보다 큰 id(=새로 생성된 행)를 모두 is_active=0으로 표시. 영향받은 행 수 반환."""
+    with get_connection() as conn:
+        cur = conn.execute(
+            f"UPDATE {table} SET is_active=0 WHERE case_id=? AND id > ?",
+            (case_id, after_id),
+        )
+        return cur.rowcount
 

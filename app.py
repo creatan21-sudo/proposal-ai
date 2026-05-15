@@ -60,6 +60,10 @@ from database.db import (
     get_completed_episodes,
     # 제안서 수정
     save_case_revision,
+    # 스텝 미리보기 채택
+    activate_step_result, get_step_candidates,
+    get_step_preview_row, mark_rows_inactive_after,
+    _RERUN_STEP_TABLE_MAP,
 )
 from output.txt_writer import write_txt
 from utils.telegram_notify import send_telegram
@@ -401,6 +405,23 @@ def _run_pipeline_sync(sid: str, sess: dict):
             saved_case_id = None
             push({"type": "log", "message": f"케이스 선등록 오류: {e}"})
 
+    # 미리보기 모드: 실행 전 각 스텝 테이블 최대 ID 기록
+    _preview_mode    = sess.get("preview_mode", False)
+    _preview_pre_ids = {}
+    if _preview_mode and saved_case_id:
+        for _sk in (sess.get("selected_steps") or set()):
+            _tbl = _RERUN_STEP_TABLE_MAP.get(_sk)
+            if _tbl:
+                try:
+                    with get_connection() as _pc:
+                        _mr = _pc.execute(
+                            f"SELECT MAX(id) AS mx FROM {_tbl} WHERE case_id=?",
+                            (saved_case_id,)
+                        ).fetchone()
+                    _preview_pre_ids[_tbl] = _mr["mx"] or 0
+                except Exception:
+                    _preview_pre_ids[_tbl] = 0
+
     try:
         results = wp_run(
             dna, push, wait_confirm,
@@ -411,6 +432,25 @@ def _run_pipeline_sync(sid: str, sess: dict):
             auto_run=sess.get("auto_run", False),
             selected_steps=sess.get("selected_steps"),
         )
+
+        # 미리보기 모드: 새로 저장된 행을 is_active=0으로 표시
+        if _preview_mode and saved_case_id and _preview_pre_ids:
+            _new_row_ids = {}
+            for _tbl, _old_max in _preview_pre_ids.items():
+                cnt = mark_rows_inactive_after(_tbl, saved_case_id, _old_max)
+                if cnt:
+                    with get_connection() as _pc:
+                        _nr = _pc.execute(
+                            f"SELECT id FROM {_tbl} WHERE case_id=? AND id>? ORDER BY id DESC LIMIT 1",
+                            (saved_case_id, _old_max)
+                        ).fetchone()
+                    if _nr:
+                        _new_row_ids[_tbl] = _nr["id"]
+            with _sessions_lock:
+                _s = _sessions.get(sid)
+                if _s:
+                    _s["preview_row_ids"] = _new_row_ids
+            print(f"  [미리보기] 신규 행 is_active=0 마킹: {_new_row_ids}")
 
         # 사용자가 직접 중지한 경우
         with _sessions_lock:
@@ -3240,6 +3280,176 @@ def storyboard_image(case_id, scene_num):
 # ─────────────────────────────────────────────
 # 스텝 재실행
 # ─────────────────────────────────────────────
+
+
+
+# ─────────────────────────────────────────────
+# 스텝 미리보기 재실행 (채택/폐기 플로우)
+# ─────────────────────────────────────────────
+
+@app.route("/api/rerun_step/<int:case_id>/<step_key>", methods=["POST"])
+@operator_or_admin_required
+def api_rerun_step(case_id, step_key):
+    """완료된 케이스의 특정 스텝 재실행 — 결과는 is_active=0 (미리보기)."""
+    import dataclasses as _dcrs
+
+    if step_key not in _RERUN_STEP_TABLE_MAP:
+        return jsonify({"ok": False, "error": f"지원하지 않는 스텝: {step_key}"}), 400
+
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM rfp_cases WHERE id=?", (case_id,)).fetchone()
+    if not row:
+        return jsonify({"ok": False, "error": "케이스 없음"}), 404
+    case = dict(row)
+    if case["user_id"] != session["user_id"] and not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+
+    data         = request.get_json(force=True) or {}
+    comment      = (data.get("comment") or "").strip()
+
+    # DNA 복원
+    from core.dna import ConceptDNA
+    dna_dict = json.loads(case.get("dna_json") or "{}")
+    dna = ConceptDNA()
+    for _f in _dcrs.fields(dna):
+        if _f.name in dna_dict:
+            try:
+                setattr(dna, _f.name, dna_dict[_f.name])
+            except Exception:
+                pass
+    dna.case_id = case_id
+    if comment:
+        dna.step_instruction = comment
+
+    sid = str(uuid.uuid4())
+    with _sessions_lock:
+        _sessions[sid] = {
+            "status":           "queued",
+            "user_id":          session["user_id"],
+            "username":         session["username"],
+            "dna":              dna,
+            "rfp_file":         None,
+            "concept":          dna.concept or None,
+            "results":          {},
+            "events":           [],
+            "sse_event":        threading.Event(),
+            "confirm_event":    threading.Event(),
+            "user_input":       None,
+            "step_instruction": None,
+            "txt_path":         None,
+            "client":           case["client_name"],
+            "project":          case["project_name"],
+            "created_at":       datetime.now().isoformat(),
+            "created_at_ts":    time.time(),
+            "case_id":          case_id,
+            "retry_from":       step_key,
+            "auto_run":         True,
+            "selected_steps":   {step_key},
+            "preview_mode":     True,   # ← 미리보기 모드
+            "preview_row_ids":  {},
+        }
+
+    with _queue_lock:
+        _job_queue.append(sid)
+    _ensure_worker()
+    _dispatch_jobs()
+    return jsonify({"ok": True, "sid": sid})
+
+
+@app.route("/api/rerun_step_status/<sid>")
+@login_required
+def api_rerun_step_status(sid):
+    """미리보기 재실행 세션 상태 조회."""
+    with _sessions_lock:
+        sess = _sessions.get(sid)
+    if not sess:
+        return jsonify({"ok": False, "status": "not_found"})
+    return jsonify({
+        "ok":              True,
+        "status":          sess.get("status", "unknown"),
+        "preview_row_ids": sess.get("preview_row_ids", {}),
+    })
+
+
+@app.route("/api/step_preview/<int:case_id>/<step_key>")
+@login_required
+def api_step_preview(case_id, step_key):
+    """is_active=0인 미리보기 결과 반환."""
+    table = _RERUN_STEP_TABLE_MAP.get(step_key)
+    if not table:
+        return jsonify({"ok": False, "error": "지원하지 않는 스텝"}), 400
+    row = get_step_preview_row(table, case_id)
+    if not row:
+        return jsonify({"ok": False, "error": "미리보기 결과 없음"}), 404
+    # JSON 컬럼 파싱
+    preview = {}
+    for k, v in row.items():
+        if k in ("id", "case_id", "created_at", "is_active",
+                 "client_name", "project_name"): continue
+        if isinstance(v, str) and v.startswith(("[", "{")):
+            try:
+                preview[k] = json.loads(v)
+                continue
+            except Exception:
+                pass
+        preview[k] = v
+    return jsonify({"ok": True, "row_id": row["id"], "data": preview,
+                    "created_at": row.get("created_at", "")})
+
+
+@app.route("/api/adopt_step/<int:case_id>/<step_key>", methods=["POST"])
+@operator_or_admin_required
+def api_adopt_step(case_id, step_key):
+    """미리보기 결과 채택 — overwrite=true면 해당 row만 active, false면 새 버전으로 추가."""
+    table = _RERUN_STEP_TABLE_MAP.get(step_key)
+    if not table:
+        return jsonify({"ok": False, "error": "지원하지 않는 스텝"}), 400
+
+    # 소유자 확인
+    with get_connection() as conn:
+        row = conn.execute("SELECT user_id FROM rfp_cases WHERE id=?", (case_id,)).fetchone()
+    if not row or (dict(row)["user_id"] != session["user_id"] and not session.get("is_admin")):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+
+    data      = request.get_json(force=True) or {}
+    row_id    = data.get("row_id")
+    overwrite = data.get("overwrite", True)   # True=덮어쓰기 / False=새 버전 추가
+
+    if not row_id:
+        # row_id 없으면 최신 is_active=0 row 사용
+        preview = get_step_preview_row(table, case_id)
+        if not preview:
+            return jsonify({"ok": False, "error": "채택할 미리보기 없음"}), 404
+        row_id = preview["id"]
+
+    if overwrite:
+        # 기존 active → inactive, 새 row → active
+        activate_step_result(table, row_id, case_id)
+    else:
+        # 새 버전 추가: 기존 active 유지하고 새 row도 active (두 버전 공존)
+        with get_connection() as conn:
+            conn.execute(f"UPDATE {table} SET is_active=1 WHERE id=?", (row_id,))
+    return jsonify({"ok": True})
+
+
+@app.route("/api/discard_step/<int:case_id>/<step_key>", methods=["POST"])
+@operator_or_admin_required
+def api_discard_step(case_id, step_key):
+    """미리보기 결과 폐기 — is_active=0인 최신 row 삭제."""
+    table = _RERUN_STEP_TABLE_MAP.get(step_key)
+    if not table:
+        return jsonify({"ok": False, "error": "지원하지 않는 스텝"}), 400
+
+    with get_connection() as conn:
+        row = conn.execute("SELECT user_id FROM rfp_cases WHERE id=?", (case_id,)).fetchone()
+    if not row or (dict(row)["user_id"] != session["user_id"] and not session.get("is_admin")):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+
+    preview = get_step_preview_row(table, case_id)
+    if preview:
+        with get_connection() as conn:
+            conn.execute(f"DELETE FROM {table} WHERE id=?", (preview["id"],))
+    return jsonify({"ok": True})
 
 
 # ─────────────────────────────────────────────
