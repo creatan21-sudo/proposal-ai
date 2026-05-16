@@ -746,22 +746,29 @@ def start():
             f.save(rfp_file)
             print(f"  [업로드] RFP 파일: {orig_name!r} → 저장: {rfp_file}")
 
-    # 참고 제안서 처리
-    ref_structure = ""
-    ref_f = request.files.get("ref_proposal_file")
-    if ref_f and ref_f.filename:
+    # 참고 자료 처리 (복수)
+    ref_files_raw = request.files.getlist("ref_files")
+    ref_purposes_raw = request.form.getlist("ref_purposes")
+    ref_structures = []
+
+    for i, ref_f in enumerate(ref_files_raw):
+        if not ref_f or not ref_f.filename:
+            continue
+        purpose = ref_purposes_raw[i] if i < len(ref_purposes_raw) else "기타 참고자료"
         orig_ref = ref_f.filename
         ext = Path(orig_ref).suffix.lower()
-        if ext in ALLOWED_REF_EXT:
-            safe_ref = "ref_" + _safe_upload_name(orig_ref, ext)
-            ref_path = str(UPLOAD_DIR / safe_ref)
-            ref_f.save(ref_path)
-            print(f"  [업로드] 참고 제안서: {orig_ref!r} → 저장: {ref_path}")
-            try:
-                from agents.rfp_parser import parse_reference_proposal
-                ref_structure = parse_reference_proposal(ref_path)
-            except Exception as e:
-                print(f"[경고] 참고 제안서 분석 실패: {e}")
+        if ext not in ALLOWED_REF_EXT:
+            continue
+        safe_ref = f"ref_{i}_" + _safe_upload_name(orig_ref, ext)
+        ref_path = str(UPLOAD_DIR / safe_ref)
+        ref_f.save(ref_path)
+        print(f"  [업로드] 참고자료 {i+1}: {orig_ref!r} / 용도: {purpose} → {ref_path}")
+        try:
+            from agents.rfp_parser import parse_reference_proposal
+            parsed = parse_reference_proposal(ref_path)
+            ref_structures.append(f"[{purpose}]\n{parsed}")
+        except Exception as e:
+            print(f"[경고] 참고자료 {i+1} 분석 실패: {e}")
 
     init_db()
     dna = create_dna({
@@ -785,8 +792,8 @@ def start():
     dna.generate_storyboard      = generate_storyboard
     dna.ppt_target_slides        = ppt_target_slides
     dna.script_mode              = script_mode
-    if ref_structure:
-        dna.reference_structure = ref_structure
+    if ref_structures:
+        dna.reference_structure = "\n\n---\n\n".join(ref_structures)
 
     # 재활용 참고 케이스 처리
     if reference_case_id:

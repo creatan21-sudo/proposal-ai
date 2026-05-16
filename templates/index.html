@@ -126,24 +126,15 @@
                     placeholder="예) 친환경 테마로 전개, 20대 타겟 중심, 기존 시즌1과 차별화 강조 등"></textarea>
         </div>
 
-        <!-- 참고 제안서 -->
+        <!-- 참고 자료 (다중) -->
         <div class="form-group full">
-          <label>참고 제안서 <span class="optional-label">(선택) — 구조/흐름 참고용</span></label>
-          <div class="file-input-wrap" id="ref-drop-zone">
-            <input type="file" id="ref-proposal-file" name="ref_proposal_file"
-                   accept=".hwp,.hwpx,.pdf,.txt,.docx,.pptx">
-            <div class="file-drop-inner" id="ref-file-drop-inner">
-              <div class="file-drop-icon">📑</div>
-              <span class="file-label">파일을 여기에 드래그하거나 <u>클릭하여 선택</u></span>
-              <span class="file-sub">PDF · PPTX · DOCX · HWP · HWPX · TXT</span>
-              <span class="file-sub" style="color:#666">과거 낙찰 제안서를 올리면 유사한 구조로 생성됩니다</span>
-            </div>
-            <div class="file-selected" id="ref-file-selected" style="display:none">
-              <span class="file-icon">✓</span>
-              <span id="ref-file-name-display"></span>
-              <button type="button" class="file-clear" onclick="clearRefFile(event)">✕</button>
-            </div>
-          </div>
+          <label>참고 자료 <span class="optional-label">(선택, 최대 5개) — 구조/흐름 참고용</span></label>
+          <div id="ref-files-container"></div>
+          <button type="button" id="ref-add-btn" onclick="addRefRow()"
+                  style="margin-top:6px;font-size:.82rem;color:#2563eb;background:none;
+                         border:1px dashed #93c5fd;border-radius:6px;padding:6px 14px;cursor:pointer;">
+            + 참고자료 추가
+          </button>
         </div>
       </div>
 
@@ -627,48 +618,84 @@ function hideAutofillBadge() {
   if (badge) badge.remove();
 }
 
-// 참고 제안서 파일 업로드
-(function () {
-  const zone  = document.getElementById('ref-drop-zone');
-  const input = document.getElementById('ref-proposal-file');
-  zone.addEventListener('click', function (e) {
-    if (e.target.closest('.file-clear')) return;
-    input.click();
-  });
-  input.addEventListener('change', function () {
-    if (input.files && input.files[0]) showRefFile(input.files[0]);
-  });
-  zone.addEventListener('dragover', function (e) { e.preventDefault(); zone.classList.add('drag-over'); });
-  zone.addEventListener('dragleave', function (e) {
-    if (!zone.contains(e.relatedTarget)) zone.classList.remove('drag-over');
-  });
-  zone.addEventListener('drop', function (e) {
-    e.preventDefault();
-    zone.classList.remove('drag-over');
-    const files = e.dataTransfer.files;
-    if (!files || !files[0]) return;
-    const ext = files[0].name.split('.').pop().toLowerCase();
-    if (!['hwp','hwpx','pdf','txt','docx','pptx'].includes(ext)) {
-      alert('지원 형식: PDF, PPTX, DOCX, HWP, HWPX, TXT');
+// 참고 자료 (다중 파일)
+const REF_MAX = 5;
+const REF_ACCEPT = ['hwp','hwpx','pdf','txt','docx','pptx'];
+
+function buildRefRow() {
+  const div = document.createElement('div');
+  div.className = 'ref-row';
+  div.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:8px;';
+  div.innerHTML =
+    '<label style="flex-shrink:0;font-size:.82rem;background:#f3f4f6;border:1px solid #d1d5db;' +
+    'border-radius:6px;padding:5px 12px;cursor:pointer;white-space:nowrap;">' +
+    '파일 선택' +
+    '<input type="file" name="ref_files" accept=".hwp,.hwpx,.pdf,.txt,.docx,.pptx"' +
+    ' style="display:none" onchange="onRefFileChange(this)">' +
+    '</label>' +
+    '<span class="ref-file-name" style="flex:1;font-size:.82rem;color:#9ca3af;overflow:hidden;' +
+    'text-overflow:ellipsis;white-space:nowrap;">선택된 파일 없음</span>' +
+    '<select name="ref_purposes" style="font-size:.82rem;border:1px solid #d1d5db;border-radius:6px;' +
+    'padding:5px 8px;color:#374151;background:#fff;flex-shrink:0;">' +
+    '<option>구성/목차 참고</option>' +
+    '<option>회사 역량/소개</option>' +
+    '<option>경쟁사 분석</option>' +
+    '<option>업계 레퍼런스</option>' +
+    '<option>RFP 보충 자료</option>' +
+    '<option>기타 참고자료</option>' +
+    '</select>' +
+    '<button type="button" onclick="removeRefRow(this)"' +
+    ' style="flex-shrink:0;background:none;border:none;cursor:pointer;color:#9ca3af;font-size:1rem;padding:4px 6px;line-height:1;">✕</button>';
+  return div;
+}
+
+function addRefRow() {
+  const container = document.getElementById('ref-files-container');
+  if (container.children.length >= REF_MAX) {
+    alert('최대 5개까지 추가할 수 있습니다.');
+    return;
+  }
+  container.appendChild(buildRefRow());
+  updateRefAddBtn();
+}
+
+function removeRefRow(btn) {
+  const container = document.getElementById('ref-files-container');
+  const row = btn.closest('.ref-row');
+  if (container.children.length <= 1) {
+    row.querySelector('input[type=file]').value = '';
+    const nameSpan = row.querySelector('.ref-file-name');
+    nameSpan.textContent = '선택된 파일 없음';
+    nameSpan.style.color = '#9ca3af';
+    return;
+  }
+  row.remove();
+  updateRefAddBtn();
+}
+
+function onRefFileChange(input) {
+  const row = input.closest('.ref-row');
+  const nameSpan = row.querySelector('.ref-file-name');
+  if (input.files && input.files[0]) {
+    const ext = input.files[0].name.split('.').pop().toLowerCase();
+    if (!REF_ACCEPT.includes(ext)) {
+      alert('지원 형식: PDF · PPTX · DOCX · HWP · HWPX · TXT');
+      input.value = '';
       return;
     }
-    const dt = new DataTransfer();
-    dt.items.add(files[0]);
-    input.files = dt.files;
-    showRefFile(files[0]);
-  });
-  function showRefFile(file) {
-    document.getElementById('ref-file-drop-inner').style.display = 'none';
-    document.getElementById('ref-file-selected').style.display = 'flex';
-    document.getElementById('ref-file-name-display').textContent = file.name;
+    nameSpan.textContent = input.files[0].name;
+    nameSpan.style.color = '#111827';
   }
-})();
-
-function clearRefFile(e) {
-  e.stopPropagation();
-  document.getElementById('ref-proposal-file').value = '';
-  document.getElementById('ref-file-selected').style.display = 'none';
-  document.getElementById('ref-file-drop-inner').style.display = 'flex';
 }
+
+function updateRefAddBtn() {
+  const container = document.getElementById('ref-files-container');
+  const btn = document.getElementById('ref-add-btn');
+  btn.style.display = container.children.length >= REF_MAX ? 'none' : '';
+}
+
+(function () {
+  document.getElementById('ref-files-container').appendChild(buildRefRow());
+})();
 </script>
 {% endblock %}
