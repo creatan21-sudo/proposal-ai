@@ -627,12 +627,11 @@ function buildRefRow() {
   div.className = 'ref-row';
   div.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:8px;';
   div.innerHTML =
-    '<label style="flex-shrink:0;font-size:.82rem;background:#f3f4f6;border:1px solid #d1d5db;' +
-    'border-radius:6px;padding:5px 12px;cursor:pointer;white-space:nowrap;">' +
-    '파일 선택' +
+    '<div class="ref-drop-zone">' +
+    '📎 파일 선택 · 드래그' +
     '<input type="file" name="ref_files" accept=".hwp,.hwpx,.pdf,.txt,.docx,.pptx"' +
     ' style="display:none" onchange="onRefFileChange(this)">' +
-    '</label>' +
+    '</div>' +
     '<span class="ref-file-name" style="flex:1;min-width:80px;font-size:.82rem;color:#9ca3af;overflow:hidden;' +
     'text-overflow:ellipsis;white-space:nowrap;">선택된 파일 없음</span>' +
     '<select class="ref-purpose-preset" onchange="onRefPresetChange(this)"' +
@@ -651,7 +650,46 @@ function buildRefRow() {
     'color:#374151;background:#fff;flex:1;min-width:160px;">' +
     '<button type="button" onclick="removeRefRow(this)"' +
     ' style="flex-shrink:0;background:none;border:none;cursor:pointer;color:#9ca3af;font-size:1rem;padding:4px 6px;line-height:1;">✕</button>';
+  attachRefDragHandlers(div);
   return div;
+}
+
+function attachRefDragHandlers(row) {
+  const zone = row.querySelector('.ref-drop-zone');
+  const fileInput = zone.querySelector('input[type=file]');
+
+  zone.addEventListener('click', function () { fileInput.click(); });
+
+  zone.addEventListener('dragenter', function (e) {
+    e.preventDefault(); e.stopPropagation();
+    zone.classList.add('drag-over');
+  });
+  zone.addEventListener('dragover', function (e) {
+    e.preventDefault(); e.stopPropagation();
+    zone.classList.add('drag-over');
+  });
+  zone.addEventListener('dragleave', function (e) {
+    e.preventDefault(); e.stopPropagation();
+    if (!zone.contains(e.relatedTarget)) zone.classList.remove('drag-over');
+  });
+  zone.addEventListener('drop', function (e) {
+    e.preventDefault(); e.stopPropagation();
+    zone.classList.remove('drag-over');
+    const files = e.dataTransfer.files;
+    if (!files || !files[0]) return;
+    const file = files[0];
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!REF_ACCEPT.includes(ext)) {
+      alert('지원 형식: PDF · PPTX · DOCX · HWP · HWPX · TXT');
+      return;
+    }
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    fileInput.files = dt.files;
+    const nameSpan = row.querySelector('.ref-file-name');
+    nameSpan.textContent = file.name;
+    nameSpan.style.color = '#111827';
+  });
 }
 
 function onRefPresetChange(select) {
