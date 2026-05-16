@@ -747,5 +747,9 @@ function updateRefAddBtn() {
 (function () {
   document.getElementById('ref-files-container').appendChild(buildRefRow());
 })();
+
+// 페이지 어디에 드롭해도 브라우저가 파일을 직접 여는 기본 동작 차단
+document.addEventListener('dragover', function (e) { e.preventDefault(); });
+document.addEventListener('drop',     function (e) { e.preventDefault(); });
 </script>
 {% endblock %}

@@ -132,6 +132,29 @@ textarea { resize: vertical; min-height: 80px; }
 }
 .file-clear:hover { color: var(--red); background: #fee2e2; }
 
+/* ── 참고자료 드롭존 ── */
+.ref-drop-zone {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: .82rem;
+  background: #f3f4f6;
+  border: 1px dashed #9ca3af;
+  border-radius: 6px;
+  padding: 5px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color .15s, background .15s;
+  user-select: none;
+}
+.ref-drop-zone:hover { border-color: var(--accent); background: #f5f3ff; }
+.ref-drop-zone.drag-over {
+  border-color: var(--accent);
+  border-style: solid;
+  background: #f5f3ff;
+}
+
 /* ── 버튼 ── */
 .btn {
   display: inline-flex; align-items: center; gap: 6px;
