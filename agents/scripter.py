@@ -466,16 +466,6 @@ def _build_scene_text_prompt_v2(
     timecode  = f"{_tc(start_s)}~{_tc(end_s)}"
     min_chars = max(200, word_count // total_scenes)
 
-    ref_section = ""
-    if getattr(dna, 'reference_structure', ''):
-        ref_section = f"""
-
-## 참고자료 (반드시 반영할 것)
-아래는 사용자가 업로드한 참고자료입니다. 용도에 맞게 반드시 반영하세요:
-
-{dna.reference_structure}
-"""
-
     return (
         f"실제 방송용 대본을 작성하라. 요약이나 메타 설명은 절대 금지.\n"
         f"발주처:{dna.client_name} 사업:{dna.project_name} {ep_num}편 제목:{title}\n"
@@ -489,7 +479,6 @@ def _build_scene_text_prompt_v2(
         f"▶ 자막: 화면에 표시될 자막 문구 그대로 (**핵심단어** 강조)\n\n"
         f"분량 기준: 최소 {min_chars}자 이상. 실제 촬영 가능한 수준으로 상세히 작성.\n"
         f"'설명한다', '보여준다', '삽입한다' 같은 메타 설명 절대 금지.\n\n"
-        f"{ref_section}"
         f"[출력 형식 — 아래 형식 그대로 시작]\n"
         f"S#{scene_num} [장소명 — 구체적 촬영지] ({timecode})\n"
         f"▶ 나레이션: ...\n"
