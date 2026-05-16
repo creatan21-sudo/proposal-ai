@@ -293,9 +293,9 @@ def _generate_longform_summary(
 
     prompt = (
         f"영상대본요약JSON만출력(설명없이). 각 씬: 핵심포인트 1줄 + 촬영방향 1줄만 간결하게.\n"
-        f"{ref_section}"
         f"발주처:{dna.client_name} 사업:{dna.project_name} 컨셉:{dna.concept or '미정'}"
         f" 톤:{dna.tone_and_manner or '미정'} {ep_num}편\"{title}\" 러닝타임:{dna.duration}\n\n"
+        f"{ref_section}"
         f'{{"episode":{ep_num},"title":"{title}","format":"longform","duration":"{dna.duration}",'
         f'"opening_hook":{{"hook_line":"오프닝훅15자내"}},'
         f'"scenes":[{scenes_tmpl}],'
@@ -697,10 +697,10 @@ def _generate_shortform_outline(
     prompt = (
         f"숏폼대본개요JSON만출력(설명없이).\n"
         f"{_mode_hint}"
-        f"{ref_section}"
         f"반드시 각 버전마다 정확히 {n}개 씬을 생성하세요.\n"
         f"발주처:{dna.client_name} 사업:{dna.project_name} 컨셉:{dna.concept or '미정'}"
         f" {ep_num}편\"{title}\" 러닝타임:{dna.duration}\n\n"
+        f"{ref_section}"
         f'{{"episode":{ep_num},"title":"{title}","format":"shortform","duration":"{dna.duration}",'
         f'"versions":{{'
         f'"15sec":{{"hook_line":"훅10자내","scenes":[{_scene_tmpl(n)}]}},'
