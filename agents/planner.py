@@ -414,6 +414,16 @@ def _build_prompt(
         episodes_guide = f"""episodes에는 납품할 전체 {dna.quantity}편 각각의 계획을 작성하세요.
 각 에피소드: {{episode_number, title, core_message, target_audience, key_scene, differentiation}}"""
 
+    ref_section = ""
+    if getattr(dna, 'reference_structure', ''):
+        ref_section = f"""
+
+## 참고자료 (반드시 반영할 것)
+아래는 사용자가 업로드한 참고자료입니다. 용도에 맞게 반드시 반영하세요:
+
+{dna.reference_structure}
+"""
+
     lock = dna_lock_block(dna)
     return f"""{lock}당신은 대한민국 정부 영상콘텐츠 제작 전문 PD이자 제작사 PM입니다.
 아래 정보를 바탕으로 영상 제작 실행 계획을 수립해주세요.
@@ -485,7 +495,7 @@ def _build_prompt(
 ### 주요 수치
 - 2024년 홍보 예산 전년 대비 15% 증가 (기관 발표, 2024)
 - 국민 신뢰도 67% (한국갤럽, 2024)
-
+{ref_section}
 ━━━━━━━━━━━━━━━━━━━━━━━
 [출력 형식]
 ━━━━━━━━━━━━━━━━━━━━━━━

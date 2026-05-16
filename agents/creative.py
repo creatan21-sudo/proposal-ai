@@ -241,6 +241,16 @@ def _build_prompt(dna: ConceptDNA, preset: dict) -> str:
 
     rfp_raw_section = _build_rfp_raw_section(dna)
 
+    ref_section = ""
+    if getattr(dna, 'reference_structure', ''):
+        ref_section = f"""
+
+## 참고자료 (반드시 반영할 것)
+아래는 사용자가 업로드한 참고자료입니다. 용도에 맞게 반드시 반영하세요:
+
+{dna.reference_structure}
+"""
+
     return f"""당신은 대한민국 최고의 공공 캠페인 크리에이티브 디렉터입니다.
 아래 전략 분석을 바탕으로 영상콘텐츠 캠페인의 크리에이티브 방향을 설계해주세요.
 {rfp_raw_section}
@@ -345,7 +355,7 @@ def _build_prompt(dna: ConceptDNA, preset: dict) -> str:
 ### 주요 수치
 - 2024년 홍보 예산 전년 대비 15% 증가 (기관 발표, 2024)
 - 국민 신뢰도 67% (한국갤럽, 2024)
-
+{ref_section}
 ━━━━━━━━━━━━━━━━━━━━━━━
 [출력 형식 — JSON만 출력, 다른 텍스트 절대 금지]
 ━━━━━━━━━━━━━━━━━━━━━━━

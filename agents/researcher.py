@@ -539,6 +539,16 @@ def _analyze(dna: ConceptDNA, profile: dict, past_cases: list,
     else:
         learning_block = ""
 
+    ref_section = ""
+    if getattr(dna, 'reference_structure', ''):
+        ref_section = f"""
+
+## 참고자료 (반드시 반영할 것)
+아래는 사용자가 업로드한 참고자료입니다. 용도에 맞게 반드시 반영하세요:
+
+{dna.reference_structure}
+"""
+
     def _call_one(key: str, label: str, search_keys: list, instructions: str) -> tuple[str, str]:
         search_block = "\n\n".join(
             f"▶ {sk}\n{ctx.get(sk, '(없음)')}" for sk in search_keys
@@ -560,7 +570,8 @@ def _analyze(dna: ConceptDNA, profile: dict, past_cases: list,
             f"[DB 유사 케이스]\n{past_str}\n"
             f"{learning_block}\n\n"
             f"[검색 결과]\n{search_block}\n\n"
-            f"[작성 지침]\n{instructions}\n\n"
+            f"[작성 지침]\n{instructions}\n"
+            f"{ref_section}\n"
             f"위 지침에 따라 {label} 내용을 지금 바로 작성하십시오:"
         )
         for retry in range(2):
