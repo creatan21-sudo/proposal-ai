@@ -284,11 +284,14 @@ def _generate_longform_summary(
     ref_section = ""
     if getattr(dna, 'reference_structure', ''):
         ref_section = f"""
-
-## 참고자료 (반드시 반영할 것)
-아래는 사용자가 업로드한 참고자료입니다. 용도에 맞게 반드시 반영하세요:
+[필수 반영 사항 — 반드시 준수할 것]
+사용자가 아래 참고자료를 업로드하며 특정 방식으로 반영해줄 것을 요청했습니다.
+이 요청은 선택이 아닌 필수입니다. 참고자료의 형식/내용/구조를 대본에 반드시 반영하세요.
 
 {dna.reference_structure}
+
+위 참고자료가 반영되지 않은 대본은 실패한 결과입니다.
+
 """
 
     prompt = (
@@ -435,10 +438,23 @@ def _build_meta_only_prompt(
     """편 메타데이터 전용 소형 JSON 프롬프트."""
     title = ep_plan.get("title", f"{ep_num}편")
     cliff = '"cliffhanger_line":"다음편연결문구"' if is_series else '"cliffhanger_line":null'
+    ref_section = ""
+    if getattr(dna, 'reference_structure', ''):
+        ref_section = f"""
+[필수 반영 사항 — 반드시 준수할 것]
+사용자가 아래 참고자료를 업로드하며 특정 방식으로 반영해줄 것을 요청했습니다.
+이 요청은 선택이 아닌 필수입니다. 참고자료의 형식/내용/구조를 대본에 반드시 반영하세요.
+
+{dna.reference_structure}
+
+위 참고자료가 반영되지 않은 대본은 실패한 결과입니다.
+
+"""
     return (
         f"영상대본메타데이터JSON만출력(설명없이).\n"
         f"발주처:{dna.client_name} 사업:{dna.project_name} 컨셉:{dna.concept or '미정'}"
         f" 톤:{dna.tone_and_manner or '미정'} {ep_num}편\"{title}\"\n\n"
+        f"{ref_section}"
         f'{{"title":"{title}","opening_hook":"오프닝훅자막15자내",'
         f'"interview_questions":["질문1","질문2"],'
         f'"closing_cta":"CTA방향1문장",{cliff}}}'
@@ -676,11 +692,14 @@ def _generate_shortform_outline(
     ref_section = ""
     if getattr(dna, 'reference_structure', ''):
         ref_section = f"""
-
-## 참고자료 (반드시 반영할 것)
-아래는 사용자가 업로드한 참고자료입니다. 용도에 맞게 반드시 반영하세요:
+[필수 반영 사항 — 반드시 준수할 것]
+사용자가 아래 참고자료를 업로드하며 특정 방식으로 반영해줄 것을 요청했습니다.
+이 요청은 선택이 아닌 필수입니다. 참고자료의 형식/내용/구조를 대본에 반드시 반영하세요.
 
 {dna.reference_structure}
+
+위 참고자료가 반영되지 않은 대본은 실패한 결과입니다.
+
 """
 
     prompt = (
