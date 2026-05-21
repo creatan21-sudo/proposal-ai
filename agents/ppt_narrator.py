@@ -489,13 +489,13 @@ def _case_detail_from_dna(dna, results: dict) -> dict:
     return {"case": case, "steps": steps}
 
 
-def run_from_dna(dna, results: dict, target_slides: int = 30, push_event=None) -> dict:
+def run_from_dna(dna, results: dict, target_slides: int = 50, push_event=None) -> dict:
     """파이프라인 실행 중 dna + results에서 직접 설계안 생성."""
     case_detail = _case_detail_from_dna(dna, results)
     return run(case_detail, target_slides, push_event=push_event)
 
 
-def run(case_detail: dict, target_slides: int = 30, push_event=None) -> dict:
+def run(case_detail: dict, target_slides: int = 50, push_event=None) -> dict:
     """PPT 슬라이드 설계안 생성.
 
     Returns:
@@ -523,6 +523,24 @@ def run(case_detail: dict, target_slides: int = 30, push_event=None) -> dict:
 
     case  = case_detail.get("case", {})
     dna   = case.get("dna", {})
+
+    # ── 사용자 수정 요청 추출 (재실행 시 최우선 반영) ──────────────
+    _step_instruction = (dna.get("step_instruction") or "").strip()
+
+    def _inject_instruction(prompt: str) -> str:
+        """수정 요청이 있으면 프롬프트 최상단에 강하게 주입."""
+        if not _step_instruction:
+            return prompt
+        header = (
+            "========================================\n"
+            "## 사용자 수정 요청 (최우선 반영)\n"
+            "========================================\n"
+            f"{_step_instruction}\n\n"
+            "위 요청을 중심으로 처음부터 새로 설계하세요.\n"
+            "기존 설계안은 참고만 하고 그대로 답습하지 마세요.\n"
+            "========================================\n\n"
+        )
+        return header + prompt
     steps = case_detail.get("steps", {})
     rfp   = steps.get("rfp_analysis", {})
     cr    = steps.get("creative", {})
@@ -860,8 +878,10 @@ STEP 11 ─ 기대효과 & 마무리 (2~3장)
         if push_event:
             push_event({"type": "log", "message": "✦ PPT 전체 목차 생성 중..."})
         try:
-            _toc_p = _build_toc_prompt(_context_c, target_slides, concept, slogan,
-                                        _rfp_raw_s, _perplexity_supplement)
+            _toc_p = _inject_instruction(
+                _build_toc_prompt(_context_c, target_slides, concept, slogan,
+                                  _rfp_raw_s, _perplexity_supplement)
+            )
             _toc   = call_json(_toc_p, max_tokens=4000).get("toc", [])
             print(f"  [PPT설계] 목차 {len(_toc)}장 생성")
         except Exception as _te:
@@ -908,7 +928,9 @@ STEP 11 ─ 기대효과 & 마무리 (2~3장)
                 push_event({"type": "log",
                             "message": f"✦ PPT 청크 {_ci+1}/{_n_chunks} 생성 중 ({_c_start}~{_c_end}번)..."})
             try:
-                _fp = _build_chunk_fill_prompt(_chunk, _all_toc_text, _context_c, _ci, _n_chunks)
+                _fp = _inject_instruction(
+                    _build_chunk_fill_prompt(_chunk, _all_toc_text, _context_c, _ci, _n_chunks)
+                )
                 _cr = call_json(_fp, max_tokens=6000)
                 _chunk_slides = _cr.get("slides", [])
             except Exception as _ce:
@@ -975,8 +997,10 @@ STEP 11 ─ 기대효과 & 마무리 (2~3장)
         if push_event:
             push_event({"type": "log", "message": "✦ PPT 전체 목차 생성 중..."})
         try:
-            _toc_p  = _build_toc_prompt(_context_c, target_slides, concept, slogan,
-                                         _rfp_raw_s, _perplexity_supplement)
+            _toc_p  = _inject_instruction(
+                _build_toc_prompt(_context_c, target_slides, concept, slogan,
+                                  _rfp_raw_s, _perplexity_supplement)
+            )
             _toc    = call_json(_toc_p, max_tokens=4000).get("toc", [])
             print(f"  [PPT설계] 목차 {len(_toc)}장 생성")
         except Exception as _te:
@@ -1010,7 +1034,9 @@ STEP 11 ─ 기대효과 & 마무리 (2~3장)
                 push_event({"type": "log",
                             "message": f"✦ PPT 청크 {_ci+1}/{_n_chunks} 생성 중 ({_c_start}~{_c_end}번)..."})
             try:
-                _fp = _build_chunk_fill_prompt(_chunk, _all_toc_text, _context_c, _ci, _n_chunks)
+                _fp = _inject_instruction(
+                    _build_chunk_fill_prompt(_chunk, _all_toc_text, _context_c, _ci, _n_chunks)
+                )
                 _cr = call_json(_fp, max_tokens=6000)
                 _chunk_slides = _cr.get("slides", [])
             except Exception as _ce:

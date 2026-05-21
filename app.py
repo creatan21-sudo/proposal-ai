@@ -728,7 +728,7 @@ def start():
     storyboard_style = _sb_style_raw if _sb_style_raw in ("line", "color", "photo") else "line"
     storyboard_cuts_per_ep = max(1, min(30, int(request.form.get("storyboard_cuts_per_ep") or 10)))
     generate_storyboard  = request.form.get("generate_storyboard") == "on"
-    ppt_target_slides    = max(10, min(60, int(request.form.get("ppt_target_slides") or 30)))
+    ppt_target_slides    = max(10, min(60, int(request.form.get("ppt_target_slides") or 50)))
     _sm_raw = request.form.get("script_mode", "full").strip()
     script_mode = _sm_raw if _sm_raw in ("full", "summary") else "full"
 
@@ -2934,7 +2934,7 @@ def api_ppt_narrative_generate(case_id):
         return jsonify({"ok": False, "error": "권한 없음 — 소유자만 설계안을 생성할 수 있습니다."}), 403
 
     data          = request.get_json(force=True) or {}
-    target_slides = max(10, min(60, int(data.get("target_slides", 30))))
+    target_slides = max(10, min(60, int(data.get("target_slides", 50))))
 
     def _generate():
         try:
@@ -3014,7 +3014,7 @@ def api_ppt_narrative_rerun(case_id):
                 ae = old_ppt.get("abort_event")
                 if ae: ae.set()
 
-    target_slides = max(10, min(60, int(data.get("target_slides", 30))))
+    target_slides = max(10, min(60, int(data.get("target_slides", 50))))
     print(f"  [PPT재실행] 목표 슬라이드: {target_slides}장")
     scope_type    = data.get("scope_type", "all")   # "all" | "from" | "specific"
     scope_value   = data.get("scope_value")          # int("from") | str("specific")
