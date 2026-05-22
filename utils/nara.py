@@ -40,6 +40,7 @@ def fetch_bids(keyword: str, page: int = 1, rows: int = 20) -> list:
     url = (NARA_API_URL
            + "?serviceKey=" + key
            + "&" + other_params)
+    print(f"[nara 요청 URL] {url}")
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=15) as resp:
@@ -59,6 +60,10 @@ def fetch_bids(keyword: str, page: int = 1, rows: int = 20) -> list:
         if isinstance(items, dict):
             items = [items]
         return [_normalize(i) for i in items]
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        print(f"[nara] HTTP {e.code} 오류 전문: {body}")
+        return []
     except Exception as e:
         body = ""
         if hasattr(e, 'read'):
