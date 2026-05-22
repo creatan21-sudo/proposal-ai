@@ -107,7 +107,7 @@
               data-nm="{{ c.bid_ntce_nm | e }}"
               onclick="openConfirmModal(this)">✅ 확정</button>
             {% endif %}
-            {% if is_adm %}
+            {% if session.get('is_admin') or session.get('role') == 'operator' %}
             <button class="btn btn-del" onclick="deleteCandidate({{ c.id }})">삭제</button>
             {% endif %}
           </td>
