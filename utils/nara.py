@@ -37,8 +37,9 @@ def fetch_bids(keyword: str, page: int = 1, rows: int = 20) -> list:
         "bidNtceNm":  keyword,
         "type":       "json",
     }, encoding="utf-8")
+    decoded_key = urllib.parse.unquote(key)
     url = (NARA_API_URL
-           + "?serviceKey=" + key
+           + "?serviceKey=" + urllib.parse.quote(decoded_key, safe='')
            + "&" + other_params)
     print(f"[nara 요청 URL] {url}")
     try:
