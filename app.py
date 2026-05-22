@@ -72,8 +72,10 @@ from utils.nara import start_scheduler, manual_scan
 from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           get_nara_settings, save_nara_settings,
                           add_nara_candidate, list_nara_candidates, delete_nara_candidate,
+                          get_candidate_bid_nos, list_nara_bids_paged,
                           confirm_nara_candidate, list_nara_confirmed,
-                          add_nara_result, list_nara_results)
+                          add_nara_result, list_nara_results,
+                          add_candidate_comment, list_candidate_comments)
 
 app = Flask(__name__)
 # Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
@@ -3866,32 +3868,42 @@ def api_step_overrides(case_id):
 @app.route("/nara")
 @login_required
 def nara_dashboard():
-    keywords      = get_nara_keywords()
-    bids          = list_nara_bids(limit=200)
-    settings      = get_nara_settings()
-    candidate_nos = {c["bid_ntce_no"] for c in list_nara_candidates()}
-    return render_template("nara.html", keywords=keywords, bids=bids,
-                           settings=settings, candidate_nos=candidate_nos)
+    page     = max(1, int(request.args.get("page", 1)))
+    keyword  = request.args.get("keyword", "").strip()
+    keywords = get_nara_keywords()
+    paged    = list_nara_bids_paged(keyword=keyword, page=page, per_page=50)
+    settings = get_nara_settings()
+    candidate_nos = get_candidate_bid_nos()
+    return render_template("nara.html", keywords=keywords,
+                           bids=paged["items"], pagination=paged,
+                           settings=settings, candidate_nos=candidate_nos,
+                           kw_filter=keyword)
 
 @app.route("/nara/candidates")
 @login_required
 def nara_candidates_page():
-    candidates = list_nara_candidates()
+    page   = max(1, int(request.args.get("page", 1)))
+    paged  = list_nara_candidates(page=page, per_page=50)
     is_ops = session.get("role") in ("admin", "operator")
-    return render_template("nara_candidates.html", candidates=candidates, is_ops=is_ops)
+    is_adm = bool(session.get("is_admin"))
+    return render_template("nara_candidates.html", candidates=paged["items"],
+                           pagination=paged, is_ops=is_ops, is_adm=is_adm)
 
 @app.route("/nara/confirmed")
 @login_required
 def nara_confirmed_page():
-    confirmed = list_nara_confirmed()
+    page   = max(1, int(request.args.get("page", 1)))
+    paged  = list_nara_confirmed(page=page, per_page=50)
     is_ops = session.get("role") in ("admin", "operator")
-    return render_template("nara_confirmed.html", confirmed=confirmed, is_ops=is_ops)
+    return render_template("nara_confirmed.html", confirmed=paged["items"],
+                           pagination=paged, is_ops=is_ops)
 
 @app.route("/nara/results")
 @login_required
 def nara_results_page():
-    results = list_nara_results()
-    return render_template("nara_results.html", results=results)
+    page  = max(1, int(request.args.get("page", 1)))
+    paged = list_nara_results(page=page, per_page=50)
+    return render_template("nara_results.html", results=paged["items"], pagination=paged)
 
 @app.route("/nara/keyword", methods=["POST"])
 @login_required
@@ -3986,10 +3998,44 @@ def nara_confirm(candidate_id):
             candidate_id = candidate_id,
             confirmed_by = session.get("username", ""),
             notes        = str(data.get("notes", "")),
+            assignee     = str(data.get("assignee", "")),
         )
         return jsonify({"ok": True, "id": new_id})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/nara/candidate/<int:candidate_id>/comment", methods=["POST"])
+@login_required
+def nara_add_comment(candidate_id):
+    data    = request.get_json(force=True) or {}
+    content = str(data.get("content", "")).strip()
+    if not content:
+        return jsonify({"ok": False, "error": "내용을 입력하세요"})
+    try:
+        new_id = add_candidate_comment(
+            candidate_id = candidate_id,
+            author       = session.get("username", ""),
+            content      = content,
+        )
+        return jsonify({"ok": True, "id": new_id})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/nara/candidate/<int:candidate_id>/comments")
+@login_required
+def nara_list_comments(candidate_id):
+    comments = list_candidate_comments(candidate_id)
+    return jsonify({"ok": True, "comments": comments})
+
+@app.route("/nara/users")
+@operator_or_admin_required
+def nara_users():
+    from database.db import get_connection
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, username FROM users ORDER BY username"
+        ).fetchall()
+    return jsonify({"ok": True, "users": [dict(r) for r in rows]})
 
 @app.route("/nara/result/<int:confirmed_id>", methods=["POST"])
 @login_required

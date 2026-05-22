@@ -308,6 +308,14 @@ def init_db() -> None:
                 updated_at TEXT    DEFAULT (datetime('now','localtime'))
             );
 
+            CREATE TABLE IF NOT EXISTS nara_candidate_comments (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                candidate_id INTEGER NOT NULL,
+                author       TEXT NOT NULL,
+                content      TEXT NOT NULL,
+                created_at   TEXT DEFAULT (datetime('now','localtime'))
+            );
+
             CREATE TABLE IF NOT EXISTS nara_candidates (
                 id            INTEGER PRIMARY KEY AUTOINCREMENT,
                 bid_ntce_no   TEXT NOT NULL,
@@ -389,6 +397,7 @@ def init_db() -> None:
             "ALTER TABLE platform_results ADD COLUMN is_active INTEGER DEFAULT 1",
             "ALTER TABLE marketing_results ADD COLUMN is_active INTEGER DEFAULT 1",
             "ALTER TABLE final_proposals  ADD COLUMN is_active INTEGER DEFAULT 1",
+            "ALTER TABLE nara_confirmed   ADD COLUMN assignee TEXT DEFAULT ''",
         ]:
             try:
                 conn.execute(migration)
@@ -2128,12 +2137,28 @@ def add_nara_candidate(bid_ntce_no: str, bid_ntce_nm: str, ntce_instt_nm: str,
         return cur.lastrowid or 0
 
 
-def list_nara_candidates() -> list:
+def get_candidate_bid_nos() -> set:
+    """후보 등록된 bid_ntce_no 전체 집합 (공고 탭 버튼 상태용)."""
     with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT * FROM nara_candidates ORDER BY created_at DESC"
+        rows = conn.execute("SELECT bid_ntce_no FROM nara_candidates").fetchall()
+    return {r[0] for r in rows}
+
+
+def list_nara_candidates(page: int = 1, per_page: int = 50) -> dict:
+    offset = (page - 1) * per_page
+    with get_connection() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM nara_candidates").fetchone()[0]
+        rows  = conn.execute(
+            "SELECT * FROM nara_candidates ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (per_page, offset),
         ).fetchall()
-    return [dict(r) for r in rows]
+    return {
+        "items":    [dict(r) for r in rows],
+        "total":    total,
+        "page":     page,
+        "per_page": per_page,
+        "pages":    max(1, -(-total // per_page)),
+    }
 
 
 def delete_nara_candidate(candidate_id: int) -> None:
@@ -2141,27 +2166,37 @@ def delete_nara_candidate(candidate_id: int) -> None:
         conn.execute("DELETE FROM nara_candidates WHERE id=?", (candidate_id,))
 
 
-def confirm_nara_candidate(candidate_id: int, confirmed_by: str, notes: str) -> int:
+def confirm_nara_candidate(candidate_id: int, confirmed_by: str,
+                           notes: str, assignee: str = "") -> int:
     with get_connection() as conn:
         cur = conn.execute(
-            "INSERT INTO nara_confirmed (candidate_id, confirmed_by, notes) VALUES (?,?,?)",
-            (candidate_id, confirmed_by, notes),
+            "INSERT INTO nara_confirmed (candidate_id, confirmed_by, notes, assignee) VALUES (?,?,?,?)",
+            (candidate_id, confirmed_by, notes, assignee),
         )
         return cur.lastrowid or 0
 
 
-def list_nara_confirmed() -> list:
+def list_nara_confirmed(page: int = 1, per_page: int = 50) -> dict:
+    offset = (page - 1) * per_page
     with get_connection() as conn:
-        rows = conn.execute(
-            """SELECT cf.id, cf.candidate_id, cf.confirmed_by, cf.notes, cf.created_at,
+        total = conn.execute("SELECT COUNT(*) FROM nara_confirmed").fetchone()[0]
+        rows  = conn.execute(
+            """SELECT cf.id, cf.candidate_id, cf.confirmed_by, cf.notes, cf.assignee, cf.created_at,
                       ca.bid_ntce_no, ca.bid_ntce_nm, ca.ntce_instt_nm,
                       ca.presmpt_prce, ca.bid_clse_dt, ca.ntce_url, ca.matched_keyword,
                       ca.reason, ca.registered_by
                FROM nara_confirmed cf
                JOIN nara_candidates ca ON ca.id = cf.candidate_id
-               ORDER BY cf.created_at DESC"""
+               ORDER BY cf.created_at DESC LIMIT ? OFFSET ?""",
+            (per_page, offset),
         ).fetchall()
-    return [dict(r) for r in rows]
+    return {
+        "items":    [dict(r) for r in rows],
+        "total":    total,
+        "page":     page,
+        "per_page": per_page,
+        "pages":    max(1, -(-total // per_page)),
+    }
 
 
 def add_nara_result(confirmed_id: int, result: str, notes: str) -> None:
@@ -2172,17 +2207,70 @@ def add_nara_result(confirmed_id: int, result: str, notes: str) -> None:
         )
 
 
-def list_nara_results() -> list:
+def list_nara_results(page: int = 1, per_page: int = 50) -> dict:
+    offset = (page - 1) * per_page
     with get_connection() as conn:
-        rows = conn.execute(
+        total = conn.execute("SELECT COUNT(*) FROM nara_results").fetchone()[0]
+        rows  = conn.execute(
             """SELECT r.id, r.confirmed_id, r.result, r.notes, r.created_at,
-                      cf.confirmed_by, cf.notes as confirm_notes,
+                      cf.confirmed_by, cf.notes as confirm_notes, cf.assignee,
                       ca.bid_ntce_nm, ca.ntce_instt_nm, ca.presmpt_prce,
                       ca.bid_clse_dt, ca.ntce_url
                FROM nara_results r
                JOIN nara_confirmed cf ON cf.id = r.confirmed_id
                JOIN nara_candidates ca ON ca.id = cf.candidate_id
-               ORDER BY r.created_at DESC"""
+               ORDER BY r.created_at DESC LIMIT ? OFFSET ?""",
+            (per_page, offset),
+        ).fetchall()
+    return {
+        "items":    [dict(r) for r in rows],
+        "total":    total,
+        "page":     page,
+        "per_page": per_page,
+        "pages":    max(1, -(-total // per_page)),
+    }
+
+
+def list_nara_bids_paged(keyword: str = "", page: int = 1, per_page: int = 50) -> dict:
+    offset = (page - 1) * per_page
+    with get_connection() as conn:
+        if keyword:
+            total = conn.execute(
+                "SELECT COUNT(*) FROM nara_bids WHERE matched_keyword=?", (keyword,)
+            ).fetchone()[0]
+            rows = conn.execute(
+                "SELECT * FROM nara_bids WHERE matched_keyword=? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (keyword, per_page, offset),
+            ).fetchall()
+        else:
+            total = conn.execute("SELECT COUNT(*) FROM nara_bids").fetchone()[0]
+            rows  = conn.execute(
+                "SELECT * FROM nara_bids ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (per_page, offset),
+            ).fetchall()
+    return {
+        "items":    [dict(r) for r in rows],
+        "total":    total,
+        "page":     page,
+        "per_page": per_page,
+        "pages":    max(1, -(-total // per_page)),
+    }
+
+
+def add_candidate_comment(candidate_id: int, author: str, content: str) -> int:
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO nara_candidate_comments (candidate_id, author, content) VALUES (?,?,?)",
+            (candidate_id, author, content),
+        )
+        return cur.lastrowid or 0
+
+
+def list_candidate_comments(candidate_id: int) -> list:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM nara_candidate_comments WHERE candidate_id=? ORDER BY created_at ASC",
+            (candidate_id,),
         ).fetchall()
     return [dict(r) for r in rows]
 
