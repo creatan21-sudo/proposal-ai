@@ -845,9 +845,11 @@ STEP 11 ─ 기대효과 & 마무리 (2~3장)
         _n_chunks   = math.ceil(target_slides / _CHUNK_SIZE)
 
         # ── 재시작 대비: DB에서 기존 진행분 확인 ──────────────────────
+        # rerun 모드(코멘트 있음)일 때는 기존 완료 체크를 건너뛰고 처음부터 재생성
+        _is_rerun       = bool(_step_instruction)
         _resumed_slides = []
         _saved_count    = 0
-        if case_id:
+        if case_id and not _is_rerun:
             try:
                 from database.db import get_ppt_narrative as _get_ppt_narr
                 _db_state = _get_ppt_narr(case_id)
@@ -866,6 +868,8 @@ STEP 11 ─ 기대효과 & 마무리 (2~3장)
                     print(f"[PPT설계] 기존 {_saved_count}장 발견 → {_saved_count + 1}장부터 이어서 생성")
             except Exception as _re:
                 print(f"  [PPT설계] 기존 슬라이드 확인 오류: {_re}")
+        elif _is_rerun:
+            print(f"[PPT설계] rerun 모드 — 기존 완료 여부 무시하고 처음부터 재생성")
 
         _skip_chunks = _saved_count // _CHUNK_SIZE
         _all_slides  = list(_resumed_slides)
