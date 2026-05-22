@@ -75,7 +75,9 @@ from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           get_candidate_bid_nos, list_nara_bids_paged,
                           confirm_nara_candidate, list_nara_confirmed,
                           add_nara_result, list_nara_results,
-                          add_candidate_comment, list_candidate_comments)
+                          add_candidate_comment, list_candidate_comments,
+                          add_nara_pickup, list_nara_pickups, delete_nara_pickup,
+                          get_pickup_candidate_ids, confirm_nara_pickup)
 
 app = Flask(__name__)
 # Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
@@ -3886,8 +3888,19 @@ def nara_candidates_page():
     paged  = list_nara_candidates(page=page, per_page=50)
     is_ops = session.get("role") in ("admin", "operator")
     is_adm = bool(session.get("is_admin"))
+    pickup_cand_ids = get_pickup_candidate_ids()
     return render_template("nara_candidates.html", candidates=paged["items"],
-                           pagination=paged, is_ops=is_ops, is_adm=is_adm)
+                           pagination=paged, is_ops=is_ops, is_adm=is_adm,
+                           pickup_cand_ids=pickup_cand_ids)
+
+@app.route("/nara/pickups")
+@login_required
+def nara_pickups_page():
+    page   = max(1, int(request.args.get("page", 1)))
+    paged  = list_nara_pickups(page=page, per_page=50)
+    is_ops = session.get("role") in ("admin", "operator")
+    return render_template("nara_pickups.html", pickups=paged["items"],
+                           pagination=paged, is_ops=is_ops)
 
 @app.route("/nara/confirmed")
 @login_required
@@ -3986,6 +3999,51 @@ def nara_candidate_delete(candidate_id):
     try:
         delete_nara_candidate(candidate_id)
         return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/nara/pickup/add", methods=["POST"])
+@login_required
+def nara_pickup_add():
+    data = request.get_json(force=True) or {}
+    try:
+        new_id = add_nara_pickup(
+            candidate_id   = int(data.get("candidate_id", 0)),
+            bid_ntce_no    = str(data.get("bid_ntce_no",    "")),
+            bid_ntce_nm    = str(data.get("bid_ntce_nm",    "")),
+            ntce_instt_nm  = str(data.get("ntce_instt_nm",  "")),
+            presmpt_prce   = str(data.get("presmpt_prce",   "")),
+            bid_clse_dt    = str(data.get("bid_clse_dt",    "")),
+            ntce_url       = str(data.get("ntce_url",       "")),
+            matched_keyword= str(data.get("matched_keyword","")),
+            reason         = str(data.get("reason",         "")),
+            registered_by  = session.get("username", ""),
+        )
+        return jsonify({"ok": True, "id": new_id})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/nara/pickup/delete/<int:pickup_id>", methods=["POST"])
+@operator_or_admin_required
+def nara_pickup_delete(pickup_id):
+    try:
+        delete_nara_pickup(pickup_id)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/nara/confirm/pickup/<int:pickup_id>", methods=["POST"])
+@operator_or_admin_required
+def nara_confirm_from_pickup(pickup_id):
+    data = request.get_json(force=True) or {}
+    try:
+        new_id = confirm_nara_pickup(
+            pickup_id    = pickup_id,
+            confirmed_by = session.get("username", ""),
+            notes        = str(data.get("notes", "")),
+            assignee     = str(data.get("assignee", "")),
+        )
+        return jsonify({"ok": True, "id": new_id})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 

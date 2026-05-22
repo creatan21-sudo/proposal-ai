@@ -22,6 +22,8 @@
 .btn-confirm:hover{background:#3730a3;}
 .btn-comment{background:#f0fdf4;color:#166534;border:1px solid #86efac;}
 .btn-comment:hover{background:#dcfce7;}
+.btn-pickup{background:#fef9c3;color:#854d0e;border:1px solid #fde68a;}
+.btn-pickup:hover{background:#fef08a;}
 .btn-del{background:#fff;color:#ef4444;border:1px solid #fca5a5;}
 .btn-del:hover{background:#fef2f2;}
 /* 모달 공통 */
@@ -64,6 +66,7 @@
   <div class="nara-tabs">
     <button class="nara-tab" onclick="location.href='/nara'">공고</button>
     <button class="nara-tab active">후보</button>
+    <button class="nara-tab" onclick="location.href='/nara/pickups'">픽업</button>
     <button class="nara-tab" onclick="location.href='/nara/confirmed'">확정</button>
     <button class="nara-tab" onclick="location.href='/nara/results'">결과</button>
   </div>
@@ -101,11 +104,19 @@
               data-by="{{ c.registered_by | e }}"
               data-reason="{{ c.reason | e }}"
               onclick="openCommentModal(this)">💬 의견</button>
-            {% if is_ops %}
-            <button class="btn btn-confirm"
+            {% if c.id in pickup_cand_ids %}
+            <button class="btn" style="background:#f3f4f6;color:#9ca3af;border:1px solid #e5e7eb;cursor:default;" disabled>픽업됨</button>
+            {% else %}
+            <button class="btn btn-pickup"
               data-id="{{ c.id }}"
+              data-no="{{ c.bid_ntce_no }}"
               data-nm="{{ c.bid_ntce_nm | e }}"
-              onclick="openConfirmModal(this)">✅ 확정</button>
+              data-instt="{{ c.ntce_instt_nm | e }}"
+              data-prce="{{ c.presmpt_prce }}"
+              data-clse="{{ c.bid_clse_dt }}"
+              data-url="{{ c.ntce_url | e }}"
+              data-keyword="{{ c.matched_keyword | e }}"
+              onclick="openPickupModal(this)">⬆ 픽업</button>
             {% endif %}
             {% if session.get('is_admin') or session.get('role') == 'operator' %}
             <button class="btn btn-del" onclick="deleteCandidate({{ c.id }})">삭제</button>
@@ -155,29 +166,21 @@
   </div>
 </div>
 
-<!-- 확정 모달 -->
-<div class="modal-overlay" id="confirm-modal" onclick="if(event.target===this)closeConfirmModal()">
-  <div class="modal-box" style="max-height:auto;">
+<!-- 픽업 등록 모달 -->
+<div class="modal-overlay" id="pickup-modal" onclick="if(event.target===this)closePickupModal()">
+  <div class="modal-box">
     <div class="modal-head">
-      <div class="modal-title">✅ 확정 처리</div>
-      <div class="modal-nm" id="confirm-modal-nm"></div>
+      <div class="modal-title">⬆ 픽업 등록</div>
+      <div class="modal-nm" id="pickup-modal-nm"></div>
     </div>
-    <div class="modal-body" style="overflow:visible;">
-      <div style="margin-bottom:14px;">
-        <div class="modal-label">담당자를 지정하세요</div>
-        <select id="confirm-assignee" class="modal-select">
-          <option value="">-- 담당자 선택 --</option>
-        </select>
-      </div>
-      <div>
-        <div class="modal-label">메모 <span style="color:#9ca3af;font-weight:400;">(선택)</span></div>
-        <textarea id="confirm-notes" class="modal-textarea" rows="3" placeholder="예: 제안서 준비 시작, 특이사항 등"></textarea>
-      </div>
+    <div class="modal-body">
+      <div class="modal-label">픽업 이유 <span style="color:#9ca3af;font-weight:400;">(필수)</span></div>
+      <textarea id="pickup-reason" class="modal-textarea" rows="3" placeholder="예: 수주 가능성 높음, 우리 전문 분야 등"></textarea>
     </div>
     <div class="modal-foot">
       <div class="modal-btns">
-        <button onclick="closeConfirmModal()" style="padding:8px 18px;background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:7px;cursor:pointer;font-size:13px;">취소</button>
-        <button id="confirm-submit-btn" onclick="submitConfirm()" style="padding:8px 20px;background:#4f46e5;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">확정</button>
+        <button onclick="closePickupModal()" style="padding:8px 18px;background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:7px;cursor:pointer;font-size:13px;">취소</button>
+        <button id="pickup-submit-btn" onclick="submitPickup()" style="padding:8px 20px;background:#d97706;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">픽업 등록</button>
       </div>
     </div>
   </div>
@@ -231,36 +234,39 @@ async function submitComment(){
   btn.disabled=false; btn.textContent='등록';
 }
 
-/* ── 확정 모달 ── */
-let _confirmCandId = null;
-async function openConfirmModal(btn){
-  _confirmCandId = parseInt(btn.dataset.id);
-  document.getElementById('confirm-modal-nm').textContent = btn.dataset.nm || '';
-  document.getElementById('confirm-notes').value = '';
-  // 직원 목록 로드
-  const sel = document.getElementById('confirm-assignee');
-  sel.innerHTML = '<option value="">-- 담당자 선택 --</option>';
-  try{
-    const r = await fetch('/nara/users');
-    const d = await r.json();
-    if(d.ok) d.users.forEach(u=>{ const o=document.createElement('option'); o.value=u.username; o.textContent=u.username; sel.appendChild(o); });
-  }catch(e){}
-  document.getElementById('confirm-modal').classList.add('open');
+/* ── 픽업 모달 ── */
+let _pickupBid = null;
+function openPickupModal(btn){
+  _pickupBid = {
+    candidate_id:    btn.dataset.id,
+    bid_ntce_no:     btn.dataset.no,
+    bid_ntce_nm:     btn.dataset.nm,
+    ntce_instt_nm:   btn.dataset.instt,
+    presmpt_prce:    btn.dataset.prce,
+    bid_clse_dt:     btn.dataset.clse,
+    ntce_url:        btn.dataset.url,
+    matched_keyword: btn.dataset.keyword,
+  };
+  document.getElementById('pickup-modal-nm').textContent = btn.dataset.nm || '';
+  document.getElementById('pickup-reason').value = '';
+  document.getElementById('pickup-modal').classList.add('open');
+  setTimeout(()=>document.getElementById('pickup-reason').focus(), 50);
 }
-function closeConfirmModal(){ document.getElementById('confirm-modal').classList.remove('open'); _confirmCandId=null; }
-async function submitConfirm(){
-  if(!_confirmCandId) return;
-  const assignee = document.getElementById('confirm-assignee').value;
-  const notes    = document.getElementById('confirm-notes').value.trim();
-  const btn = document.getElementById('confirm-submit-btn');
-  btn.disabled=true; btn.textContent='처리 중...';
+function closePickupModal(){ document.getElementById('pickup-modal').classList.remove('open'); _pickupBid=null; }
+async function submitPickup(){
+  if(!_pickupBid) return;
+  const reason = document.getElementById('pickup-reason').value.trim();
+  if(!reason){ showToast('이유를 입력해주세요',false); return; }
+  const btn = document.getElementById('pickup-submit-btn');
+  btn.disabled=true; btn.textContent='등록 중...';
   try{
-    const r = await fetch(`/nara/confirm/${_confirmCandId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({assignee,notes})});
+    const r = await fetch('/nara/pickup/add',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({..._pickupBid, reason})});
     const d = await r.json();
-    if(d.ok){ closeConfirmModal(); showToast('확정 처리되었습니다'); setTimeout(()=>location.reload(),800); }
-    else showToast(d.error||'확정 실패',false);
+    if(d.ok){ closePickupModal(); showToast('픽업 등록되었습니다'); setTimeout(()=>location.reload(),600); }
+    else showToast(d.error||'등록 실패',false);
   }catch(e){ showToast('오류: '+e,false); }
-  btn.disabled=false; btn.textContent='확정';
+  btn.disabled=false; btn.textContent='픽업 등록';
 }
 
 async function deleteCandidate(id){

@@ -346,6 +346,21 @@ def init_db() -> None:
                 created_at   TEXT DEFAULT (datetime('now','localtime'))
             );
 
+            CREATE TABLE IF NOT EXISTS nara_pickups (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                candidate_id  INTEGER NOT NULL,
+                bid_ntce_no   TEXT NOT NULL,
+                bid_ntce_nm   TEXT DEFAULT '',
+                ntce_instt_nm TEXT DEFAULT '',
+                presmpt_prce  TEXT DEFAULT '',
+                bid_clse_dt   TEXT DEFAULT '',
+                ntce_url      TEXT DEFAULT '',
+                matched_keyword TEXT DEFAULT '',
+                reason        TEXT DEFAULT '',
+                registered_by TEXT DEFAULT '',
+                created_at    TEXT DEFAULT (datetime('now','localtime'))
+            );
+
             CREATE TABLE IF NOT EXISTS pipeline_run_status (
                 case_id      INTEGER NOT NULL,
                 step_key     TEXT    NOT NULL,
@@ -397,7 +412,8 @@ def init_db() -> None:
             "ALTER TABLE platform_results ADD COLUMN is_active INTEGER DEFAULT 1",
             "ALTER TABLE marketing_results ADD COLUMN is_active INTEGER DEFAULT 1",
             "ALTER TABLE final_proposals  ADD COLUMN is_active INTEGER DEFAULT 1",
-            "ALTER TABLE nara_confirmed   ADD COLUMN assignee TEXT DEFAULT ''",
+            "ALTER TABLE nara_confirmed   ADD COLUMN assignee  TEXT DEFAULT ''",
+            "ALTER TABLE nara_confirmed   ADD COLUMN pickup_id INTEGER DEFAULT 0",
         ]:
             try:
                 conn.execute(migration)
@@ -2181,12 +2197,20 @@ def list_nara_confirmed(page: int = 1, per_page: int = 50) -> dict:
     with get_connection() as conn:
         total = conn.execute("SELECT COUNT(*) FROM nara_confirmed").fetchone()[0]
         rows  = conn.execute(
-            """SELECT cf.id, cf.candidate_id, cf.confirmed_by, cf.notes, cf.assignee, cf.created_at,
-                      ca.bid_ntce_no, ca.bid_ntce_nm, ca.ntce_instt_nm,
-                      ca.presmpt_prce, ca.bid_clse_dt, ca.ntce_url, ca.matched_keyword,
-                      ca.reason, ca.registered_by
+            """SELECT cf.id, cf.candidate_id, cf.pickup_id, cf.confirmed_by,
+                      cf.notes, cf.assignee, cf.created_at,
+                      COALESCE(pk.bid_ntce_no, ca.bid_ntce_no) as bid_ntce_no,
+                      COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm) as bid_ntce_nm,
+                      COALESCE(pk.ntce_instt_nm, ca.ntce_instt_nm) as ntce_instt_nm,
+                      COALESCE(pk.presmpt_prce, ca.presmpt_prce) as presmpt_prce,
+                      COALESCE(pk.bid_clse_dt, ca.bid_clse_dt) as bid_clse_dt,
+                      COALESCE(pk.ntce_url, ca.ntce_url) as ntce_url,
+                      COALESCE(pk.matched_keyword, ca.matched_keyword) as matched_keyword,
+                      COALESCE(pk.reason, ca.reason) as reason,
+                      COALESCE(pk.registered_by, ca.registered_by) as registered_by
                FROM nara_confirmed cf
-               JOIN nara_candidates ca ON ca.id = cf.candidate_id
+               LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
+               LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
                ORDER BY cf.created_at DESC LIMIT ? OFFSET ?""",
             (per_page, offset),
         ).fetchall()
@@ -2197,6 +2221,16 @@ def list_nara_confirmed(page: int = 1, per_page: int = 50) -> dict:
         "per_page": per_page,
         "pages":    max(1, -(-total // per_page)),
     }
+
+
+def confirm_nara_pickup(pickup_id: int, confirmed_by: str,
+                        notes: str = "", assignee: str = "") -> int:
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO nara_confirmed (pickup_id, candidate_id, confirmed_by, notes, assignee) VALUES (?,0,?,?,?)",
+            (pickup_id, confirmed_by, notes, assignee),
+        )
+        return cur.lastrowid or 0
 
 
 def add_nara_result(confirmed_id: int, result: str, notes: str) -> None:
@@ -2214,11 +2248,15 @@ def list_nara_results(page: int = 1, per_page: int = 50) -> dict:
         rows  = conn.execute(
             """SELECT r.id, r.confirmed_id, r.result, r.notes, r.created_at,
                       cf.confirmed_by, cf.notes as confirm_notes, cf.assignee,
-                      ca.bid_ntce_nm, ca.ntce_instt_nm, ca.presmpt_prce,
-                      ca.bid_clse_dt, ca.ntce_url
+                      COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm) as bid_ntce_nm,
+                      COALESCE(pk.ntce_instt_nm, ca.ntce_instt_nm) as ntce_instt_nm,
+                      COALESCE(pk.presmpt_prce, ca.presmpt_prce) as presmpt_prce,
+                      COALESCE(pk.bid_clse_dt, ca.bid_clse_dt) as bid_clse_dt,
+                      COALESCE(pk.ntce_url, ca.ntce_url) as ntce_url
                FROM nara_results r
                JOIN nara_confirmed cf ON cf.id = r.confirmed_id
-               JOIN nara_candidates ca ON ca.id = cf.candidate_id
+               LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
+               LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
                ORDER BY r.created_at DESC LIMIT ? OFFSET ?""",
             (per_page, offset),
         ).fetchall()
@@ -2229,6 +2267,51 @@ def list_nara_results(page: int = 1, per_page: int = 50) -> dict:
         "per_page": per_page,
         "pages":    max(1, -(-total // per_page)),
     }
+
+
+def get_pickup_candidate_ids() -> set:
+    """픽업 등록된 candidate_id 전체 집합 (후보 탭 버튼 상태용)."""
+    with get_connection() as conn:
+        rows = conn.execute("SELECT candidate_id FROM nara_pickups").fetchall()
+    return {r[0] for r in rows}
+
+
+def add_nara_pickup(candidate_id: int, bid_ntce_no: str, bid_ntce_nm: str,
+                    ntce_instt_nm: str, presmpt_prce: str, bid_clse_dt: str,
+                    ntce_url: str, matched_keyword: str, reason: str,
+                    registered_by: str) -> int:
+    with get_connection() as conn:
+        cur = conn.execute(
+            """INSERT INTO nara_pickups
+               (candidate_id, bid_ntce_no, bid_ntce_nm, ntce_instt_nm, presmpt_prce,
+                bid_clse_dt, ntce_url, matched_keyword, reason, registered_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+            (candidate_id, bid_ntce_no, bid_ntce_nm, ntce_instt_nm, presmpt_prce,
+             bid_clse_dt, ntce_url, matched_keyword, reason, registered_by),
+        )
+        return cur.lastrowid or 0
+
+
+def list_nara_pickups(page: int = 1, per_page: int = 50) -> dict:
+    offset = (page - 1) * per_page
+    with get_connection() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM nara_pickups").fetchone()[0]
+        rows  = conn.execute(
+            "SELECT * FROM nara_pickups ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (per_page, offset),
+        ).fetchall()
+    return {
+        "items":    [dict(r) for r in rows],
+        "total":    total,
+        "page":     page,
+        "per_page": per_page,
+        "pages":    max(1, -(-total // per_page)),
+    }
+
+
+def delete_nara_pickup(pickup_id: int) -> None:
+    with get_connection() as conn:
+        conn.execute("DELETE FROM nara_pickups WHERE id=?", (pickup_id,))
 
 
 def list_nara_bids_paged(keyword: str = "", page: int = 1, per_page: int = 50) -> dict:
