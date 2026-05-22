@@ -308,6 +308,36 @@ def init_db() -> None:
                 updated_at TEXT    DEFAULT (datetime('now','localtime'))
             );
 
+            CREATE TABLE IF NOT EXISTS nara_candidates (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                bid_ntce_no   TEXT NOT NULL,
+                bid_ntce_nm   TEXT DEFAULT '',
+                ntce_instt_nm TEXT DEFAULT '',
+                presmpt_prce  TEXT DEFAULT '',
+                bid_clse_dt   TEXT DEFAULT '',
+                ntce_url      TEXT DEFAULT '',
+                matched_keyword TEXT DEFAULT '',
+                reason        TEXT DEFAULT '',
+                registered_by TEXT DEFAULT '',
+                created_at    TEXT DEFAULT (datetime('now','localtime'))
+            );
+
+            CREATE TABLE IF NOT EXISTS nara_confirmed (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                candidate_id INTEGER NOT NULL,
+                confirmed_by TEXT DEFAULT '',
+                notes        TEXT DEFAULT '',
+                created_at   TEXT DEFAULT (datetime('now','localtime'))
+            );
+
+            CREATE TABLE IF NOT EXISTS nara_results (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                confirmed_id INTEGER NOT NULL,
+                result       TEXT DEFAULT '미정',
+                notes        TEXT DEFAULT '',
+                created_at   TEXT DEFAULT (datetime('now','localtime'))
+            );
+
             CREATE TABLE IF NOT EXISTS pipeline_run_status (
                 case_id      INTEGER NOT NULL,
                 step_key     TEXT    NOT NULL,
@@ -2081,6 +2111,80 @@ def save_nara_settings(min_budget: int, max_budget: int, period_days: int, regio
                WHERE id=1""",
             (min_budget, max_budget, period_days, regions),
         )
+
+
+def add_nara_candidate(bid_ntce_no: str, bid_ntce_nm: str, ntce_instt_nm: str,
+                       presmpt_prce: str, bid_clse_dt: str, ntce_url: str,
+                       matched_keyword: str, reason: str, registered_by: str) -> int:
+    with get_connection() as conn:
+        cur = conn.execute(
+            """INSERT OR IGNORE INTO nara_candidates
+               (bid_ntce_no, bid_ntce_nm, ntce_instt_nm, presmpt_prce,
+                bid_clse_dt, ntce_url, matched_keyword, reason, registered_by)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
+            (bid_ntce_no, bid_ntce_nm, ntce_instt_nm, presmpt_prce,
+             bid_clse_dt, ntce_url, matched_keyword, reason, registered_by),
+        )
+        return cur.lastrowid or 0
+
+
+def list_nara_candidates() -> list:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM nara_candidates ORDER BY created_at DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def delete_nara_candidate(candidate_id: int) -> None:
+    with get_connection() as conn:
+        conn.execute("DELETE FROM nara_candidates WHERE id=?", (candidate_id,))
+
+
+def confirm_nara_candidate(candidate_id: int, confirmed_by: str, notes: str) -> int:
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO nara_confirmed (candidate_id, confirmed_by, notes) VALUES (?,?,?)",
+            (candidate_id, confirmed_by, notes),
+        )
+        return cur.lastrowid or 0
+
+
+def list_nara_confirmed() -> list:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT cf.id, cf.candidate_id, cf.confirmed_by, cf.notes, cf.created_at,
+                      ca.bid_ntce_no, ca.bid_ntce_nm, ca.ntce_instt_nm,
+                      ca.presmpt_prce, ca.bid_clse_dt, ca.ntce_url, ca.matched_keyword,
+                      ca.reason, ca.registered_by
+               FROM nara_confirmed cf
+               JOIN nara_candidates ca ON ca.id = cf.candidate_id
+               ORDER BY cf.created_at DESC"""
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def add_nara_result(confirmed_id: int, result: str, notes: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO nara_results (confirmed_id, result, notes) VALUES (?,?,?)",
+            (confirmed_id, result, notes),
+        )
+
+
+def list_nara_results() -> list:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT r.id, r.confirmed_id, r.result, r.notes, r.created_at,
+                      cf.confirmed_by, cf.notes as confirm_notes,
+                      ca.bid_ntce_nm, ca.ntce_instt_nm, ca.presmpt_prce,
+                      ca.bid_clse_dt, ca.ntce_url
+               FROM nara_results r
+               JOIN nara_confirmed cf ON cf.id = r.confirmed_id
+               JOIN nara_candidates ca ON ca.id = cf.candidate_id
+               ORDER BY r.created_at DESC"""
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def save_pipeline_step(case_id: int, step_key: str) -> None:

@@ -70,7 +70,10 @@ from utils.telegram_notify import send_telegram
 from config import GAMMA_API_KEY
 from utils.nara import start_scheduler, manual_scan
 from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
-                          get_nara_settings, save_nara_settings)
+                          get_nara_settings, save_nara_settings,
+                          add_nara_candidate, list_nara_candidates, delete_nara_candidate,
+                          confirm_nara_candidate, list_nara_confirmed,
+                          add_nara_result, list_nara_results)
 
 app = Flask(__name__)
 # Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
@@ -3863,10 +3866,32 @@ def api_step_overrides(case_id):
 @app.route("/nara")
 @login_required
 def nara_dashboard():
-    keywords = get_nara_keywords()
-    bids     = list_nara_bids(limit=200)
-    settings = get_nara_settings()
-    return render_template("nara.html", keywords=keywords, bids=bids, settings=settings)
+    keywords      = get_nara_keywords()
+    bids          = list_nara_bids(limit=200)
+    settings      = get_nara_settings()
+    candidate_nos = {c["bid_ntce_no"] for c in list_nara_candidates()}
+    return render_template("nara.html", keywords=keywords, bids=bids,
+                           settings=settings, candidate_nos=candidate_nos)
+
+@app.route("/nara/candidates")
+@login_required
+def nara_candidates_page():
+    candidates = list_nara_candidates()
+    is_ops = session.get("role") in ("admin", "operator")
+    return render_template("nara_candidates.html", candidates=candidates, is_ops=is_ops)
+
+@app.route("/nara/confirmed")
+@login_required
+def nara_confirmed_page():
+    confirmed = list_nara_confirmed()
+    is_ops = session.get("role") in ("admin", "operator")
+    return render_template("nara_confirmed.html", confirmed=confirmed, is_ops=is_ops)
+
+@app.route("/nara/results")
+@login_required
+def nara_results_page():
+    results = list_nara_results()
+    return render_template("nara_results.html", results=results)
 
 @app.route("/nara/keyword", methods=["POST"])
 @login_required
@@ -3919,6 +3944,63 @@ def nara_save_settings():
         period_days = max(1,   int(data.get("period_days", 30)))
         regions     = str(data.get("regions", "전국")).strip() or "전국"
         save_nara_settings(min_budget, max_budget, period_days, regions)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/nara/candidate/add", methods=["POST"])
+@login_required
+def nara_candidate_add():
+    data = request.get_json(force=True) or {}
+    try:
+        new_id = add_nara_candidate(
+            bid_ntce_no    = str(data.get("bid_ntce_no",    "")),
+            bid_ntce_nm    = str(data.get("bid_ntce_nm",    "")),
+            ntce_instt_nm  = str(data.get("ntce_instt_nm",  "")),
+            presmpt_prce   = str(data.get("presmpt_prce",   "")),
+            bid_clse_dt    = str(data.get("bid_clse_dt",    "")),
+            ntce_url       = str(data.get("ntce_url",       "")),
+            matched_keyword= str(data.get("matched_keyword","")),
+            reason         = str(data.get("reason",         "")),
+            registered_by  = session.get("username", ""),
+        )
+        return jsonify({"ok": True, "id": new_id})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/nara/candidate/delete/<int:candidate_id>", methods=["POST"])
+@login_required
+def nara_candidate_delete(candidate_id):
+    try:
+        delete_nara_candidate(candidate_id)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/nara/confirm/<int:candidate_id>", methods=["POST"])
+@operator_or_admin_required
+def nara_confirm(candidate_id):
+    data = request.get_json(force=True) or {}
+    try:
+        new_id = confirm_nara_candidate(
+            candidate_id = candidate_id,
+            confirmed_by = session.get("username", ""),
+            notes        = str(data.get("notes", "")),
+        )
+        return jsonify({"ok": True, "id": new_id})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/nara/result/<int:confirmed_id>", methods=["POST"])
+@login_required
+def nara_result_add(confirmed_id):
+    data = request.get_json(force=True) or {}
+    try:
+        add_nara_result(
+            confirmed_id = confirmed_id,
+            result       = str(data.get("result", "미정")),
+            notes        = str(data.get("notes", "")),
+        )
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})

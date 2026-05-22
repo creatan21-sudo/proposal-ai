@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}입찰 결과 — Prointerz{% endblock %}
+{% block head %}
+<style>
+.nara-wrap{max-width:1100px;margin:0 auto;padding:24px 16px}
+.nara-title{font-size:22px;font-weight:700;margin-bottom:6px}
+.nara-subtitle{font-size:13px;color:#6b7280;margin-bottom:20px}
+.nara-tabs{display:flex;gap:4px;margin-bottom:24px;border-bottom:2px solid #e5e7eb;padding-bottom:0;}
+.nara-tab{padding:9px 20px;font-size:14px;font-weight:600;color:#6b7280;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer;margin-bottom:-2px;transition:color .15s,border-color .15s;}
+.nara-tab:hover{color:#4f46e5;}
+.nara-tab.active{color:#4f46e5;border-bottom-color:#4f46e5;}
+.filter-tabs{display:flex;gap:6px;margin-bottom:16px;}
+.filter-tab{padding:6px 16px;border:1px solid #e5e7eb;border-radius:20px;font-size:13px;font-weight:600;cursor:pointer;background:#fff;color:#6b7280;transition:all .15s;}
+.filter-tab.active{background:#4f46e5;color:#fff;border-color:#4f46e5;}
+.filter-tab.win.active{background:#059669;border-color:#059669;}
+.filter-tab.lose.active{background:#ef4444;border-color:#ef4444;}
+.bid-table{width:100%;border-collapse:collapse;font-size:13px}
+.bid-table th{background:#f3f4f6;padding:10px 12px;text-align:left;font-weight:600;color:#374151;border-bottom:1px solid #e5e7eb}
+.bid-table td{padding:11px 12px;border-bottom:1px solid #f3f4f6;vertical-align:top;color:#374151}
+.bid-table tr:hover td{background:#fafafa}
+.bid-nm a{color:#2563eb;text-decoration:underline;font-weight:600;}
+.bid-prce{font-weight:600;color:#059669;}
+.bid-date{color:#6b7280;font-size:12px;}
+.bid-empty{text-align:center;padding:48px;color:#9ca3af;font-size:14px}
+.badge-win{display:inline-block;background:#dcfce7;color:#166534;border-radius:99px;padding:3px 12px;font-size:12px;font-weight:700;}
+.badge-lose{display:inline-block;background:#fee2e2;color:#991b1b;border-radius:99px;padding:3px 12px;font-size:12px;font-weight:700;}
+.badge-etc{display:inline-block;background:#f3f4f6;color:#6b7280;border-radius:99px;padding:3px 12px;font-size:12px;font-weight:600;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="nara-wrap">
+  <div class="nara-title">📋 입찰</div>
+  <div class="nara-subtitle">입찰 결과를 확인합니다</div>
+  <div class="nara-tabs">
+    <button class="nara-tab" onclick="location.href='/nara'">공고</button>
+    <button class="nara-tab" onclick="location.href='/nara/candidates'">후보</button>
+    <button class="nara-tab" onclick="location.href='/nara/confirmed'">확정</button>
+    <button class="nara-tab active">결과</button>
+  </div>
+
+  <!-- 결과 필터 탭 -->
+  <div class="filter-tabs">
+    <button class="filter-tab active" id="ft-all" onclick="filterResult('all')">전체 ({{ results|length }})</button>
+    <button class="filter-tab win" id="ft-win" onclick="filterResult('수주')">🏆 수주 ({{ results|selectattr('result','equalto','수주')|list|length }})</button>
+    <button class="filter-tab lose" id="ft-lose" onclick="filterResult('낙주')">❌ 낙주 ({{ results|selectattr('result','equalto','낙주')|list|length }})</button>
+  </div>
+
+  <table class="bid-table" id="results-table">
+    <thead>
+      <tr>
+        <th style="width:30%">공고명</th>
+        <th style="width:14%">발주처</th>
+        <th style="width:10%">추정가격</th>
+        <th style="width:10%">마감일</th>
+        <th style="width:9%">결과</th>
+        <th style="width:18%">메모</th>
+        <th style="width:9%">등록일</th>
+      </tr>
+    </thead>
+    <tbody id="result-tbody">
+      {% if results %}
+        {% for r in results %}
+        <tr data-result="{{ r.result }}">
+          <td class="bid-nm">
+            <a href="{{ r.ntce_url if r.ntce_url else '#' }}" target="_blank">{{ r.bid_ntce_nm or '-' }}</a>
+          </td>
+          <td>{{ r.ntce_instt_nm or '-' }}</td>
+          <td class="bid-prce">{% if r.presmpt_prce and r.presmpt_prce.isdigit() %}{{ '{:,}'.format(r.presmpt_prce|int) }}원{% else %}-{% endif %}</td>
+          <td class="bid-date">{{ (r.bid_clse_dt or '-')[:10] }}</td>
+          <td>
+            {% if r.result == '수주' %}<span class="badge-win">🏆 수주</span>
+            {% elif r.result == '낙주' %}<span class="badge-lose">❌ 낙주</span>
+            {% else %}<span class="badge-etc">{{ r.result }}</span>{% endif %}
+          </td>
+          <td style="font-size:12px;color:#6b7280;">{{ r.notes or '-' }}</td>
+          <td class="bid-date">{{ (r.created_at or '-')[:10] }}</td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="7" class="bid-empty">등록된 결과가 없습니다</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+<script>
+function filterResult(type){
+  ['all','win','lose'].forEach(k=>{
+    const el=document.getElementById(`ft-${k}`);
+    el.classList.remove('active');
+  });
+  document.getElementById(`ft-${type==='수주'?'win':type==='낙주'?'lose':'all'}`).classList.add('active');
+  document.querySelectorAll('#result-tbody tr[data-result]').forEach(tr=>{
+    tr.style.display = (type==='all' || tr.dataset.result===type) ? '' : 'none';
+  });
+}
+</script>
+{% endblock %}

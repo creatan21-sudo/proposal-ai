@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}입찰 모니터링 — Prointerz{% endblock %}
+{% block title %}입찰 공고 — Prointerz{% endblock %}
 {% block head %}
 <style>
 .nara-wrap{max-width:1100px;margin:0 auto;padding:24px 16px}
@@ -38,12 +38,35 @@
 .bid-empty{text-align:center;padding:48px;color:#9ca3af;font-size:14px}
 .toast{position:fixed;bottom:28px;right:28px;background:#1f2937;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;z-index:999;pointer-events:none}
 .toast.show{opacity:1}
+.nara-tabs{display:flex;gap:4px;margin-bottom:24px;border-bottom:2px solid #e5e7eb;padding-bottom:0;}
+.nara-tab{padding:9px 20px;font-size:14px;font-weight:600;color:#6b7280;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer;margin-bottom:-2px;transition:color .15s,border-color .15s;}
+.nara-tab:hover{color:#4f46e5;}
+.nara-tab.active{color:#4f46e5;border-bottom-color:#4f46e5;}
+.btn-cand{background:#f0fdf4;color:#166534;border:1px solid #86efac;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:600;cursor:pointer;}
+.btn-cand:hover{background:#dcfce7;}
+.btn-cand.registered{background:#f3f4f6;color:#9ca3af;border-color:#e5e7eb;cursor:default;}
+/* 모달 */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:#fff;border-radius:14px;padding:28px;width:460px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.25);}
+.modal-title{font-weight:700;font-size:16px;margin-bottom:14px;}
+.modal-label{font-size:12px;font-weight:600;color:#6b7280;margin-bottom:5px;}
+.modal-textarea{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:vertical;font-family:inherit;outline:none;}
+.modal-textarea:focus{border-color:#4f46e5;}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
 </style>
 {% endblock %}
 {% block content %}
 <div class="nara-wrap">
-  <div class="nara-title">📋 입찰 모니터링</div>
+  <div class="nara-title">📋 입찰</div>
   <div class="nara-subtitle">나라장터 입찰공고를 키워드로 자동 수집합니다 · 1시간마다 자동 스캔</div>
+  <!-- 서브탭 -->
+  <div class="nara-tabs">
+    <button class="nara-tab active" onclick="location.href='/nara'">공고</button>
+    <button class="nara-tab" onclick="location.href='/nara/candidates'">후보</button>
+    <button class="nara-tab" onclick="location.href='/nara/confirmed'">확정</button>
+    <button class="nara-tab" onclick="location.href='/nara/results'">결과</button>
+  </div>
   <div class="kw-section" style="margin-bottom:16px;">
     <h3>⚙️ 모니터링 설정</h3>
     <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;">
@@ -113,12 +136,13 @@
   <table class="bid-table">
     <thead>
       <tr>
-        <th style="width:38%">공고명</th>
-        <th style="width:18%">공고기관</th>
-        <th style="width:12%">추정가격</th>
-        <th style="width:14%">마감일</th>
-        <th style="width:10%">수집일</th>
-        <th style="width:8%">공고</th>
+        <th style="width:33%">공고명</th>
+        <th style="width:16%">공고기관</th>
+        <th style="width:11%">추정가격</th>
+        <th style="width:11%">마감일</th>
+        <th style="width:9%">수집일</th>
+        <th style="width:7%">공고</th>
+        <th style="width:9%">후보</th>
       </tr>
     </thead>
     <tbody id="bid-tbody">
@@ -138,17 +162,72 @@
           <td class="bid-prce">{% if b.presmpt_prce and b.presmpt_prce.isdigit() %}{{ '{:,}'.format(b.presmpt_prce|int) }}원{% else %}-{% endif %}</td>
           <td class="bid-date">{{ (b.bid_clse_dt or '-')[:10] }}</td>
           <td class="bid-date">{{ (b.created_at or '-')[:10] }}</td>
-          <td>{% if b.ntce_url %}<a href="{{ b.ntce_url }}" target="_blank" class="btn btn-primary" style="padding:4px 10px;font-size:12px;">보기</a>{% else %}-{% endif %}</td>
+          <td><a href="{{ b.ntce_url if b.ntce_url else 'https://www.g2b.go.kr/index.jsp?bidNtceNo=' + b.bid_ntce_no }}" target="_blank" class="btn btn-primary" style="padding:4px 10px;font-size:12px;">보기</a></td>
+          <td>
+            {% if b.bid_ntce_no in candidate_nos %}
+            <button class="btn-cand registered" disabled>후보등록됨</button>
+            {% else %}
+            <button class="btn-cand" onclick="openCandModal({{ b | tojson }})">후보 등록</button>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       {% else %}
-        <tr><td colspan="6" class="bid-empty">수집된 공고가 없습니다</td></tr>
+        <tr><td colspan="7" class="bid-empty">수집된 공고가 없습니다</td></tr>
       {% endif %}
     </tbody>
   </table>
 </div>
+
+<!-- 후보 등록 모달 -->
+<div class="modal-overlay" id="cand-modal" onclick="if(event.target===this)closeCandModal()">
+  <div class="modal-box">
+    <div class="modal-title">📌 후보 등록</div>
+    <div id="cand-modal-nm" style="font-size:13px;font-weight:600;color:#1d4ed8;margin-bottom:14px;"></div>
+    <div class="modal-label">등록 이유 <span style="color:#9ca3af;font-weight:400;">(필수)</span></div>
+    <textarea id="cand-reason" class="modal-textarea" rows="3" placeholder="예: 예산 규모, 업무 연관성, 수주 가능성 등"></textarea>
+    <div class="modal-btns">
+      <button onclick="closeCandModal()" style="padding:8px 18px;background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:7px;cursor:pointer;font-size:13px;">취소</button>
+      <button id="cand-submit-btn" onclick="submitCandidate()" style="padding:8px 20px;background:#4f46e5;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">등록</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 <script>
+const _CAND_NOS = new Set({{ candidate_nos | list | tojson }});
+let _candBid = null;
+function openCandModal(b){
+  _candBid = b;
+  document.getElementById('cand-modal-nm').textContent = b.bid_ntce_nm || '';
+  document.getElementById('cand-reason').value = '';
+  document.getElementById('cand-modal').classList.add('open');
+  setTimeout(()=>document.getElementById('cand-reason').focus(),50);
+}
+function closeCandModal(){ document.getElementById('cand-modal').classList.remove('open'); _candBid=null; }
+async function submitCandidate(){
+  if(!_candBid) return;
+  const reason = document.getElementById('cand-reason').value.trim();
+  if(!reason){ showToast('이유를 입력해주세요',false); return; }
+  const btn = document.getElementById('cand-submit-btn');
+  btn.disabled=true; btn.textContent='등록 중...';
+  try{
+    const r = await fetch('/nara/candidate/add',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({..._candBid, reason})});
+    const d = await r.json();
+    if(d.ok){
+      _CAND_NOS.add(_candBid.bid_ntce_no);
+      closeCandModal();
+      showToast('후보로 등록되었습니다');
+      // 버튼 상태 업데이트
+      document.querySelectorAll('.btn-cand:not(.registered)').forEach(el=>{
+        try{ const b=JSON.parse(el.getAttribute('data-no')); if(b===_candBid.bid_ntce_no){ el.textContent='후보등록됨'; el.classList.add('registered'); el.disabled=true; } }catch(e){}
+      });
+      location.reload();
+    } else { showToast(d.error||'등록 실패',false); }
+  }catch(e){ showToast('오류: '+e,false); }
+  btn.disabled=false; btn.textContent='등록';
+}
 function saveSettings(){
   const btn=document.getElementById('save-settings-btn');
   btn.textContent='저장 중...';btn.disabled=true;

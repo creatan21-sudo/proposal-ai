@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block title %}입찰 확정 — Prointerz{% endblock %}
+{% block head %}
+<style>
+.nara-wrap{max-width:1100px;margin:0 auto;padding:24px 16px}
+.nara-title{font-size:22px;font-weight:700;margin-bottom:6px}
+.nara-subtitle{font-size:13px;color:#6b7280;margin-bottom:20px}
+.nara-tabs{display:flex;gap:4px;margin-bottom:24px;border-bottom:2px solid #e5e7eb;padding-bottom:0;}
+.nara-tab{padding:9px 20px;font-size:14px;font-weight:600;color:#6b7280;background:none;border:none;border-bottom:3px solid transparent;cursor:pointer;margin-bottom:-2px;transition:color .15s,border-color .15s;}
+.nara-tab:hover{color:#4f46e5;}
+.nara-tab.active{color:#4f46e5;border-bottom-color:#4f46e5;}
+.bid-table{width:100%;border-collapse:collapse;font-size:13px}
+.bid-table th{background:#f3f4f6;padding:10px 12px;text-align:left;font-weight:600;color:#374151;border-bottom:1px solid #e5e7eb}
+.bid-table td{padding:11px 12px;border-bottom:1px solid #f3f4f6;vertical-align:top;color:#374151}
+.bid-table tr:hover td{background:#fafafa}
+.bid-nm a{color:#2563eb;text-decoration:underline;font-weight:600;}
+.bid-prce{font-weight:600;color:#059669;}
+.bid-date{color:#6b7280;font-size:12px;}
+.bid-empty{text-align:center;padding:48px;color:#9ca3af;font-size:14px}
+.btn{padding:7px 14px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;}
+.btn-win{background:#059669;color:#fff;}
+.btn-win:hover{background:#047857;}
+.btn-lose{background:#ef4444;color:#fff;}
+.btn-lose:hover{background:#dc2626;}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:#fff;border-radius:14px;padding:28px;width:420px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.25);}
+.modal-title{font-weight:700;font-size:16px;margin-bottom:12px;}
+.modal-label{font-size:12px;font-weight:600;color:#6b7280;margin-bottom:5px;}
+.modal-textarea{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:vertical;font-family:inherit;}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
+.result-btns{display:flex;gap:4px;}
+.toast{position:fixed;bottom:28px;right:28px;background:#1f2937;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;z-index:999;pointer-events:none}
+.toast.show{opacity:1}
+</style>
+{% endblock %}
+{% block content %}
+<div class="nara-wrap">
+  <div class="nara-title">📋 입찰</div>
+  <div class="nara-subtitle">확정된 입찰 건을 관리합니다</div>
+  <div class="nara-tabs">
+    <button class="nara-tab" onclick="location.href='/nara'">공고</button>
+    <button class="nara-tab" onclick="location.href='/nara/candidates'">후보</button>
+    <button class="nara-tab active">확정</button>
+    <button class="nara-tab" onclick="location.href='/nara/results'">결과</button>
+  </div>
+
+  <table class="bid-table">
+    <thead>
+      <tr>
+        <th style="width:28%">공고명</th>
+        <th style="width:14%">발주처</th>
+        <th style="width:10%">추정가격</th>
+        <th style="width:10%">마감일</th>
+        <th style="width:9%">확정자</th>
+        <th style="width:15%">확정 메모</th>
+        <th style="width:8%">확정일</th>
+        <th style="width:10%">결과 등록</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if confirmed %}
+        {% for c in confirmed %}
+        <tr>
+          <td class="bid-nm">
+            <a href="{{ c.ntce_url if c.ntce_url else 'https://www.g2b.go.kr/index.jsp?bidNtceNo=' + c.bid_ntce_no }}" target="_blank">
+              {{ c.bid_ntce_nm or '-' }}
+            </a>
+          </td>
+          <td>{{ c.ntce_instt_nm or '-' }}</td>
+          <td class="bid-prce">{% if c.presmpt_prce and c.presmpt_prce.isdigit() %}{{ '{:,}'.format(c.presmpt_prce|int) }}원{% else %}-{% endif %}</td>
+          <td class="bid-date">{{ (c.bid_clse_dt or '-')[:10] }}</td>
+          <td style="font-size:12px;">{{ c.confirmed_by or '-' }}</td>
+          <td style="font-size:12px;color:#6b7280;">{{ c.notes or '-' }}</td>
+          <td class="bid-date">{{ (c.created_at or '-')[:10] }}</td>
+          <td>
+            <div class="result-btns">
+              <button class="btn btn-win" onclick="openResultModal({{ c.id }}, '수주', '{{ c.bid_ntce_nm | replace("'","\\'")|e }}')">수주</button>
+              <button class="btn btn-lose" onclick="openResultModal({{ c.id }}, '낙주', '{{ c.bid_ntce_nm | replace("'","\\'")|e }}')">낙주</button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="8" class="bid-empty">확정된 공고가 없습니다</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<!-- 결과 등록 모달 -->
+<div class="modal-overlay" id="result-modal" onclick="if(event.target===this)closeResultModal()">
+  <div class="modal-box">
+    <div class="modal-title" id="result-modal-title">결과 등록</div>
+    <div id="result-modal-nm" style="font-size:13px;font-weight:600;color:#1d4ed8;margin-bottom:14px;"></div>
+    <div class="modal-label">메모 <span style="color:#9ca3af;font-weight:400;">(선택)</span></div>
+    <textarea id="result-notes" class="modal-textarea" rows="3" placeholder="예: 수주 금액, 담당자, 특이사항 등"></textarea>
+    <div class="modal-btns">
+      <button onclick="closeResultModal()" style="padding:8px 18px;background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:7px;cursor:pointer;font-size:13px;">취소</button>
+      <button id="result-submit-btn" onclick="submitResult()" style="padding:8px 20px;background:#4f46e5;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">등록</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+function showToast(msg,ok=true){const t=document.getElementById('toast');t.textContent=msg;t.style.background=ok?'#1f2937':'#b91c1c';t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800)}
+
+let _resultConfirmedId=null, _resultType=null;
+function openResultModal(id, type, nm){
+  _resultConfirmedId=id; _resultType=type;
+  document.getElementById('result-modal-title').textContent = (type==='수주'?'🏆 수주':'❌ 낙주') + ' 등록';
+  document.getElementById('result-modal-nm').textContent = nm;
+  document.getElementById('result-notes').value='';
+  document.getElementById('result-modal').classList.add('open');
+  setTimeout(()=>document.getElementById('result-notes').focus(),50);
+}
+function closeResultModal(){ document.getElementById('result-modal').classList.remove('open'); _resultConfirmedId=null; }
+async function submitResult(){
+  if(!_resultConfirmedId) return;
+  const notes = document.getElementById('result-notes').value.trim();
+  const btn = document.getElementById('result-submit-btn');
+  btn.disabled=true; btn.textContent='등록 중...';
+  try{
+    const r = await fetch(`/nara/result/${_resultConfirmedId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({result:_resultType,notes})});
+    const d = await r.json();
+    if(d.ok){ closeResultModal(); showToast(`${_resultType} 결과가 등록되었습니다`); setTimeout(()=>location.href='/nara/results',800); }
+    else showToast(d.error||'등록 실패',false);
+  }catch(e){ showToast('오류: '+e,false); }
+  btn.disabled=false; btn.textContent='등록';
+}
+</script>
+{% endblock %}
