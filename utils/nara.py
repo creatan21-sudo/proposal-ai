@@ -80,6 +80,16 @@ def fetch_bids(keyword: str, page: int = 1, rows: int = 20) -> list:
         return []
 
 def _normalize(item: dict) -> dict:
+    ntce_url = item.get("ntceURL", "")
+    if not ntce_url:
+        bid_no  = item.get("bidNtceNo", "")
+        bid_ord = item.get("bidNtceOrd", "000")
+        if bid_no:
+            ntce_url = (
+                "https://www.g2b.go.kr/pt/menu/selectSubFrame.do"
+                "?framesrc=/pt/menu/frameBidPblancDtl.do"
+                f"?bidno={bid_no}&bidseq={bid_ord}"
+            )
     return {
         "bid_ntce_no":   item.get("bidNtceNo", ""),
         "bid_ntce_nm":   item.get("bidNtceNm", ""),
@@ -89,7 +99,7 @@ def _normalize(item: dict) -> dict:
         "presmpt_prce":  item.get("presmptPrce", ""),
         "bid_ntce_dt":   item.get("bidNtceDt", ""),
         "bid_clse_dt":   item.get("bidClseDt", ""),
-        "ntce_url":      item.get("ntceURL", ""),
+        "ntce_url":      ntce_url,
     }
 
 def start_scheduler(app):
