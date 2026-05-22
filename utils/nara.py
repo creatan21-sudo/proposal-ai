@@ -12,10 +12,33 @@ NARA_API_URL = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPb
 
 print(f"[nara] NARA_API_KEY: {'SET' if os.environ.get('NARA_API_KEY') else 'NOT SET'}")
 
+REGION_CODES = {
+    '전국': '',
+    '서울': '11',
+    '경기': '41',
+    '인천': '28',
+    '부산': '26',
+    '대구': '27',
+    '광주': '29',
+    '대전': '30',
+    '울산': '31',
+    '세종': '36',
+    '강원': '42',
+    '충북': '43',
+    '충남': '44',
+    '전북': '45',
+    '전남': '46',
+    '경북': '47',
+    '경남': '48',
+    '제주': '50',
+}
+
 _scheduler_started = False
 _scheduler_lock = threading.Lock()
 
-def fetch_bids(keyword: str, page: int = 1, rows: int = 20) -> list:
+def fetch_bids(keyword: str, page: int = 1, rows: int = 20,
+               min_budget: int = 0, max_budget: int = 999,
+               period_days: int = 30, region: str = "전국") -> list:
     key = os.environ.get("NARA_API_KEY", "")
     print(f"[nara] 사용 키: {key[:10]}...")
     if not key:
@@ -23,12 +46,10 @@ def fetch_bids(keyword: str, page: int = 1, rows: int = 20) -> list:
         return []
 
     today     = datetime.now()
-    from_date = (today - timedelta(days=30)).strftime("%Y%m%d%H%M")
+    from_date = (today - timedelta(days=period_days)).strftime("%Y%m%d%H%M")
     to_date   = today.strftime("%Y%m%d%H%M")
 
-    # serviceKey는 urlencode에서 분리해 이중 인코딩 방지
-    # (data.go.kr API 키는 +, = 포함 가능 → urlencode 시 손상됨)
-    other_params = urllib.parse.urlencode({
+    params: dict = {
         "numOfRows":  str(rows),
         "pageNo":     str(page),
         "inqryDiv":   "1",
@@ -36,7 +57,22 @@ def fetch_bids(keyword: str, page: int = 1, rows: int = 20) -> list:
         "inqryEndDt": to_date,
         "bidNtceNm":  keyword,
         "type":       "json",
-    }, encoding="utf-8")
+    }
+
+    # 예산 범위 (억원 → 원 단위)
+    if min_budget > 0:
+        params["presmptPrceMin"] = str(min_budget * 100_000_000)
+    if max_budget < 999:
+        params["presmptPrceMax"] = str(max_budget * 100_000_000)
+
+    # 지역 코드
+    region_code = REGION_CODES.get(region, "")
+    if region_code:
+        params["dminsttOffrMrktplcRegion"] = region_code
+
+    # serviceKey는 urlencode에서 분리해 이중 인코딩 방지
+    # (data.go.kr API 키는 +, = 포함 가능 → urlencode 시 손상됨)
+    other_params = urllib.parse.urlencode(params, encoding="utf-8")
     decoded_key = urllib.parse.unquote(key)
     url = (NARA_API_URL
            + "?serviceKey=" + urllib.parse.quote(decoded_key, safe='')
@@ -120,16 +156,24 @@ def start_scheduler(app):
     threading.Thread(target=_loop, daemon=True).start()
 
 def _run_scan():
-    from database.db import get_nara_keywords, save_nara_bid, is_nara_bid_seen, get_admin_telegram_ids
+    from database.db import (get_nara_keywords, save_nara_bid, is_nara_bid_seen,
+                              get_admin_telegram_ids, get_nara_settings)
     from utils.telegram_notify import send_telegram
     keywords = get_nara_keywords()
     if not keywords:
         return
-    print(f"[nara] 스캔 시작 — 키워드 {len(keywords)}개")
+    settings    = get_nara_settings()
+    min_budget  = settings.get("min_budget",  0)
+    max_budget  = settings.get("max_budget",  999)
+    period_days = settings.get("period_days", 30)
+    region      = settings.get("regions",     "전국")
+    print(f"[nara] 스캔 시작 — 키워드 {len(keywords)}개 "
+          f"(예산 {min_budget}~{max_budget}억, {period_days}일, {region})")
     new_count = 0
     for kw_row in keywords:
         keyword = kw_row["keyword"]
-        bids    = fetch_bids(keyword)
+        bids    = fetch_bids(keyword, min_budget=min_budget, max_budget=max_budget,
+                             period_days=period_days, region=region)
         for bid in bids:
             bid_no = bid["bid_ntce_no"]
             if not bid_no or is_nara_bid_seen(bid_no):

@@ -69,7 +69,8 @@ from output.txt_writer import write_txt
 from utils.telegram_notify import send_telegram
 from config import GAMMA_API_KEY
 from utils.nara import start_scheduler, manual_scan
-from database.db import get_nara_keywords, delete_nara_keyword, list_nara_bids
+from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
+                          get_nara_settings, save_nara_settings)
 
 app = Flask(__name__)
 # Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
@@ -3864,7 +3865,8 @@ def api_step_overrides(case_id):
 def nara_dashboard():
     keywords = get_nara_keywords()
     bids     = list_nara_bids(limit=200)
-    return render_template("nara.html", keywords=keywords, bids=bids)
+    settings = get_nara_settings()
+    return render_template("nara.html", keywords=keywords, bids=bids, settings=settings)
 
 @app.route("/nara/keyword", methods=["POST"])
 @login_required
@@ -3906,6 +3908,20 @@ def nara_list_bids():
     keyword = request.args.get("keyword", "").strip()
     bids    = list_nara_bids(keyword=keyword, limit=200)
     return jsonify({"ok": True, "bids": bids})
+
+@app.route("/nara/settings", methods=["POST"])
+@login_required
+def nara_save_settings():
+    data = request.get_json(force=True) or {}
+    try:
+        min_budget  = max(0,   int(data.get("min_budget",  0)))
+        max_budget  = max(0,   int(data.get("max_budget",  999)))
+        period_days = max(1,   int(data.get("period_days", 30)))
+        regions     = str(data.get("regions", "전국")).strip() or "전국"
+        save_nara_settings(min_budget, max_budget, period_days, regions)
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
 
 
 if __name__ == "__main__":

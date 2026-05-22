@@ -44,6 +44,40 @@
 <div class="nara-wrap">
   <div class="nara-title">📋 입찰 모니터링</div>
   <div class="nara-subtitle">나라장터 입찰공고를 키워드로 자동 수집합니다 · 1시간마다 자동 스캔</div>
+  <div class="kw-section" style="margin-bottom:16px;">
+    <h3>⚙️ 모니터링 설정</h3>
+    <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:flex-end;">
+      <div>
+        <div style="font-size:12px;color:#6b7280;margin-bottom:4px;font-weight:600;">예산 범위 (억원)</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <input type="number" id="set-min-budget" min="0" max="999" value="{{ settings.min_budget }}"
+                 style="width:64px;padding:7px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;text-align:center;">
+          <span style="color:#6b7280;font-size:13px;">억 ~</span>
+          <input type="number" id="set-max-budget" min="0" max="9999" value="{{ settings.max_budget }}"
+                 style="width:72px;padding:7px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;text-align:center;">
+          <span style="color:#6b7280;font-size:13px;">억원</span>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:#6b7280;margin-bottom:4px;font-weight:600;">수집 기간</div>
+        <div style="display:flex;align-items:center;gap:6px;">
+          <input type="number" id="set-period-days" min="1" max="365" value="{{ settings.period_days }}"
+                 style="width:64px;padding:7px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;text-align:center;">
+          <span style="color:#6b7280;font-size:13px;">일</span>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:12px;color:#6b7280;margin-bottom:4px;font-weight:600;">지역</div>
+        <select id="set-regions" style="padding:7px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:14px;color:#374151;background:#fff;">
+          {% for r in ['전국','서울','경기','인천','부산','대구','광주','대전','울산','세종','강원','충북','충남','전북','전남','경북','경남','제주'] %}
+          <option value="{{ r }}" {% if settings.regions == r %}selected{% endif %}>{{ r }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <button class="btn btn-primary" onclick="saveSettings()" id="save-settings-btn">설정 저장</button>
+    </div>
+  </div>
+
   <div class="kw-section">
     <h3>🔍 키워드 관리</h3>
     <div class="kw-input-row">
@@ -108,6 +142,19 @@
 </div>
 <div class="toast" id="toast"></div>
 <script>
+function saveSettings(){
+  const btn=document.getElementById('save-settings-btn');
+  btn.textContent='저장 중...';btn.disabled=true;
+  fetch('/nara/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
+    min_budget: parseInt(document.getElementById('set-min-budget').value)||0,
+    max_budget: parseInt(document.getElementById('set-max-budget').value)||999,
+    period_days: parseInt(document.getElementById('set-period-days').value)||30,
+    regions: document.getElementById('set-regions').value
+  })}).then(r=>r.json()).then(d=>{
+    btn.textContent='설정 저장';btn.disabled=false;
+    showToast(d.ok?'설정이 저장되었습니다':'저장 실패: '+(d.error||''),d.ok);
+  }).catch(()=>{btn.textContent='설정 저장';btn.disabled=false;showToast('저장 오류',false)});
+}
 function showToast(msg,ok=true){const t=document.getElementById('toast');t.textContent=msg;t.style.background=ok?'#1f2937':'#b91c1c';t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800)}
 function addKeyword(){const inp=document.getElementById('kw-input');const kw=inp.value.trim();if(!kw)return;fetch('/nara/keyword',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:kw})}).then(r=>r.json()).then(d=>{if(d.ok){inp.value='';const empty=document.getElementById('kw-empty');if(empty)empty.remove();const wrap=document.getElementById('kw-tags');const span=document.createElement('span');span.className='kw-tag';span.dataset.id=d.id;span.innerHTML=`${kw} <button onclick="deleteKeyword(${d.id},this)" title="삭제">×</button>`;wrap.appendChild(span);const sel=document.getElementById('kw-filter');const opt=document.createElement('option');opt.value=kw;opt.textContent=kw;sel.appendChild(opt);showToast(`"${kw}" 추가됨`)}else{showToast(d.error||'추가 실패',false)}})}
 function deleteKeyword(id,btn){if(!confirm('키워드를 삭제할까요?'))return;fetch(`/nara/keyword/${id}`,{method:'DELETE'}).then(r=>r.json()).then(d=>{if(d.ok){const tag=btn.closest('.kw-tag');tag.remove();if(!document.querySelector('.kw-tag')){document.getElementById('kw-tags').innerHTML='<span class="kw-empty" id="kw-empty">등록된 키워드가 없습니다</span>'}showToast('키워드 삭제됨')}})}

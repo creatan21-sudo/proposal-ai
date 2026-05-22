@@ -299,6 +299,15 @@ def init_db() -> None:
                 created_at TEXT DEFAULT (datetime('now','localtime'))
             );
 
+            CREATE TABLE IF NOT EXISTS nara_monitor_settings (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                min_budget INTEGER DEFAULT 0,
+                max_budget INTEGER DEFAULT 999,
+                period_days INTEGER DEFAULT 30,
+                regions    TEXT    DEFAULT '전국',
+                updated_at TEXT    DEFAULT (datetime('now','localtime'))
+            );
+
             CREATE TABLE IF NOT EXISTS pipeline_run_status (
                 case_id      INTEGER NOT NULL,
                 step_key     TEXT    NOT NULL,
@@ -355,6 +364,8 @@ def init_db() -> None:
                 conn.execute(migration)
             except Exception:
                 pass  # 이미 존재하는 컬럼 → 무시
+        # 모니터링 설정 초기값 (없을 때만)
+        conn.execute("INSERT OR IGNORE INTO nara_monitor_settings (id) VALUES (1)")
 
 def save_case(client_name: str, project_name: str, video_type: str,
               dna_json: str, result_json: str = "{}",
@@ -2044,6 +2055,32 @@ def list_nara_bids(keyword: str = "", limit: int = 200) -> list:
 def delete_nara_bid(bid_id: int):
     with get_connection() as conn:
         conn.execute("DELETE FROM nara_bids WHERE id=?", (bid_id,))
+
+
+def get_nara_settings() -> dict:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT min_budget, max_budget, period_days, regions FROM nara_monitor_settings WHERE id=1"
+        ).fetchone()
+    if row:
+        return {
+            "min_budget":  row["min_budget"],
+            "max_budget":  row["max_budget"],
+            "period_days": row["period_days"],
+            "regions":     row["regions"],
+        }
+    return {"min_budget": 0, "max_budget": 999, "period_days": 30, "regions": "전국"}
+
+
+def save_nara_settings(min_budget: int, max_budget: int, period_days: int, regions: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE nara_monitor_settings
+               SET min_budget=?, max_budget=?, period_days=?, regions=?,
+                   updated_at=datetime('now','localtime')
+               WHERE id=1""",
+            (min_budget, max_budget, period_days, regions),
+        )
 
 
 def save_pipeline_step(case_id: int, step_key: str) -> None:
