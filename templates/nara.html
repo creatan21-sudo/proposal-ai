@@ -125,8 +125,15 @@
       {% if bids %}
         {% for b in bids %}
         <tr>
-          <td><div class="bid-nm">{% if b.ntce_url %}<a href="{{ b.ntce_url }}" target="_blank">{{ b.bid_ntce_nm }}</a>{% else %}{{ b.bid_ntce_nm }}{% endif %}</div>
-              <span class="bid-kw">{{ b.matched_keyword }}</span></td>
+          <td>
+            <div class="bid-nm">
+              <a href="{{ b.ntce_url if b.ntce_url else 'https://www.g2b.go.kr/index.jsp?bidNtceNo=' + b.bid_ntce_no }}"
+                 target="_blank" style="color:#2563eb;text-decoration:underline;cursor:pointer;">
+                {{ b.bid_ntce_nm }}
+              </a>
+            </div>
+            <span class="bid-kw">{{ b.matched_keyword }}</span>
+          </td>
           <td>{{ b.ntce_instt_nm or '-' }}</td>
           <td class="bid-prce">{% if b.presmpt_prce and b.presmpt_prce.isdigit() %}{{ '{:,}'.format(b.presmpt_prce|int) }}원{% else %}-{% endif %}</td>
           <td class="bid-date">{{ (b.bid_clse_dt or '-')[:10] }}</td>
@@ -159,6 +166,6 @@ function showToast(msg,ok=true){const t=document.getElementById('toast');t.textC
 function addKeyword(){const inp=document.getElementById('kw-input');const kw=inp.value.trim();if(!kw)return;fetch('/nara/keyword',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:kw})}).then(r=>r.json()).then(d=>{if(d.ok){inp.value='';const empty=document.getElementById('kw-empty');if(empty)empty.remove();const wrap=document.getElementById('kw-tags');const span=document.createElement('span');span.className='kw-tag';span.dataset.id=d.id;span.innerHTML=`${kw} <button onclick="deleteKeyword(${d.id},this)" title="삭제">×</button>`;wrap.appendChild(span);const sel=document.getElementById('kw-filter');const opt=document.createElement('option');opt.value=kw;opt.textContent=kw;sel.appendChild(opt);showToast(`"${kw}" 추가됨`)}else{showToast(d.error||'추가 실패',false)}})}
 function deleteKeyword(id,btn){if(!confirm('키워드를 삭제할까요?'))return;fetch(`/nara/keyword/${id}`,{method:'DELETE'}).then(r=>r.json()).then(d=>{if(d.ok){const tag=btn.closest('.kw-tag');tag.remove();if(!document.querySelector('.kw-tag')){document.getElementById('kw-tags').innerHTML='<span class="kw-empty" id="kw-empty">등록된 키워드가 없습니다</span>'}showToast('키워드 삭제됨')}})}
 function manualScan(){const btn=document.getElementById('scan-btn');btn.textContent='⏳ 스캔 중...';btn.classList.add('loading');fetch('/nara/scan',{method:'POST'}).then(r=>r.json()).then(d=>{btn.textContent='⚡ 지금 스캔';btn.classList.remove('loading');showToast(d.message||'스캔 완료');setTimeout(()=>location.reload(),2000)}).catch(()=>{btn.textContent='⚡ 지금 스캔';btn.classList.remove('loading');showToast('스캔 오류',false)})}
-function filterBids(){const kw=document.getElementById('kw-filter').value;fetch(`/nara/bids?keyword=${encodeURIComponent(kw)}`).then(r=>r.json()).then(d=>{document.getElementById('bid-count').textContent=`(${d.bids.length}건)`;const rows=d.bids.length?d.bids.map(b=>{const prce=b.presmpt_prce&&!isNaN(b.presmpt_prce)?Number(b.presmpt_prce).toLocaleString()+'원':'-';const url=b.ntce_url?`<a href="${b.ntce_url}" target="_blank" class="btn btn-primary" style="padding:4px 10px;font-size:12px;">보기</a>`:'-';return`<tr><td><div class="bid-nm">${b.bid_ntce_nm||'-'}</div><span class="bid-kw">${b.matched_keyword||''}</span></td><td>${b.ntce_instt_nm||'-'}</td><td class="bid-prce">${prce}</td><td class="bid-date">${(b.bid_clse_dt||'-').slice(0,10)}</td><td class="bid-date">${(b.created_at||'-').slice(0,10)}</td><td>${url}</td></tr>`}).join(''):'<tr><td colspan="6" class="bid-empty">수집된 공고가 없습니다</td></tr>';document.getElementById('bid-tbody').innerHTML=rows})}
+function filterBids(){const kw=document.getElementById('kw-filter').value;fetch(`/nara/bids?keyword=${encodeURIComponent(kw)}`).then(r=>r.json()).then(d=>{document.getElementById('bid-count').textContent=`(${d.bids.length}건)`;const rows=d.bids.length?d.bids.map(b=>{const prce=b.presmpt_prce&&!isNaN(b.presmpt_prce)?Number(b.presmpt_prce).toLocaleString()+'원':'-';const linkUrl=b.ntce_url||`https://www.g2b.go.kr/index.jsp?bidNtceNo=${b.bid_ntce_no||''}`;const nmLink=`<a href="${linkUrl}" target="_blank" style="color:#2563eb;text-decoration:underline;cursor:pointer;">${b.bid_ntce_nm||'-'}</a>`;const viewBtn=`<a href="${linkUrl}" target="_blank" class="btn btn-primary" style="padding:4px 10px;font-size:12px;">보기</a>`;return`<tr><td><div class="bid-nm">${nmLink}</div><span class="bid-kw">${b.matched_keyword||''}</span></td><td>${b.ntce_instt_nm||'-'}</td><td class="bid-prce">${prce}</td><td class="bid-date">${(b.bid_clse_dt||'-').slice(0,10)}</td><td class="bid-date">${(b.created_at||'-').slice(0,10)}</td><td>${viewBtn}</td></tr>`}).join(''):'<tr><td colspan="6" class="bid-empty">수집된 공고가 없습니다</td></tr>';document.getElementById('bid-tbody').innerHTML=rows})}
 </script>
 {% endblock %}
