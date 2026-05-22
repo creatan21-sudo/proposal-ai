@@ -54,12 +54,17 @@ def fetch_bids(keyword: str, page: int = 1, rows: int = 20) -> list:
         if err_auth:
             print(f"[nara] API 인증 오류: {err_auth} (코드: {err_msg})")
             return []
-        items = data.get("response", {}).get("body", {}).get("items", {})
+        items = data.get("response", {}).get("body", {}).get("items", [])
+        if isinstance(items, dict):
+            items = items.get("item", [])
+            if isinstance(items, dict):
+                items = [items]
+        elif isinstance(items, list):
+            pass  # 이미 리스트
+        else:
+            items = []
         if not items:
             return []
-        items = items.get("item", [])
-        if isinstance(items, dict):
-            items = [items]
         return [_normalize(i) for i in items]
     except urllib.error.HTTPError as e:
         body = e.read().decode("utf-8", errors="replace")
