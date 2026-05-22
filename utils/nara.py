@@ -121,11 +121,15 @@ def _normalize(item: dict) -> dict:
         bid_no  = item.get("bidNtceNo", "")
         bid_ord = item.get("bidNtceOrd", "000")
         if bid_no:
+            # 방식 1: 내부 파라미터를 %3F / %26으로 인코딩해 ? 중복 방지
             ntce_url = (
                 "https://www.g2b.go.kr/pt/menu/selectSubFrame.do"
-                "?framesrc=/pt/menu/frameBidPblancDtl.do"
-                f"?bidno={bid_no}&bidseq={bid_ord}"
+                f"?framesrc=/pt/menu/frameBidPblancDtl.do%3Fbidno%3D{bid_no}%26bidseq%3D{bid_ord}"
             )
+        else:
+            # 방식 2: bid_no 없을 때 공고명 검색 URL로 폴백
+            bid_nm_enc = urllib.parse.quote(item.get("bidNtceNm", ""), safe='')
+            ntce_url = f"https://www.g2b.go.kr/index.jsp?search={bid_nm_enc}"
     return {
         "bid_ntce_no":   item.get("bidNtceNo", ""),
         "bid_ntce_nm":   item.get("bidNtceNm", ""),
