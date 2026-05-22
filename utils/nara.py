@@ -8,7 +8,7 @@ import json
 from datetime import datetime, timedelta
 
 NARA_API_KEY = os.environ.get("NARA_API_KEY", "")
-NARA_API_URL = "https://apis.data.go.kr/1230000/BidPublicInfoService/getBidPblancListInfoServcPPSSrch"
+NARA_API_URL = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoServcPPSSrch"
 
 print(f"[nara] NARA_API_KEY: {'SET' if os.environ.get('NARA_API_KEY') else 'NOT SET'}")
 
