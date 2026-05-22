@@ -130,13 +130,26 @@
   <div class="bid-header">
     <h3>📌 수집된 공고 <span class="bid-count" id="bid-count">({{ bids|length }}건)</span></h3>
     <div class="bid-filter">
-      <select id="kw-filter" onchange="filterBids()">
+      <select id="kw-filter" onchange="applySearch()">
         <option value="">전체 키워드</option>
         {% for kw in keywords %}
         <option value="{{ kw.keyword }}">{{ kw.keyword }}</option>
         {% endfor %}
       </select>
     </div>
+  </div>
+  <!-- 검색창 -->
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
+    <input type="text" id="search-nm" placeholder="공고명 검색"
+           oninput="applySearch()"
+           style="flex:2;min-width:140px;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;outline:none;"
+           onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#d1d5db'">
+    <input type="text" id="search-instt" placeholder="발주처 검색"
+           oninput="applySearch()"
+           style="flex:1;min-width:120px;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;outline:none;"
+           onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#d1d5db'">
+    <button class="btn btn-primary" onclick="applySearch()" style="padding:8px 16px;font-size:13px;">🔍 검색</button>
+    <button onclick="clearSearch()" style="padding:8px 14px;font-size:13px;background:#fff;border:1px solid #d1d5db;border-radius:8px;cursor:pointer;color:#6b7280;">초기화</button>
   </div>
   <table class="bid-table">
     <thead>
@@ -153,7 +166,7 @@
     <tbody id="bid-tbody">
       {% if bids %}
         {% for b in bids %}
-        <tr>
+        <tr data-nm="{{ b.bid_ntce_nm | e }}" data-instt="{{ b.ntce_instt_nm | e }}" data-kw="{{ b.matched_keyword | e }}">
           <td>
             <div class="bid-nm">
               <a href="{{ b.ntce_url if b.ntce_url else 'https://www.g2b.go.kr/index.jsp?bidNtceNo=' + b.bid_ntce_no }}"
@@ -265,7 +278,7 @@ function saveSettings(){
   fetch('/nara/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
     min_budget: parseInt(document.getElementById('set-min-budget').value)||0,
     max_budget: parseInt(document.getElementById('set-max-budget').value)||999,
-    period_days: parseInt(document.getElementById('set-period-days').value)||30,
+    period_days: parseInt(document.getElementById('set-period-days').value)||60,
     regions: document.getElementById('set-regions').value
   })}).then(r=>r.json()).then(d=>{
     btn.textContent='설정 저장';btn.disabled=false;
@@ -277,6 +290,29 @@ function addKeyword(){const inp=document.getElementById('kw-input');const kw=inp
 function deleteKeyword(id,btn){if(!confirm('키워드를 삭제할까요?'))return;fetch(`/nara/keyword/${id}`,{method:'DELETE'}).then(r=>r.json()).then(d=>{if(d.ok){const tag=btn.closest('.kw-tag');tag.remove();if(!document.querySelector('.kw-tag')){document.getElementById('kw-tags').innerHTML='<span class="kw-empty" id="kw-empty">등록된 키워드가 없습니다</span>'}showToast('키워드 삭제됨')}})}
 function manualScan(){const btn=document.getElementById('scan-btn');btn.textContent='⏳ 스캔 중...';btn.classList.add('loading');fetch('/nara/scan',{method:'POST'}).then(r=>r.json()).then(d=>{btn.textContent='⚡ 지금 스캔';btn.classList.remove('loading');showToast(d.message||'스캔 완료');setTimeout(()=>location.reload(),2000)}).catch(()=>{btn.textContent='⚡ 지금 스캔';btn.classList.remove('loading');showToast('스캔 오류',false)})}
 function _esc(s){return(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
-function filterBids(){const kw=document.getElementById('kw-filter').value;fetch(`/nara/bids?keyword=${encodeURIComponent(kw)}`).then(r=>r.json()).then(d=>{document.getElementById('bid-count').textContent=`(${d.bids.length}건)`;const rows=d.bids.length?d.bids.map(b=>{const prce=b.presmpt_prce&&!isNaN(b.presmpt_prce)?Number(b.presmpt_prce).toLocaleString()+'원':'-';const linkUrl=b.ntce_url||`https://www.g2b.go.kr/index.jsp?bidNtceNo=${b.bid_ntce_no||''}`;const nmLink=`<a href="${linkUrl}" target="_blank" style="color:#2563eb;text-decoration:underline;cursor:pointer;">${b.bid_ntce_nm||'-'}</a>`;const viewBtn=`<a href="${linkUrl}" target="_blank" class="btn btn-primary" style="padding:4px 10px;font-size:12px;">보기</a>`;const candBtn=_CAND_NOS.has(b.bid_ntce_no)?`<button class="btn-cand registered" disabled>후보등록됨</button>`:`<button class="btn-cand" data-no="${_esc(b.bid_ntce_no)}" data-nm="${_esc(b.bid_ntce_nm)}" data-instt="${_esc(b.ntce_instt_nm)}" data-prce="${_esc(b.presmpt_prce)}" data-clse="${_esc(b.bid_clse_dt)}" data-url="${_esc(b.ntce_url)}" data-keyword="${_esc(b.matched_keyword)}" onclick="openCandModal(this)">후보 등록</button>`;return`<tr><td><div class="bid-nm">${nmLink}</div><span class="bid-kw">${b.matched_keyword||''}</span></td><td>${b.ntce_instt_nm||'-'}</td><td class="bid-prce">${prce}</td><td class="bid-date">${(b.bid_clse_dt||'-').slice(0,10)}</td><td class="bid-date">${(b.created_at||'-').slice(0,10)}</td><td>${viewBtn}</td><td>${candBtn}</td></tr>`}).join(''):'<tr><td colspan="7" class="bid-empty">수집된 공고가 없습니다</td></tr>';document.getElementById('bid-tbody').innerHTML=rows})}
+function applySearch(){
+  const nm    = (document.getElementById('search-nm')?.value||'').toLowerCase();
+  const instt = (document.getElementById('search-instt')?.value||'').toLowerCase();
+  const kw    = document.getElementById('kw-filter')?.value||'';
+  let count = 0;
+  document.querySelectorAll('#bid-tbody tr[data-nm]').forEach(tr=>{
+    const trNm    = (tr.dataset.nm||'').toLowerCase();
+    const trInstt = (tr.dataset.instt||'').toLowerCase();
+    const trKw    = tr.dataset.kw||'';
+    const match = (!nm || trNm.includes(nm))
+               && (!instt || trInstt.includes(instt))
+               && (!kw || trKw === kw);
+    tr.style.display = match ? '' : 'none';
+    if(match) count++;
+  });
+  document.getElementById('bid-count').textContent = `(${count}건)`;
+}
+function clearSearch(){
+  document.getElementById('search-nm').value='';
+  document.getElementById('search-instt').value='';
+  document.getElementById('kw-filter').value='';
+  applySearch();
+}
+function filterBids(){ applySearch(); }
 </script>
 {% endblock %}
