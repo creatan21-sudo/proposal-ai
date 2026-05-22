@@ -23,8 +23,8 @@ def fetch_bids(keyword: str, page: int = 1, rows: int = 20) -> list:
         return []
 
     today     = datetime.now()
-    from_date = (today - timedelta(days=30)).strftime("%Y%m%d%H%M%S")
-    to_date   = today.strftime("%Y%m%d%H%M%S")
+    from_date = (today - timedelta(days=30)).strftime("%Y%m%d%H%M")
+    to_date   = today.strftime("%Y%m%d%H%M")
 
     # serviceKey는 urlencode에서 분리해 이중 인코딩 방지
     # (data.go.kr API 키는 +, = 포함 가능 → urlencode 시 손상됨)
@@ -38,7 +38,7 @@ def fetch_bids(keyword: str, page: int = 1, rows: int = 20) -> list:
         "type":       "json",
     }, encoding="utf-8")
     url = (NARA_API_URL
-           + "?serviceKey=" + urllib.parse.quote(key, safe='')
+           + "?serviceKey=" + key
            + "&" + other_params)
     try:
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
