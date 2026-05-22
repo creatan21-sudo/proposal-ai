@@ -70,7 +70,7 @@
         {% for c in confirmed %}
         <tr>
           <td class="bid-nm">
-            <a href="{{ c.ntce_url if c.ntce_url else 'https://www.g2b.go.kr/index.jsp?bidNtceNo=' + c.bid_ntce_no }}" target="_blank">
+            <a href="{{ c.ntce_url or ('https://www.g2b.go.kr/index.jsp?bidNtceNo=' + (c.bid_ntce_no or '')) }}" target="_blank">
               {{ c.bid_ntce_nm or '-' }}
             </a>
           </td>

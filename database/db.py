@@ -2113,18 +2113,37 @@ def delete_nara_bid(bid_id: int):
 
 
 def get_nara_settings() -> dict:
-    with get_connection() as conn:
-        row = conn.execute(
-            "SELECT min_budget, max_budget, period_days, regions FROM nara_monitor_settings WHERE id=1"
-        ).fetchone()
-    if row:
-        return {
-            "min_budget":  row["min_budget"],
-            "max_budget":  row["max_budget"],
-            "period_days": row["period_days"],
-            "regions":     row["regions"],
-        }
-    return {"min_budget": 0, "max_budget": 999, "period_days": 30, "regions": "전국"}
+    default = {"min_budget": 0, "max_budget": 999, "period_days": 30, "regions": "전국"}
+    try:
+        with get_connection() as conn:
+            # 테이블 없으면 자동 생성 + 기본값 INSERT
+            conn.execute(
+                """CREATE TABLE IF NOT EXISTS nara_monitor_settings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    min_budget INTEGER DEFAULT 0,
+                    max_budget INTEGER DEFAULT 999,
+                    period_days INTEGER DEFAULT 30,
+                    regions TEXT DEFAULT '전국',
+                    updated_at TEXT DEFAULT (datetime('now','localtime'))
+                )"""
+            )
+            conn.execute("INSERT OR IGNORE INTO nara_monitor_settings (id) VALUES (1)")
+            row = conn.execute(
+                "SELECT min_budget, max_budget, period_days, regions FROM nara_monitor_settings WHERE id=1"
+            ).fetchone()
+        if row:
+            result = {
+                "min_budget":  row["min_budget"],
+                "max_budget":  row["max_budget"],
+                "period_days": row["period_days"],
+                "regions":     row["regions"],
+            }
+            print(f"[nara 설정 조회] {result}")
+            return result
+    except Exception as e:
+        print(f"[nara 설정 조회 오류] {e}")
+    print(f"[nara 설정 조회] 기본값 반환: {default}")
+    return default
 
 
 def save_nara_settings(min_budget: int, max_budget: int, period_days: int, regions: str) -> None:

@@ -3969,6 +3969,7 @@ def nara_save_settings():
         period_days = max(1,   int(data.get("period_days", 30)))
         regions     = str(data.get("regions", "전국")).strip() or "전국"
         save_nara_settings(min_budget, max_budget, period_days, regions)
+        print(f"[nara 설정 저장] 기간={period_days}일, 예산={min_budget}~{max_budget}억, 지역={regions}")
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
