@@ -140,6 +140,15 @@
       </select>
     </div>
   </div>
+  <!-- 공고번호 직접 검색 -->
+  <div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center;">
+    <input type="text" id="search-bid-no" placeholder="공고번호 직접 검색 (예: R26BK01514926)"
+           style="flex:2;min-width:200px;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;outline:none;"
+           onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#d1d5db'"
+           onkeydown="if(event.key==='Enter') searchByBidNo()">
+    <button onclick="searchByBidNo()" style="padding:8px 16px;font-size:13px;background:#6366f1;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;">🔎 공고번호 검색</button>
+  </div>
+
   <!-- 검색창 -->
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
     <input type="text" id="search-nm" placeholder="공고명 검색"
@@ -217,6 +226,22 @@
   {% endif %}
 </div>
 
+<!-- 공고번호 검색 결과 모달 -->
+<div class="modal-overlay" id="bid-no-modal" onclick="if(event.target===this)closeBidNoModal()">
+  <div class="modal-box" style="width:520px;">
+    <div class="modal-title">🔎 공고번호 검색 결과</div>
+    <div id="bid-no-result" style="margin-bottom:16px;"></div>
+    <div id="bid-no-reason-wrap" style="display:none;">
+      <div class="modal-label">후보 등록 이유 <span style="color:#9ca3af;font-weight:400;">(필수)</span></div>
+      <textarea id="bid-no-reason" class="modal-textarea" rows="3" placeholder="예: 수주 가능성 높음, 전문 분야 등"></textarea>
+    </div>
+    <div class="modal-btns" style="margin-top:14px;">
+      <button onclick="closeBidNoModal()" style="padding:8px 18px;background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:7px;cursor:pointer;font-size:13px;">닫기</button>
+      <button id="bid-no-add-btn" onclick="addBidNoToCandidate()" style="display:none;padding:8px 20px;background:#4f46e5;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">📌 후보 등록</button>
+    </div>
+  </div>
+</div>
+
 <!-- 후보 등록 모달 -->
 <div class="modal-overlay" id="cand-modal" onclick="if(event.target===this)closeCandModal()">
   <div class="modal-box">
@@ -234,6 +259,61 @@
 <div class="toast" id="toast"></div>
 <script>
 const _CAND_NOS = new Set({{ candidate_nos | list | tojson }});
+
+/* ── 공고번호 직접 검색 ── */
+let _bidNoResult = null;
+async function searchByBidNo(){
+  const bidNo = document.getElementById('search-bid-no').value.trim();
+  if(!bidNo){ showToast('공고번호를 입력하세요', false); return; }
+  document.getElementById('bid-no-result').innerHTML = '<span style="color:#6b7280;font-size:13px;">⏳ 검색 중...</span>';
+  document.getElementById('bid-no-reason-wrap').style.display='none';
+  document.getElementById('bid-no-add-btn').style.display='none';
+  document.getElementById('bid-no-modal').classList.add('open');
+  try{
+    const r = await fetch('/nara/search_by_no',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bid_no:bidNo})});
+    const d = await r.json();
+    if(d.ok && d.bid){
+      _bidNoResult = d.bid;
+      const b = d.bid;
+      const prce = b.presmpt_prce&&!isNaN(b.presmpt_prce)?Number(b.presmpt_prce).toLocaleString()+'원':'-';
+      document.getElementById('bid-no-result').innerHTML = `
+        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px;">
+          <div style="font-weight:700;color:#1d4ed8;margin-bottom:8px;font-size:14px;">${b.bid_ntce_nm||'-'}</div>
+          <div style="font-size:12px;color:#6b7280;display:grid;grid-template-columns:80px 1fr;gap:4px 8px;">
+            <span style="font-weight:600;">공고번호</span><span>${b.bid_ntce_no||'-'}</span>
+            <span style="font-weight:600;">발주처</span><span>${b.ntce_instt_nm||'-'}</span>
+            <span style="font-weight:600;">추정가격</span><span style="color:#059669;font-weight:600;">${prce}</span>
+            <span style="font-weight:600;">마감일</span><span>${(b.bid_clse_dt||'-').slice(0,10)}</span>
+          </div>
+          ${b.ntce_url?`<a href="${b.ntce_url}" target="_blank" style="display:inline-block;margin-top:10px;font-size:12px;color:#4f46e5;text-decoration:underline;">🔗 공고 바로가기</a>`:''}
+        </div>`;
+      document.getElementById('bid-no-reason-wrap').style.display='block';
+      document.getElementById('bid-no-add-btn').style.display='inline-block';
+      document.getElementById('bid-no-reason').value='';
+    } else {
+      _bidNoResult = null;
+      document.getElementById('bid-no-result').innerHTML = `<span style="color:#ef4444;font-size:13px;">❌ ${d.error||'공고를 찾을 수 없습니다'}</span>`;
+    }
+  }catch(e){
+    document.getElementById('bid-no-result').innerHTML = `<span style="color:#ef4444;font-size:13px;">오류: ${e}</span>`;
+  }
+}
+function closeBidNoModal(){ document.getElementById('bid-no-modal').classList.remove('open'); _bidNoResult=null; }
+async function addBidNoToCandidate(){
+  if(!_bidNoResult) return;
+  const reason = document.getElementById('bid-no-reason').value.trim();
+  if(!reason){ showToast('등록 이유를 입력하세요', false); return; }
+  const btn = document.getElementById('bid-no-add-btn');
+  btn.disabled=true; btn.textContent='등록 중...';
+  try{
+    const r = await fetch('/nara/add_to_candidates',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({..._bidNoResult, reason})});
+    const d = await r.json();
+    if(d.ok){ closeBidNoModal(); showToast('후보로 등록되었습니다'); _CAND_NOS.add(_bidNoResult.bid_ntce_no); }
+    else showToast(d.error||'등록 실패', false);
+  }catch(e){ showToast('오류: '+e, false); }
+  btn.disabled=false; btn.textContent='📌 후보 등록';
+}
 let _candBid = null;
 function openCandModal(btn){
   _candBid = {

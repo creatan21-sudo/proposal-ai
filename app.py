@@ -68,7 +68,7 @@ from database.db import (
 from output.txt_writer import write_txt
 from utils.telegram_notify import send_telegram
 from config import GAMMA_API_KEY
-from utils.nara import start_scheduler, manual_scan
+from utils.nara import start_scheduler, manual_scan, fetch_bid_by_no
 from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           get_nara_settings, save_nara_settings,
                           add_nara_candidate, list_nara_candidates, delete_nara_candidate,
@@ -4107,6 +4107,40 @@ def nara_result_add(confirmed_id):
             notes        = str(data.get("notes", "")),
         )
         return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/nara/search_by_no", methods=["POST"])
+@login_required
+def nara_search_by_no():
+    data   = request.get_json(force=True) or {}
+    bid_no = str(data.get("bid_no", "")).strip()
+    bid_no = bid_no.split("-")[0].strip()  # R26BK01514926-000 → R26BK01514926
+    if not bid_no:
+        return jsonify({"ok": False, "error": "공고번호를 입력하세요"})
+    result = fetch_bid_by_no(bid_no)
+    if result:
+        return jsonify({"ok": True, "bid": result})
+    return jsonify({"ok": False, "error": "공고를 찾을 수 없습니다"})
+
+@app.route("/nara/add_to_candidates", methods=["POST"])
+@login_required
+def nara_add_to_candidates():
+    data = request.get_json(force=True) or {}
+    try:
+        new_id = add_nara_candidate(
+            bid_ntce_no    = str(data.get("bid_ntce_no",    "")),
+            bid_ntce_nm    = str(data.get("bid_ntce_nm",    "")),
+            ntce_instt_nm  = str(data.get("ntce_instt_nm",  "")),
+            presmpt_prce   = str(data.get("presmpt_prce",   "")),
+            bid_clse_dt    = str(data.get("bid_clse_dt",    "")),
+            ntce_url       = str(data.get("ntce_url",       "")),
+            matched_keyword= str(data.get("matched_keyword","직접검색")),
+            reason         = str(data.get("reason",         "")),
+            registered_by  = session.get("username", ""),
+        )
+        return jsonify({"ok": True, "id": new_id})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 

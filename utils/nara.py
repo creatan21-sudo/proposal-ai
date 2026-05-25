@@ -284,7 +284,11 @@ def _run_scan():
                     seen_in_kw.add(no)
                     merged_bids.append(bid)
 
-        print(f"  [nara] {keyword!r}: 총 {len(merged_bids)}건 (중복 제거 후)")
+        raw_count = len(merged_bids)
+        # Claude AI 2차 필터링
+        if merged_bids:
+            merged_bids = filter_bids_with_ai(merged_bids)
+        print(f"[nara AI필터] {keyword!r}: {raw_count}건 → {len(merged_bids)}건")
 
         for bid in merged_bids:
             bid_no = bid["bid_ntce_no"]
@@ -316,3 +320,107 @@ def _format_msg(bid: dict, keyword: str) -> str:
 
 def manual_scan():
     _run_scan()
+
+
+# ─────────────────────────────────────────────
+# Claude AI 2차 필터링
+# ─────────────────────────────────────────────
+
+_COMPANY_PROFILE = """
+인터즈(주)는 영상 콘텐츠 제작 전문 회사입니다.
+주요 사업 영역:
+- 홍보영상, 다큐멘터리, 교육영상 제작
+- 유튜브/SNS 콘텐츠 기획 및 제작
+- 정부/공공기관 홍보 프로그램 기획·제작
+- 방송 콘텐츠 제작
+- 디지털 마케팅 및 미디어 운영
+"""
+
+def filter_bids_with_ai(bids: list) -> list:
+    """Claude API로 영상/콘텐츠/홍보 제작 관련 공고만 필터링."""
+    if not bids:
+        return []
+
+    bid_list = "\n".join([
+        f"{i+1}. [{b['bid_ntce_no']}] {b['bid_ntce_nm']} / {b['ntce_instt_nm']} / 예산: {b['presmpt_prce']}원"
+        for i, b in enumerate(bids)
+    ])
+
+    prompt = f"""당신은 입찰 공고 분류 전문가입니다.
+
+[회사 프로필]
+{_COMPANY_PROFILE}
+
+[입찰 공고 목록]
+{bid_list}
+
+위 공고 중 이 회사가 입찰할 수 있는 관련 공고 번호만 골라주세요.
+관련 기준: 영상 제작, 콘텐츠 제작, 홍보 프로그램, 방송 제작, SNS/유튜브 운영, 미디어 제작, 홍보 대행 등
+
+반드시 아래 JSON 형식으로만 응답하세요:
+{{"relevant": [1, 3, 5]}}
+번호는 위 목록의 순서 번호입니다."""
+
+    try:
+        from core.claude_client import call_json
+        result = call_json(prompt, max_tokens=512)
+        relevant_indices = result.get("relevant", [])
+        filtered = [bids[i - 1] for i in relevant_indices if 1 <= i <= len(bids)]
+        return filtered
+    except Exception as e:
+        print(f"[nara AI필터] 오류 — 전체 반환: {e}")
+        return bids
+
+
+# ─────────────────────────────────────────────
+# 공고번호 직접 조회
+# ─────────────────────────────────────────────
+
+def fetch_bid_by_no(bid_ntce_no: str) -> dict | None:
+    """공고번호(bidNtceNo)로 단일 공고 조회. 없으면 None."""
+    today     = datetime.now()
+    from_date = (today - timedelta(days=365)).strftime("%Y%m%d%H%M")
+    to_date   = today.strftime("%Y%m%d%H%M")
+
+    key = os.environ.get("NARA_API_KEY", "")
+    if not key:
+        return None
+
+    params = {
+        "numOfRows":  "10",
+        "pageNo":     "1",
+        "inqryDiv":   "1",
+        "inqryBgnDt": from_date,
+        "inqryEndDt": to_date,
+        "bidNtceNo":  bid_ntce_no,
+        "type":       "json",
+    }
+    other_params = urllib.parse.urlencode(params, encoding="utf-8")
+    decoded_key  = urllib.parse.unquote(key)
+    url = (NARA_API_URL
+           + "?serviceKey=" + urllib.parse.quote(decoded_key, safe='')
+           + "&" + other_params)
+    print(f"[nara 공고번호조회] {url}")
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            raw = resp.read().decode("utf-8")
+        data  = json.loads(raw)
+        body  = data.get("response", {}).get("body", {})
+        items = body.get("items", [])
+        if isinstance(items, dict):
+            items = items.get("item", [])
+            if isinstance(items, dict):
+                items = [items]
+        elif not isinstance(items, list):
+            items = []
+        if not items:
+            return None
+        # 정확히 일치하는 공고번호 우선 반환
+        for item in items:
+            if item.get("bidNtceNo", "") == bid_ntce_no:
+                return _normalize(item)
+        return _normalize(items[0])
+    except Exception as e:
+        print(f"[nara 공고번호조회 오류] {e}")
+        return None
