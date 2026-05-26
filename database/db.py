@@ -361,6 +361,33 @@ def init_db() -> None:
                 created_at    TEXT DEFAULT (datetime('now','localtime'))
             );
 
+            CREATE TABLE IF NOT EXISTS confirmed_narratives (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                confirmed_id INTEGER NOT NULL UNIQUE,
+                content      TEXT DEFAULT '',
+                updated_by   TEXT DEFAULT '',
+                updated_at   TEXT DEFAULT (datetime('now','localtime'))
+            );
+
+            CREATE TABLE IF NOT EXISTS confirmed_comments (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                confirmed_id INTEGER NOT NULL,
+                author       TEXT NOT NULL,
+                content      TEXT NOT NULL,
+                created_at   TEXT DEFAULT (datetime('now','localtime'))
+            );
+
+            CREATE TABLE IF NOT EXISTS confirmed_schedule (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                confirmed_id INTEGER NOT NULL,
+                task_name    TEXT NOT NULL,
+                assignee     TEXT DEFAULT '',
+                due_date     TEXT DEFAULT '',
+                status       TEXT DEFAULT '예정',
+                sort_order   INTEGER DEFAULT 0,
+                created_at   TEXT DEFAULT (datetime('now','localtime'))
+            );
+
             CREATE TABLE IF NOT EXISTS pipeline_run_status (
                 case_id      INTEGER NOT NULL,
                 step_key     TEXT    NOT NULL,
@@ -2247,6 +2274,103 @@ def list_nara_confirmed(page: int = 1, per_page: int = 50) -> dict:
         "per_page": per_page,
         "pages":    max(1, -(-total // per_page)),
     }
+
+
+def get_confirmed_by_id(confirmed_id: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            """SELECT cf.id, cf.candidate_id, cf.pickup_id, cf.confirmed_by,
+                      cf.notes, cf.assignee, cf.created_at,
+                      COALESCE(pk.bid_ntce_no, ca.bid_ntce_no) as bid_ntce_no,
+                      COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm) as bid_ntce_nm,
+                      COALESCE(pk.ntce_instt_nm, ca.ntce_instt_nm) as ntce_instt_nm,
+                      COALESCE(pk.presmpt_prce, ca.presmpt_prce) as presmpt_prce,
+                      COALESCE(pk.bid_clse_dt, ca.bid_clse_dt) as bid_clse_dt,
+                      COALESCE(pk.ntce_url, ca.ntce_url) as ntce_url,
+                      COALESCE(pk.matched_keyword, ca.matched_keyword) as matched_keyword
+               FROM nara_confirmed cf
+               LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
+               LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
+               WHERE cf.id = ?""",
+            (confirmed_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def get_confirmed_narrative(confirmed_id: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM confirmed_narratives WHERE confirmed_id=?", (confirmed_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def save_confirmed_narrative(confirmed_id: int, content: str, updated_by: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO confirmed_narratives (confirmed_id, content, updated_by, updated_at)
+               VALUES (?,?,?,datetime('now','localtime'))
+               ON CONFLICT(confirmed_id) DO UPDATE SET
+                 content=excluded.content,
+                 updated_by=excluded.updated_by,
+                 updated_at=excluded.updated_at""",
+            (confirmed_id, content, updated_by),
+        )
+
+
+def add_confirmed_comment(confirmed_id: int, author: str, content: str) -> int:
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO confirmed_comments (confirmed_id, author, content) VALUES (?,?,?)",
+            (confirmed_id, author, content),
+        )
+        return cur.lastrowid or 0
+
+
+def list_confirmed_comments(confirmed_id: int) -> list:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM confirmed_comments WHERE confirmed_id=? ORDER BY created_at ASC",
+            (confirmed_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def add_confirmed_schedule(confirmed_id: int, task_name: str, assignee: str,
+                           due_date: str, status: str, sort_order: int) -> int:
+    with get_connection() as conn:
+        cur = conn.execute(
+            """INSERT INTO confirmed_schedule
+               (confirmed_id, task_name, assignee, due_date, status, sort_order)
+               VALUES (?,?,?,?,?,?)""",
+            (confirmed_id, task_name, assignee, due_date, status, sort_order),
+        )
+        return cur.lastrowid or 0
+
+
+def list_confirmed_schedule(confirmed_id: int) -> list:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM confirmed_schedule WHERE confirmed_id=? ORDER BY sort_order ASC, id ASC",
+            (confirmed_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_confirmed_schedule(schedule_id: int, task_name: str, assignee: str,
+                              due_date: str, status: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE confirmed_schedule
+               SET task_name=?, assignee=?, due_date=?, status=?
+               WHERE id=?""",
+            (task_name, assignee, due_date, status, schedule_id),
+        )
+
+
+def delete_confirmed_schedule(schedule_id: int) -> None:
+    with get_connection() as conn:
+        conn.execute("DELETE FROM confirmed_schedule WHERE id=?", (schedule_id,))
 
 
 def confirm_nara_pickup(pickup_id: int, confirmed_by: str,

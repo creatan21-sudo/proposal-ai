@@ -77,7 +77,12 @@ from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           add_nara_result, list_nara_results,
                           add_candidate_comment, list_candidate_comments,
                           add_nara_pickup, list_nara_pickups, delete_nara_pickup,
-                          get_pickup_candidate_ids, confirm_nara_pickup)
+                          get_pickup_candidate_ids, confirm_nara_pickup,
+                          get_confirmed_by_id,
+                          get_confirmed_narrative, save_confirmed_narrative,
+                          add_confirmed_comment, list_confirmed_comments,
+                          add_confirmed_schedule, list_confirmed_schedule,
+                          update_confirmed_schedule, delete_confirmed_schedule)
 
 app = Flask(__name__)
 # Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
@@ -3915,6 +3920,113 @@ def nara_confirmed_page():
     is_ops = session.get("role") in ("admin", "operator")
     return render_template("nara_confirmed.html", confirmed=paged["items"],
                            pagination=paged, is_ops=is_ops)
+
+@app.route("/nara/confirmed/<int:confirmed_id>")
+@login_required
+def nara_confirmed_detail(confirmed_id):
+    c = get_confirmed_by_id(confirmed_id)
+    if not c:
+        return "Not found", 404
+    narrative  = get_confirmed_narrative(confirmed_id)
+    comments   = list_confirmed_comments(confirmed_id)
+    schedule   = list_confirmed_schedule(confirmed_id)
+    from database.db import get_connection
+    with get_connection() as conn:
+        users = [dict(r) for r in conn.execute(
+            "SELECT id, username FROM users ORDER BY username"
+        ).fetchall()]
+    is_ops      = session.get("role") in ("admin", "operator")
+    is_assignee = session.get("username") == c.get("assignee")
+    can_edit    = is_ops or is_assignee
+    return render_template("nara_confirmed_detail.html",
+                           c=c, narrative=narrative, comments=comments,
+                           schedule=schedule, users=users,
+                           can_edit=can_edit, is_ops=is_ops)
+
+
+@app.route("/nara/confirmed/<int:confirmed_id>/narrative", methods=["POST"])
+@login_required
+def nara_confirmed_narrative_save(confirmed_id):
+    c = get_confirmed_by_id(confirmed_id)
+    if not c:
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    is_ops      = session.get("role") in ("admin", "operator")
+    is_assignee = session.get("username") == c.get("assignee")
+    if not (is_ops or is_assignee):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    data    = request.get_json(force=True) or {}
+    content = (data.get("content") or "").strip()
+    save_confirmed_narrative(confirmed_id, content, session["username"])
+    return jsonify({"ok": True})
+
+
+@app.route("/nara/confirmed/<int:confirmed_id>/comment", methods=["POST"])
+@login_required
+def nara_confirmed_comment_add(confirmed_id):
+    if not get_confirmed_by_id(confirmed_id):
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    data    = request.get_json(force=True) or {}
+    content = (data.get("content") or "").strip()
+    if not content:
+        return jsonify({"ok": False, "error": "내용을 입력하세요"})
+    cid = add_confirmed_comment(confirmed_id, session["username"], content)
+    return jsonify({"ok": True, "id": cid})
+
+
+@app.route("/nara/confirmed/<int:confirmed_id>/schedule", methods=["POST"])
+@login_required
+def nara_confirmed_schedule_add(confirmed_id):
+    c = get_confirmed_by_id(confirmed_id)
+    if not c:
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    is_ops      = session.get("role") in ("admin", "operator")
+    is_assignee = session.get("username") == c.get("assignee")
+    if not (is_ops or is_assignee):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    data       = request.get_json(force=True) or {}
+    task_name  = (data.get("task_name") or "").strip()
+    if not task_name:
+        return jsonify({"ok": False, "error": "업무명을 입력하세요"})
+    assignee   = (data.get("assignee") or "").strip()
+    due_date   = (data.get("due_date") or "").strip()
+    status     = data.get("status", "예정")
+    sort_order = int(data.get("sort_order", 0))
+    sid = add_confirmed_schedule(confirmed_id, task_name, assignee, due_date, status, sort_order)
+    return jsonify({"ok": True, "id": sid})
+
+
+@app.route("/nara/confirmed/<int:confirmed_id>/schedule/<int:schedule_id>", methods=["PATCH"])
+@login_required
+def nara_confirmed_schedule_update(confirmed_id, schedule_id):
+    c = get_confirmed_by_id(confirmed_id)
+    if not c:
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    is_ops      = session.get("role") in ("admin", "operator")
+    is_assignee = session.get("username") == c.get("assignee")
+    if not (is_ops or is_assignee):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    data      = request.get_json(force=True) or {}
+    task_name = (data.get("task_name") or "").strip()
+    assignee  = (data.get("assignee") or "").strip()
+    due_date  = (data.get("due_date") or "").strip()
+    status    = data.get("status", "예정")
+    update_confirmed_schedule(schedule_id, task_name, assignee, due_date, status)
+    return jsonify({"ok": True})
+
+
+@app.route("/nara/confirmed/<int:confirmed_id>/schedule/<int:schedule_id>", methods=["DELETE"])
+@login_required
+def nara_confirmed_schedule_delete(confirmed_id, schedule_id):
+    c = get_confirmed_by_id(confirmed_id)
+    if not c:
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    is_ops      = session.get("role") in ("admin", "operator")
+    is_assignee = session.get("username") == c.get("assignee")
+    if not (is_ops or is_assignee):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    delete_confirmed_schedule(schedule_id)
+    return jsonify({"ok": True})
+
 
 @app.route("/nara/results")
 @login_required
