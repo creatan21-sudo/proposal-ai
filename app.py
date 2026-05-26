@@ -3931,6 +3931,18 @@ def nara_confirmed_detail(confirmed_id):
     narrative  = get_confirmed_narrative(confirmed_id)
     comments   = list_confirmed_comments(confirmed_id)
     schedule   = list_confirmed_schedule(confirmed_id)
+    if not schedule:
+        raw_clse  = c.get("bid_clse_dt") or ""
+        due_date  = raw_clse[:10] if raw_clse else ""
+        add_confirmed_schedule(
+            confirmed_id=confirmed_id,
+            task_name="입찰 마감",
+            assignee=c.get("assignee") or "",
+            due_date=due_date,
+            status="예정",
+            sort_order=0,
+        )
+        schedule = list_confirmed_schedule(confirmed_id)
     bid_info   = get_confirmed_bid_info(confirmed_id)
     from database.db import get_connection
     with get_connection() as conn:
