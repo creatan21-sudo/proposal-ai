@@ -394,14 +394,13 @@ def fetch_bid_by_no(bid_ntce_no: str) -> dict | None:
     _DAILY_RATE  = 1_500
 
     try:
-        match        = re.search(r'\d+', bid_ntce_no)
-        serial       = int(match.group()) if match else 0
+        serial       = int(bid_ntce_no[5:])           # R26BK 5자리 제거 → 01523856
         days_diff    = (serial - _BASE_SERIAL) / _DAILY_RATE
         estimated    = _BASE_DATE + timedelta(days=days_diff)
     except (ValueError, IndexError):
         estimated = datetime.now()
 
-    MARGIN    = 5   # ±5일
+    MARGIN    = 7   # ±7일
     ROWS      = 100
     MAX_PAGES = 10
 
