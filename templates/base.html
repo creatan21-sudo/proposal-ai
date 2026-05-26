@@ -12,8 +12,9 @@
     <div class="header-inner">
       <a href="/" class="logo">Prointerz</a>
       <nav>
+        <a href="/nara">입찰</a>
         {% if session.get('role') != 'user' %}
-        <a href="/">새 제안서</a>
+        <a href="/proposal">새 제안서</a>
         <a href="/history">MY DB</a>
         <a href="/learning">학습 데이터</a>
         {% else %}
@@ -22,7 +23,6 @@
         {% if session.get('is_admin') %}
         <a href="/admin" class="nav-admin">관리자</a>
         {% endif %}
-        <a href="/nara">입찰</a>
         <a href="/profile">프로필</a>
         {% if session.get('role') != 'user' %}
         <a href="#" id="nav-active-run" style="display:none" title="">

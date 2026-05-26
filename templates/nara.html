@@ -149,6 +149,21 @@
     <button onclick="searchByBidNo()" style="padding:8px 16px;font-size:13px;background:#6366f1;color:#fff;border:none;border-radius:8px;cursor:pointer;font-weight:600;">🔎 공고번호 검색</button>
   </div>
 
+  <!-- 마감 필터 토글 -->
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap;">
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:#374151;">
+      <input type="checkbox" id="hide-expired" {% if hide_expired %}checked{% endif %}
+             onchange="toggleExpired(this)"
+             style="width:15px;height:15px;cursor:pointer;">
+      마감된 공고 숨기기
+    </label>
+    <span id="clse-until-wrap" style="display:{% if hide_expired %}none{% else %}inline-flex{% endif %};align-items:center;gap:6px;font-size:13px;color:#6b7280;">
+      ~까지
+      <input type="date" id="clse-until" oninput="applySearch()"
+             style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
+    </span>
+  </div>
+
   <!-- 검색창 -->
   <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;">
     <input type="text" id="search-nm" placeholder="공고명 검색"
@@ -177,7 +192,7 @@
     <tbody id="bid-tbody">
       {% if bids %}
         {% for b in bids %}
-        <tr data-nm="{{ b.bid_ntce_nm | e }}" data-instt="{{ b.ntce_instt_nm | e }}" data-kw="{{ b.matched_keyword | e }}">
+        <tr data-nm="{{ b.bid_ntce_nm | e }}" data-instt="{{ b.ntce_instt_nm | e }}" data-kw="{{ b.matched_keyword | e }}" data-clse="{{ (b.bid_clse_dt or '')[:8] }}">
           <td>
             <div class="bid-nm">
               <a href="{{ b.ntce_url if b.ntce_url else 'https://www.g2b.go.kr/index.jsp?bidNtceNo=' + b.bid_ntce_no }}"
@@ -373,17 +388,25 @@ function deleteKeyword(id,btn){if(!confirm('키워드를 삭제할까요?'))retu
 function manualScan(){const btn=document.getElementById('scan-btn');btn.textContent='⏳ 스캔 중...';btn.classList.add('loading');fetch('/nara/scan',{method:'POST'}).then(r=>r.json()).then(d=>{btn.textContent='⚡ 지금 스캔';btn.classList.remove('loading');showToast(d.message||'스캔 완료');setTimeout(()=>location.reload(),2000)}).catch(()=>{btn.textContent='⚡ 지금 스캔';btn.classList.remove('loading');showToast('스캔 오류',false)})}
 function _esc(s){return(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function applySearch(){
-  const nm    = (document.getElementById('search-nm')?.value||'').toLowerCase();
-  const instt = (document.getElementById('search-instt')?.value||'').toLowerCase();
-  const kw    = document.getElementById('kw-filter')?.value||'';
+  const nm          = (document.getElementById('search-nm')?.value||'').toLowerCase();
+  const instt       = (document.getElementById('search-instt')?.value||'').toLowerCase();
+  const kw          = document.getElementById('kw-filter')?.value||'';
+  const hideExpired = document.getElementById('hide-expired')?.checked;
+  const clseUntil   = (document.getElementById('clse-until')?.value||'').replace(/-/g,'');
+  const today       = new Date().toISOString().slice(0,10).replace(/-/g,'');
   let count = 0;
   document.querySelectorAll('#bid-tbody tr[data-nm]').forEach(tr=>{
     const trNm    = (tr.dataset.nm||'').toLowerCase();
     const trInstt = (tr.dataset.instt||'').toLowerCase();
     const trKw    = tr.dataset.kw||'';
+    const trClse  = tr.dataset.clse||'';
+    const expired = trClse && trClse < today;
+    const withinUntil = !clseUntil || !trClse || trClse <= clseUntil;
     const match = (!nm || trNm.includes(nm))
                && (!instt || trInstt.includes(instt))
-               && (!kw || trKw === kw);
+               && (!kw || trKw === kw)
+               && (!hideExpired || !expired)
+               && withinUntil;
     tr.style.display = match ? '' : 'none';
     if(match) count++;
   });
@@ -393,8 +416,19 @@ function clearSearch(){
   document.getElementById('search-nm').value='';
   document.getElementById('search-instt').value='';
   document.getElementById('kw-filter').value='';
+  document.getElementById('clse-until').value='';
   applySearch();
 }
 function filterBids(){ applySearch(); }
+function toggleExpired(cb){
+  const url=new URL(window.location);
+  url.searchParams.set('hide_expired', cb.checked?'1':'0');
+  url.searchParams.delete('page');
+  window.location.href=url.toString();
+}
+(function(){
+  const inp=document.getElementById('clse-until');
+  if(inp&&!inp.value) inp.value=new Date().toISOString().slice(0,10);
+})();
 </script>
 {% endblock %}

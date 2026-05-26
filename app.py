@@ -688,7 +688,11 @@ def logout():
 @app.route("/")
 @login_required
 def index():
-    # user 역할은 새 제안서 생성 불가 → 공유 DB로 리다이렉트
+    return redirect(url_for("nara_dashboard"))
+
+@app.route("/proposal")
+@login_required
+def new_proposal():
     if session.get("role") == "user":
         return redirect(url_for("history"))
     return render_template("index.html", video_types=VIDEO_TYPES)
@@ -3870,16 +3874,17 @@ def api_step_overrides(case_id):
 @app.route("/nara")
 @login_required
 def nara_dashboard():
-    page     = max(1, int(request.args.get("page", 1)))
-    keyword  = request.args.get("keyword", "").strip()
-    keywords = get_nara_keywords()
-    paged    = list_nara_bids_paged(keyword=keyword, page=page, per_page=50)
-    settings = get_nara_settings()
+    page         = max(1, int(request.args.get("page", 1)))
+    keyword      = request.args.get("keyword", "").strip()
+    hide_expired = request.args.get("hide_expired", "1") == "1"
+    keywords     = get_nara_keywords()
+    paged        = list_nara_bids_paged(keyword=keyword, page=page, per_page=50, hide_expired=hide_expired)
+    settings     = get_nara_settings()
     candidate_nos = get_candidate_bid_nos()
     return render_template("nara.html", keywords=keywords,
                            bids=paged["items"], pagination=paged,
                            settings=settings, candidate_nos=candidate_nos,
-                           kw_filter=keyword)
+                           kw_filter=keyword, hide_expired=hide_expired)
 
 @app.route("/nara/candidates")
 @login_required
@@ -3955,8 +3960,9 @@ def nara_manual_scan():
 @app.route("/nara/bids")
 @login_required
 def nara_list_bids():
-    keyword = request.args.get("keyword", "").strip()
-    bids    = list_nara_bids(keyword=keyword, limit=200)
+    keyword      = request.args.get("keyword", "").strip()
+    hide_expired = request.args.get("hide_expired", "1") == "1"
+    bids         = list_nara_bids(keyword=keyword, limit=200, hide_expired=hide_expired)
     return jsonify({"ok": True, "bids": bids})
 
 @app.route("/nara/settings", methods=["POST"])

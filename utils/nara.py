@@ -410,7 +410,7 @@ def fetch_bid_by_no(bid_ntce_no: str) -> dict | None:
     # ── 일련번호 추출 및 등록일 추정 ─────────────────────────
     _BASE_SERIAL = 1_480_000
     _BASE_DATE   = datetime(2026, 4, 22)
-    _DAILY_RATE  = 1_500
+    _DAILY_RATE  = 1_950
 
     try:
         serial       = int(bid_ntce_no[5:])           # R26BK 5자리 제거 → 01523856
@@ -419,7 +419,7 @@ def fetch_bid_by_no(bid_ntce_no: str) -> dict | None:
     except (ValueError, IndexError):
         estimated = datetime.now()
 
-    MARGIN    = 7   # ±7일
+    MARGIN    = 10   # ±10일
     ROWS      = 100
     MAX_PAGES = 10
 

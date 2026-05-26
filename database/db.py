@@ -2099,12 +2099,22 @@ def is_nara_bid_seen(bid_ntce_no: str) -> bool:
         row = conn.execute("SELECT 1 FROM nara_bids WHERE bid_ntce_no=?", (bid_ntce_no,)).fetchone()
     return row is not None
 
-def list_nara_bids(keyword: str = "", limit: int = 200) -> list:
+def list_nara_bids(keyword: str = "", limit: int = 200, hide_expired: bool = True) -> list:
+    from datetime import datetime as _dt
+    today = _dt.now().strftime("%Y%m%d")
+    conditions, params = [], []
+    if keyword:
+        conditions.append("matched_keyword=?")
+        params.append(keyword)
+    if hide_expired:
+        conditions.append("(bid_clse_dt IS NULL OR bid_clse_dt >= ?)")
+        params.append(today)
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    params.append(limit)
     with get_connection() as conn:
-        if keyword:
-            rows = conn.execute("SELECT * FROM nara_bids WHERE matched_keyword=? ORDER BY created_at DESC LIMIT ?", (keyword, limit)).fetchall()
-        else:
-            rows = conn.execute("SELECT * FROM nara_bids ORDER BY created_at DESC LIMIT ?", (limit,)).fetchall()
+        rows = conn.execute(
+            f"SELECT * FROM nara_bids {where} ORDER BY created_at DESC LIMIT ?", params
+        ).fetchall()
     return [dict(r) for r in rows]
 
 def delete_nara_bid(bid_id: int):
@@ -2333,23 +2343,24 @@ def delete_nara_pickup(pickup_id: int) -> None:
         conn.execute("DELETE FROM nara_pickups WHERE id=?", (pickup_id,))
 
 
-def list_nara_bids_paged(keyword: str = "", page: int = 1, per_page: int = 50) -> dict:
+def list_nara_bids_paged(keyword: str = "", page: int = 1, per_page: int = 50, hide_expired: bool = True) -> dict:
+    from datetime import datetime as _dt
+    today = _dt.now().strftime("%Y%m%d")
     offset = (page - 1) * per_page
+    conditions, base_params = [], []
+    if keyword:
+        conditions.append("matched_keyword=?")
+        base_params.append(keyword)
+    if hide_expired:
+        conditions.append("(bid_clse_dt IS NULL OR bid_clse_dt >= ?)")
+        base_params.append(today)
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     with get_connection() as conn:
-        if keyword:
-            total = conn.execute(
-                "SELECT COUNT(*) FROM nara_bids WHERE matched_keyword=?", (keyword,)
-            ).fetchone()[0]
-            rows = conn.execute(
-                "SELECT * FROM nara_bids WHERE matched_keyword=? ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                (keyword, per_page, offset),
-            ).fetchall()
-        else:
-            total = conn.execute("SELECT COUNT(*) FROM nara_bids").fetchone()[0]
-            rows  = conn.execute(
-                "SELECT * FROM nara_bids ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                (per_page, offset),
-            ).fetchall()
+        total = conn.execute(f"SELECT COUNT(*) FROM nara_bids {where}", base_params).fetchone()[0]
+        rows  = conn.execute(
+            f"SELECT * FROM nara_bids {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            base_params + [per_page, offset],
+        ).fetchall()
     return {
         "items":    [dict(r) for r in rows],
         "total":    total,
