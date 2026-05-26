@@ -14,9 +14,9 @@
       <nav>
         <a href="/nara">입찰</a>
         {% if session.get('role') != 'user' %}
-        <a href="/proposal">새 제안서</a>
-        <a href="/history">MY DB</a>
-        <a href="/learning">학습 데이터</a>
+        <a href="/proposal">작성</a>
+        <a href="/history">DB</a>
+        <a href="/learning">입력</a>
         {% else %}
         <a href="/history">공유 DB</a>
         {% endif %}
