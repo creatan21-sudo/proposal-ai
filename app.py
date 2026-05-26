@@ -4077,6 +4077,9 @@ def nara_add_keyword():
         return jsonify({"ok": False, "error": "키워드는 50자 이내로 입력하세요"})
     try:
         with get_connection() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM nara_keywords").fetchone()[0]
+            if count >= 10:
+                return jsonify({"ok": False, "error": "키워드는 최대 10개까지 등록 가능합니다"})
             cur    = conn.execute("INSERT INTO nara_keywords (keyword) VALUES (?)", (keyword,))
             new_id = cur.lastrowid
         return jsonify({"ok": True, "id": new_id, "keyword": keyword})
@@ -4087,6 +4090,14 @@ def nara_add_keyword():
 @login_required
 def nara_delete_keyword(keyword_id):
     delete_nara_keyword(keyword_id)
+    return jsonify({"ok": True})
+
+@app.route("/nara/reset_keywords", methods=["POST"])
+@operator_or_admin_required
+def nara_reset_keywords():
+    from database.db import get_connection
+    with get_connection() as conn:
+        conn.execute("DELETE FROM nara_keywords")
     return jsonify({"ok": True})
 
 @app.route("/nara/scan", methods=["POST"])

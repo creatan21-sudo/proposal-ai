@@ -109,7 +109,7 @@
   </div>
 
   <div class="kw-section">
-    <h3>🔍 키워드 관리</h3>
+    <h3>🔍 키워드 관리 <span id="kw-counter" style="font-size:13px;font-weight:400;color:#6b7280;margin-left:6px;">{{ keywords|length }} / 10</span></h3>
     <div class="kw-input-row">
       <input type="text" id="kw-input" placeholder="예: 영상제작, 홍보영상, 다큐멘터리" maxlength="50"
              onkeydown="if(event.key==='Enter') addKeyword()">
@@ -396,8 +396,38 @@ function saveSettings(){
   }).catch(()=>{btn.textContent='설정 저장';btn.disabled=false;showToast('저장 오류',false)});
 }
 function showToast(msg,ok=true){const t=document.getElementById('toast');t.textContent=msg;t.style.background=ok?'#1f2937':'#b91c1c';t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800)}
-function addKeyword(){const inp=document.getElementById('kw-input');const kw=inp.value.trim();if(!kw)return;fetch('/nara/keyword',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:kw})}).then(r=>r.json()).then(d=>{if(d.ok){inp.value='';const empty=document.getElementById('kw-empty');if(empty)empty.remove();const wrap=document.getElementById('kw-tags');const span=document.createElement('span');span.className='kw-tag';span.dataset.id=d.id;span.innerHTML=`${kw} <button onclick="deleteKeyword(${d.id},this)" title="삭제">×</button>`;wrap.appendChild(span);const sel=document.getElementById('kw-filter');const opt=document.createElement('option');opt.value=kw;opt.textContent=kw;sel.appendChild(opt);showToast(`"${kw}" 추가됨`)}else{showToast(d.error||'추가 실패',false)}})}
-function deleteKeyword(id,btn){if(!confirm('키워드를 삭제할까요?'))return;fetch(`/nara/keyword/${id}`,{method:'DELETE'}).then(r=>r.json()).then(d=>{if(d.ok){const tag=btn.closest('.kw-tag');tag.remove();if(!document.querySelector('.kw-tag')){document.getElementById('kw-tags').innerHTML='<span class="kw-empty" id="kw-empty">등록된 키워드가 없습니다</span>'}showToast('키워드 삭제됨')}})}
+function _kwCount(){return document.querySelectorAll('#kw-tags .kw-tag').length;}
+function _updateKwCounter(){const el=document.getElementById('kw-counter');if(el)el.textContent=_kwCount()+' / 10';}
+function addKeyword(){
+  const inp=document.getElementById('kw-input');
+  const kw=inp.value.trim();
+  if(!kw)return;
+  if(_kwCount()>=10){showToast('키워드는 최대 10개까지 등록 가능합니다',false);return;}
+  fetch('/nara/keyword',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({keyword:kw})}).then(r=>r.json()).then(d=>{
+    if(d.ok){
+      inp.value='';
+      const empty=document.getElementById('kw-empty');if(empty)empty.remove();
+      const wrap=document.getElementById('kw-tags');
+      const span=document.createElement('span');span.className='kw-tag';span.dataset.id=d.id;
+      span.innerHTML=`${kw} <button onclick="deleteKeyword(${d.id},this)" title="삭제">×</button>`;
+      wrap.appendChild(span);
+      const sel=document.getElementById('kw-filter');const opt=document.createElement('option');opt.value=kw;opt.textContent=kw;sel.appendChild(opt);
+      _updateKwCounter();
+      showToast(`"${kw}" 추가됨`);
+    }else{showToast(d.error||'추가 실패',false);}
+  });
+}
+function deleteKeyword(id,btn){
+  if(!confirm('키워드를 삭제할까요?'))return;
+  fetch(`/nara/keyword/${id}`,{method:'DELETE'}).then(r=>r.json()).then(d=>{
+    if(d.ok){
+      const tag=btn.closest('.kw-tag');tag.remove();
+      if(!document.querySelector('#kw-tags .kw-tag')){document.getElementById('kw-tags').innerHTML='<span class="kw-empty" id="kw-empty">등록된 키워드가 없습니다</span>';}
+      _updateKwCounter();
+      showToast('키워드 삭제됨');
+    }
+  });
+}
 function manualScan(){const btn=document.getElementById('scan-btn');btn.textContent='⏳ 스캔 중...';btn.classList.add('loading');fetch('/nara/scan',{method:'POST'}).then(r=>r.json()).then(d=>{btn.textContent='⚡ 지금 스캔';btn.classList.remove('loading');showToast(d.message||'스캔 완료');setTimeout(()=>location.reload(),2000)}).catch(()=>{btn.textContent='⚡ 지금 스캔';btn.classList.remove('loading');showToast('스캔 오류',false)})}
 function _esc(s){return(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 function applySearch(){
