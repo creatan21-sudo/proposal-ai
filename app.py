@@ -3876,7 +3876,7 @@ def api_step_overrides(case_id):
 def nara_dashboard():
     page         = max(1, int(request.args.get("page", 1)))
     keyword      = request.args.get("keyword", "").strip()
-    hide_expired = request.args.get("hide_expired", "1") == "1"
+    hide_expired = request.args.get("hide_expired", "0") == "1"
     keywords     = get_nara_keywords()
     paged        = list_nara_bids_paged(keyword=keyword, page=page, per_page=50, hide_expired=hide_expired)
     settings     = get_nara_settings()
@@ -3961,7 +3961,7 @@ def nara_manual_scan():
 @login_required
 def nara_list_bids():
     keyword      = request.args.get("keyword", "").strip()
-    hide_expired = request.args.get("hide_expired", "1") == "1"
+    hide_expired = request.args.get("hide_expired", "0") == "1"
     bids         = list_nara_bids(keyword=keyword, limit=200, hide_expired=hide_expired)
     return jsonify({"ok": True, "bids": bids})
 
