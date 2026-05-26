@@ -82,7 +82,8 @@ from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           get_confirmed_narrative, save_confirmed_narrative,
                           add_confirmed_comment, list_confirmed_comments,
                           add_confirmed_schedule, list_confirmed_schedule,
-                          update_confirmed_schedule, delete_confirmed_schedule)
+                          update_confirmed_schedule, delete_confirmed_schedule,
+                          get_confirmed_bid_info, save_confirmed_bid_info)
 
 app = Flask(__name__)
 # Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
@@ -3930,6 +3931,7 @@ def nara_confirmed_detail(confirmed_id):
     narrative  = get_confirmed_narrative(confirmed_id)
     comments   = list_confirmed_comments(confirmed_id)
     schedule   = list_confirmed_schedule(confirmed_id)
+    bid_info   = get_confirmed_bid_info(confirmed_id)
     from database.db import get_connection
     with get_connection() as conn:
         users = [dict(r) for r in conn.execute(
@@ -3938,10 +3940,12 @@ def nara_confirmed_detail(confirmed_id):
     is_ops      = session.get("role") in ("admin", "operator")
     is_assignee = session.get("username") == c.get("assignee")
     can_edit    = is_ops or is_assignee
+    from datetime import datetime as _dt
     return render_template("nara_confirmed_detail.html",
                            c=c, narrative=narrative, comments=comments,
-                           schedule=schedule, users=users,
-                           can_edit=can_edit, is_ops=is_ops)
+                           schedule=schedule, bid_info=bid_info,
+                           users=users, can_edit=can_edit, is_ops=is_ops,
+                           now=_dt.now().strftime("%Y-%m-%d %H:%M"))
 
 
 @app.route("/nara/confirmed/<int:confirmed_id>/narrative", methods=["POST"])
@@ -4025,6 +4029,21 @@ def nara_confirmed_schedule_delete(confirmed_id, schedule_id):
     if not (is_ops or is_assignee):
         return jsonify({"ok": False, "error": "권한 없음"}), 403
     delete_confirmed_schedule(schedule_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/nara/confirmed/<int:confirmed_id>/bid_info", methods=["POST"])
+@login_required
+def nara_confirmed_bid_info_save(confirmed_id):
+    c = get_confirmed_by_id(confirmed_id)
+    if not c:
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    is_ops      = session.get("role") in ("admin", "operator")
+    is_assignee = session.get("username") == c.get("assignee")
+    if not (is_ops or is_assignee):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    data = request.get_json(force=True) or {}
+    save_confirmed_bid_info(confirmed_id, data, session["username"])
     return jsonify({"ok": True})
 
 

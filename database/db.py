@@ -388,6 +388,22 @@ def init_db() -> None:
                 created_at   TEXT DEFAULT (datetime('now','localtime'))
             );
 
+            CREATE TABLE IF NOT EXISTS confirmed_bid_info (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                confirmed_id        INTEGER NOT NULL UNIQUE,
+                submit_deadline     TEXT DEFAULT '',
+                submit_method       TEXT DEFAULT '',
+                doc_qualitative     INTEGER DEFAULT 0,
+                doc_quantitative    INTEGER DEFAULT 0,
+                doc_presentation    INTEGER DEFAULT 0,
+                doc_summary         INTEGER DEFAULT 0,
+                doc_sample_video    INTEGER DEFAULT 0,
+                doc_other           TEXT DEFAULT '',
+                notes               TEXT DEFAULT '',
+                updated_by          TEXT DEFAULT '',
+                updated_at          TEXT DEFAULT (datetime('now','localtime'))
+            );
+
             CREATE TABLE IF NOT EXISTS pipeline_run_status (
                 case_id      INTEGER NOT NULL,
                 step_key     TEXT    NOT NULL,
@@ -2371,6 +2387,49 @@ def update_confirmed_schedule(schedule_id: int, task_name: str, assignee: str,
 def delete_confirmed_schedule(schedule_id: int) -> None:
     with get_connection() as conn:
         conn.execute("DELETE FROM confirmed_schedule WHERE id=?", (schedule_id,))
+
+
+def get_confirmed_bid_info(confirmed_id: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM confirmed_bid_info WHERE confirmed_id=?", (confirmed_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def save_confirmed_bid_info(confirmed_id: int, data: dict, updated_by: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO confirmed_bid_info
+               (confirmed_id, submit_deadline, submit_method,
+                doc_qualitative, doc_quantitative, doc_presentation,
+                doc_summary, doc_sample_video, doc_other, notes,
+                updated_by, updated_at)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
+               ON CONFLICT(confirmed_id) DO UPDATE SET
+                 submit_deadline=excluded.submit_deadline,
+                 submit_method=excluded.submit_method,
+                 doc_qualitative=excluded.doc_qualitative,
+                 doc_quantitative=excluded.doc_quantitative,
+                 doc_presentation=excluded.doc_presentation,
+                 doc_summary=excluded.doc_summary,
+                 doc_sample_video=excluded.doc_sample_video,
+                 doc_other=excluded.doc_other,
+                 notes=excluded.notes,
+                 updated_by=excluded.updated_by,
+                 updated_at=excluded.updated_at""",
+            (confirmed_id,
+             data.get("submit_deadline", ""),
+             data.get("submit_method", ""),
+             int(data.get("doc_qualitative", 0)),
+             int(data.get("doc_quantitative", 0)),
+             int(data.get("doc_presentation", 0)),
+             int(data.get("doc_summary", 0)),
+             int(data.get("doc_sample_video", 0)),
+             data.get("doc_other", ""),
+             data.get("notes", ""),
+             updated_by),
+        )
 
 
 def confirm_nara_pickup(pickup_id: int, confirmed_by: str,

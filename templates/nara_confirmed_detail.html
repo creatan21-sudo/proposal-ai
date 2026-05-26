@@ -5,47 +5,62 @@
 .det-wrap{max-width:1100px;margin:0 auto;padding:24px 16px}
 .det-back{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#6b7280;text-decoration:none;margin-bottom:16px;}
 .det-back:hover{color:#4f46e5}
-.info-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px 24px;margin-bottom:20px;}
-.info-title{font-size:18px;font-weight:700;color:#111827;margin-bottom:12px;line-height:1.4;}
-.info-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px 24px;}
-.info-item{font-size:13px;}
-.info-label{color:#9ca3af;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:2px;}
-.info-value{color:#111827;font-weight:500;}
-.section-title{font-size:15px;font-weight:700;color:#374151;margin-bottom:12px;padding-bottom:8px;border-bottom:2px solid #e5e7eb;}
-.narrative-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px 24px;margin-bottom:20px;}
-.narrative-textarea{width:100%;box-sizing:border-box;padding:12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:vertical;font-family:inherit;min-height:140px;line-height:1.6;}
-.narrative-textarea:focus{outline:none;border-color:#6366f1;}
-.narrative-readonly{background:#f9fafb;padding:12px 14px;border-radius:8px;font-size:13px;line-height:1.7;color:#374151;min-height:60px;white-space:pre-wrap;}
+.card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px 24px;margin-bottom:20px;}
+.section-title{font-size:15px;font-weight:700;color:#374151;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e5e7eb;}
+/* 공고 기본 정보 */
+.info-nm{font-size:18px;font-weight:700;color:#111827;margin-bottom:14px;line-height:1.4;}
+.info-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px 24px;margin-bottom:14px;}
+.info-item .lbl{color:#9ca3af;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:2px;}
+.info-item .val{color:#111827;font-weight:500;font-size:13px;}
+.badge-assignee{background:#ede9fe;color:#5b21b6;border-radius:99px;padding:2px 10px;font-size:12px;font-weight:600;}
+/* 입찰 정보 */
+.bid-info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px 32px;}
+@media(max-width:640px){.bid-info-grid{grid-template-columns:1fr}}
+.field-label{font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;}
+.field-input{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:7px;font-size:13px;}
+.field-input:focus{outline:none;border-color:#6366f1;}
+.field-readonly{font-size:13px;color:#374151;padding:4px 0;}
+.radio-group{display:flex;gap:16px;flex-wrap:wrap;}
+.radio-group label{display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;}
+.checklist{display:grid;grid-template-columns:1fr 1fr;gap:6px;}
+.checklist label{display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;}
+.checklist-readonly span{display:inline-block;margin-right:12px;font-size:13px;}
+/* 내러티브 */
+.narrative-ta{width:100%;box-sizing:border-box;padding:12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:vertical;font-family:inherit;min-height:140px;line-height:1.7;}
+.narrative-ta:focus{outline:none;border-color:#6366f1;}
+.narrative-ro{background:#f9fafb;padding:12px 14px;border-radius:8px;font-size:13px;line-height:1.7;color:#374151;min-height:60px;white-space:pre-wrap;}
+.updated-hint{font-size:11px;color:#9ca3af;margin-top:6px;}
+/* 2컬럼 하단 */
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
-@media(max-width:720px){.two-col{grid-template-columns:1fr}}
-.panel-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px 24px;}
+@media(max-width:760px){.two-col{grid-template-columns:1fr}}
+/* 일정표 */
 .sch-table{width:100%;border-collapse:collapse;font-size:13px;}
 .sch-table th{background:#f3f4f6;padding:8px 10px;text-align:left;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb;}
-.sch-table td{padding:8px 10px;border-bottom:1px solid #f3f4f6;vertical-align:middle;}
+.sch-table td{padding:7px 8px;border-bottom:1px solid #f3f4f6;vertical-align:middle;}
 .sch-table tr:hover td{background:#fafafa}
-.status-badge{display:inline-block;padding:2px 9px;border-radius:99px;font-size:11px;font-weight:600;}
-.status-예정{background:#dbeafe;color:#1e40af}
-.status-진행중{background:#fef3c7;color:#92400e}
-.status-완료{background:#d1fae5;color:#065f46}
-.status-보류{background:#fee2e2;color:#991b1b}
-.sch-input{width:100%;box-sizing:border-box;padding:5px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;}
-.sch-select{padding:5px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;background:#fff;}
-.comment-list{display:flex;flex-direction:column;gap:10px;margin-bottom:14px;max-height:320px;overflow-y:auto;}
+.sch-input{width:100%;box-sizing:border-box;padding:5px 7px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;}
+.sch-select{padding:5px 7px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;background:#fff;width:100%;}
+.overdue td{background:#fff5f5 !important;}
+.overdue .sch-input,.overdue .sch-select{border-color:#fca5a5;}
+/* 댓글 */
+.comment-list{display:flex;flex-direction:column;gap:10px;margin-bottom:14px;max-height:340px;overflow-y:auto;}
 .comment-item{background:#f9fafb;border-radius:8px;padding:10px 12px;}
 .comment-author{font-size:12px;font-weight:700;color:#4f46e5;}
 .comment-time{font-size:11px;color:#9ca3af;margin-left:6px;}
 .comment-body{font-size:13px;color:#374151;margin-top:4px;line-height:1.5;white-space:pre-wrap;}
-.comment-empty{text-align:center;color:#9ca3af;font-size:13px;padding:20px 0;}
-.comment-input{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:none;font-family:inherit;}
-.comment-input:focus{outline:none;border-color:#6366f1;}
-.btn{padding:7px 14px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;}
+.comment-ta{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:none;font-family:inherit;}
+.comment-ta:focus{outline:none;border-color:#6366f1;}
+/* 버튼 */
+.btn{padding:7px 16px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;}
 .btn-primary{background:#4f46e5;color:#fff;}
 .btn-primary:hover{background:#4338ca}
 .btn-ghost{background:#f3f4f6;color:#374151;border:1px solid #e5e7eb;}
 .btn-ghost:hover{background:#e5e7eb}
 .btn-danger{background:#fee2e2;color:#dc2626;}
 .btn-danger:hover{background:#fecaca}
-.btn-sm{padding:4px 10px;font-size:11px;}
+.btn-sm{padding:4px 9px;font-size:11px;}
+.save-row{display:flex;justify-content:flex-end;margin-top:12px;}
+/* toast */
 .toast{position:fixed;bottom:28px;right:28px;background:#1f2937;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;z-index:999;pointer-events:none}
 .toast.show{opacity:1}
 </style>
@@ -54,121 +69,185 @@
 <div class="det-wrap">
   <a href="/nara/confirmed" class="det-back">← 확정 목록으로</a>
 
-  <!-- 공고 기본 정보 -->
-  <div class="info-card">
-    <div class="info-title">{{ c.bid_ntce_nm or '-' }}</div>
+  <!-- ① 공고 기본 정보 -->
+  <div class="card">
+    <div class="info-nm">{{ c.bid_ntce_nm or '-' }}</div>
     <div class="info-grid">
-      <div class="info-item">
-        <div class="info-label">발주처</div>
-        <div class="info-value">{{ c.ntce_instt_nm or '-' }}</div>
-      </div>
-      <div class="info-item">
-        <div class="info-label">추정가격</div>
-        <div class="info-value">{% if c.presmpt_prce and c.presmpt_prce.isdigit() %}{{ '{:,}'.format(c.presmpt_prce|int) }}원{% else %}-{% endif %}</div>
-      </div>
-      <div class="info-item">
-        <div class="info-label">마감일</div>
-        <div class="info-value">{{ (c.bid_clse_dt or '-')[:10] }}</div>
-      </div>
-      <div class="info-item">
-        <div class="info-label">담당자</div>
-        <div class="info-value">{% if c.assignee %}<span style="background:#ede9fe;color:#5b21b6;border-radius:99px;padding:2px 10px;font-size:12px;font-weight:600;">{{ c.assignee }}</span>{% else %}-{% endif %}</div>
-      </div>
-      <div class="info-item">
-        <div class="info-label">확정자</div>
-        <div class="info-value">{{ c.confirmed_by or '-' }}</div>
-      </div>
-      <div class="info-item">
-        <div class="info-label">확정일</div>
-        <div class="info-value">{{ (c.created_at or '-')[:10] }}</div>
-      </div>
+      <div class="info-item"><div class="lbl">발주처</div><div class="val">{{ c.ntce_instt_nm or '-' }}</div></div>
+      <div class="info-item"><div class="lbl">추정가격</div><div class="val">{% if c.presmpt_prce and c.presmpt_prce.isdigit() %}{{ '{:,}'.format(c.presmpt_prce|int) }}원{% else %}-{% endif %}</div></div>
+      <div class="info-item"><div class="lbl">마감일</div><div class="val">{{ (c.bid_clse_dt or '-')[:10] }}</div></div>
+      <div class="info-item"><div class="lbl">담당자</div><div class="val">{% if c.assignee %}<span class="badge-assignee">{{ c.assignee }}</span>{% else %}-{% endif %}</div></div>
+      <div class="info-item"><div class="lbl">확정자</div><div class="val">{{ c.confirmed_by or '-' }}</div></div>
+      <div class="info-item"><div class="lbl">확정일</div><div class="val">{{ (c.created_at or '-')[:10] }}</div></div>
     </div>
     {% if c.ntce_url or c.bid_ntce_no %}
-    <div style="margin-top:14px;">
-      <a href="{{ c.ntce_url or ('https://www.g2b.go.kr/index.jsp?bidNtceNo=' + (c.bid_ntce_no or '')) }}"
-         target="_blank" class="btn btn-ghost">🔗 나라장터 원문 보기</a>
+    <a href="{{ c.ntce_url or ('https://www.g2b.go.kr/index.jsp?bidNtceNo=' + (c.bid_ntce_no or '')) }}"
+       target="_blank" class="btn btn-ghost">🔗 나라장터 원문 보기</a>
+    {% endif %}
+  </div>
+
+  <!-- ② 입찰 정보 -->
+  <div class="card">
+    <div class="section-title">📋 입찰 정보</div>
+    {% set bi = bid_info or {} %}
+    {% if can_edit %}
+    <div class="bid-info-grid">
+      <div>
+        <div class="field-label">제출 마감</div>
+        <input type="datetime-local" id="bi-deadline" class="field-input"
+               value="{{ bi.submit_deadline or '' }}">
+      </div>
+      <div>
+        <div class="field-label">제출 방법</div>
+        <div class="radio-group">
+          {% for m in ['온라인','오프라인','가격투찰만'] %}
+          <label>
+            <input type="radio" name="bi-method" value="{{ m }}"
+                   {% if (bi.submit_method or '') == m %}checked{% endif %}>
+            {{ m }}
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div>
+        <div class="field-label">제출 서류</div>
+        <div class="checklist">
+          {% set docs = [
+            ('doc_qualitative','정성평가 자료'),
+            ('doc_quantitative','정량평가 자료'),
+            ('doc_presentation','발표자료 (PT)'),
+            ('doc_summary','요약본'),
+            ('doc_sample_video','샘플영상'),
+          ] %}
+          {% for key, label in docs %}
+          <label>
+            <input type="checkbox" class="bi-doc" data-key="{{ key }}"
+                   {% if bi[key] %}checked{% endif %}>
+            {{ label }}
+          </label>
+          {% endfor %}
+        </div>
+        <div style="margin-top:8px;display:flex;align-items:center;gap:6px;">
+          <label style="font-size:13px;white-space:nowrap;">
+            <input type="checkbox" id="bi-doc-other-chk"
+                   {% if bi.doc_other %}checked{% endif %}
+                   onchange="document.getElementById('bi-doc-other').disabled=!this.checked">
+            기타
+          </label>
+          <input type="text" id="bi-doc-other" class="field-input"
+                 value="{{ bi.doc_other or '' }}"
+                 {% if not bi.doc_other %}disabled{% endif %}
+                 placeholder="기타 서류명">
+        </div>
+      </div>
+      <div>
+        <div class="field-label">비고</div>
+        <textarea id="bi-notes" class="field-input" rows="4"
+                  style="resize:vertical;">{{ bi.notes or '' }}</textarea>
+      </div>
+    </div>
+    <div class="save-row">
+      <button class="btn btn-primary" onclick="saveBidInfo()">💾 저장</button>
+    </div>
+    {% if bi.updated_by %}
+    <div class="updated-hint">최종 수정: {{ bi.updated_by }} · {{ (bi.updated_at or '')[:16] }}</div>
+    {% endif %}
+    {% else %}
+    <!-- 읽기 전용 -->
+    <div class="bid-info-grid">
+      <div><div class="field-label">제출 마감</div><div class="field-readonly">{{ bi.submit_deadline or '-' }}</div></div>
+      <div><div class="field-label">제출 방법</div><div class="field-readonly">{{ bi.submit_method or '-' }}</div></div>
+      <div>
+        <div class="field-label">제출 서류</div>
+        <div class="checklist-readonly field-readonly">
+          {% set docs = [('doc_qualitative','정성평가'),('doc_quantitative','정량평가'),('doc_presentation','PT'),('doc_summary','요약본'),('doc_sample_video','샘플영상')] %}
+          {% for key, label in docs %}{% if bi[key] %}<span>✅ {{ label }}</span>{% endif %}{% endfor %}
+          {% if bi.doc_other %}<span>✅ {{ bi.doc_other }}</span>{% endif %}
+          {% if not bi %}—{% endif %}
+        </div>
+      </div>
+      <div><div class="field-label">비고</div><div class="field-readonly" style="white-space:pre-wrap">{{ bi.notes or '-' }}</div></div>
     </div>
     {% endif %}
   </div>
 
-  <!-- 전략 내러티브 -->
-  <div class="narrative-card">
+  <!-- ③ 전략 내러티브 -->
+  <div class="card">
     <div class="section-title">📝 전략 내러티브</div>
     {% if can_edit %}
-    <textarea id="narrative-content" class="narrative-textarea"
+    <textarea id="narrative-content" class="narrative-ta"
               placeholder="이 공고에 대한 전략, 강점, 접근 방향 등을 작성하세요...">{{ narrative.content if narrative else '' }}</textarea>
-    <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+    <div class="save-row">
       <button class="btn btn-primary" onclick="saveNarrative()">💾 저장</button>
     </div>
     {% else %}
-    <div class="narrative-readonly">{{ (narrative.content if narrative else '') or '아직 작성된 내러티브가 없습니다.' }}</div>
+    <div class="narrative-ro">{{ (narrative.content if narrative else '') or '아직 작성된 내러티브가 없습니다.' }}</div>
     {% endif %}
     {% if narrative and narrative.updated_by %}
-    <div style="font-size:11px;color:#9ca3af;margin-top:8px;">최종 수정: {{ narrative.updated_by }} · {{ (narrative.updated_at or '')[:16] }}</div>
+    <div class="updated-hint">최종 수정: {{ narrative.updated_by }} · {{ (narrative.updated_at or '')[:16] }}</div>
     {% endif %}
   </div>
 
-  <!-- 일정표 + 댓글 2컬럼 -->
+  <!-- ④ 일정표 + 댓글 2컬럼 -->
   <div class="two-col">
+
     <!-- 진행 일정표 -->
-    <div class="panel-card">
+    <div class="card">
       <div class="section-title">📅 진행 일정표</div>
-      <table class="sch-table" id="sch-table">
+      <table class="sch-table">
         <thead>
           <tr>
-            <th style="width:32%">업무명</th>
+            <th style="width:30%">업무명</th>
             <th style="width:22%">담당자</th>
             <th style="width:20%">마감일</th>
             <th style="width:16%">상태</th>
-            {% if can_edit %}<th style="width:10%"></th>{% endif %}
+            {% if can_edit %}<th style="width:12%"></th>{% endif %}
           </tr>
         </thead>
         <tbody id="sch-tbody">
+          {% set today_str = now[:10] if now is defined else '' %}
           {% for s in schedule %}
-          <tr data-id="{{ s.id }}">
-            <td><input class="sch-input" value="{{ s.task_name | e }}" onchange="updateSchedule({{ s.id }}, this.closest('tr'))"></td>
+          {% set overdue = s.due_date and s.due_date < today_str and s.status not in ['완료','보류'] %}
+          <tr data-id="{{ s.id }}"{% if overdue %} class="overdue"{% endif %}>
+            <td><input class="sch-input" value="{{ s.task_name | e }}" onchange="patchSchedule({{ s.id }}, this.closest('tr'))"></td>
             <td>
-              <select class="sch-select" style="width:100%" onchange="updateSchedule({{ s.id }}, this.closest('tr'))">
+              <select class="sch-select" onchange="patchSchedule({{ s.id }}, this.closest('tr'))">
                 <option value="">-</option>
-                {% for u in users %}<option value="{{ u.username }}" {% if u.username == s.assignee %}selected{% endif %}>{{ u.username }}</option>{% endfor %}
+                {% for u in users %}<option value="{{ u.username }}"{% if u.username == s.assignee %} selected{% endif %}>{{ u.username }}</option>{% endfor %}
               </select>
             </td>
-            <td><input type="date" class="sch-input" value="{{ s.due_date }}" onchange="updateSchedule({{ s.id }}, this.closest('tr'))"></td>
+            <td><input type="date" class="sch-input" value="{{ s.due_date }}" onchange="patchSchedule({{ s.id }}, this.closest('tr'))"></td>
             <td>
-              <select class="sch-select" onchange="updateSchedule({{ s.id }}, this.closest('tr'))">
-                {% for st in ['예정','진행중','완료','보류'] %}
-                <option {% if st == s.status %}selected{% endif %}>{{ st }}</option>
-                {% endfor %}
+              <select class="sch-select" onchange="patchSchedule({{ s.id }}, this.closest('tr'))">
+                {% for st in ['예정','진행중','완료','보류'] %}<option{% if st == s.status %} selected{% endif %}>{{ st }}</option>{% endfor %}
               </select>
             </td>
-            {% if can_edit %}
-            <td><button class="btn btn-danger btn-sm" onclick="deleteSchedule({{ s.id }}, this.closest('tr'))">삭제</button></td>
-            {% endif %}
+            {% if can_edit %}<td><button class="btn btn-danger btn-sm" onclick="delSchedule({{ s.id }}, this.closest('tr'))">삭제</button></td>{% endif %}
           </tr>
           {% endfor %}
         </tbody>
       </table>
-      {% if schedule is defined and schedule|length == 0 %}
+      {% if not schedule %}
       <div id="sch-empty" style="text-align:center;color:#9ca3af;font-size:13px;padding:16px 0;">등록된 일정이 없습니다</div>
       {% endif %}
       {% if can_edit %}
-      <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-        <input id="new-task" class="sch-input" style="flex:2;min-width:120px" placeholder="업무명">
-        <select id="new-assignee" class="sch-select">
+      <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+        <input id="new-task" class="sch-input" style="flex:2;min-width:100px" placeholder="업무명">
+        <select id="new-assignee" class="sch-select" style="flex:1;min-width:80px">
           <option value="">담당자</option>
           {% for u in users %}<option value="{{ u.username }}">{{ u.username }}</option>{% endfor %}
         </select>
         <input type="date" id="new-due" class="sch-input" style="flex:1;min-width:110px">
-        <select id="new-status" class="sch-select">
+        <select id="new-status" class="sch-select" style="flex:1;min-width:70px">
           {% for st in ['예정','진행중','완료','보류'] %}<option>{{ st }}</option>{% endfor %}
         </select>
-        <button class="btn btn-primary btn-sm" onclick="addSchedule()">+ 추가</button>
+        <button class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="addSchedule()">+ 추가</button>
       </div>
       {% endif %}
     </div>
 
-    <!-- 댓글 섹션 -->
-    <div class="panel-card">
+    <!-- 댓글 -->
+    <div class="card">
       <div class="section-title">💬 의견</div>
       <div class="comment-list" id="comment-list">
         {% if comments %}
@@ -180,119 +259,144 @@
           </div>
           {% endfor %}
         {% else %}
-          <div class="comment-empty" id="comment-empty">아직 의견이 없습니다</div>
+          <div id="comment-empty" style="text-align:center;color:#9ca3af;font-size:13px;padding:20px 0;">아직 의견이 없습니다</div>
         {% endif %}
       </div>
-      <textarea id="comment-input" class="comment-input" rows="3"
+      <textarea id="comment-ta" class="comment-ta" rows="3"
                 placeholder="의견을 입력하세요..."></textarea>
-      <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+      <div class="save-row" style="margin-top:8px;">
         <button class="btn btn-primary" onclick="addComment()">등록</button>
       </div>
     </div>
+
   </div>
 </div>
 
 <div class="toast" id="toast"></div>
 <script>
-const CONFIRMED_ID = {{ c.id }};
+const CID    = {{ c.id }};
+const USERS  = {{ users | tojson }};
+const TODAY  = new Date().toISOString().slice(0,10);
+const CAN_EDIT = {{ 'true' if can_edit else 'false' }};
 
 function showToast(msg, ok=true){
   const t=document.getElementById('toast');
   t.textContent=msg; t.style.background=ok?'#1f2937':'#b91c1c';
   t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2800);
 }
+function _esc(s){return(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
+/* ── 입찰 정보 저장 ── */
+async function saveBidInfo(){
+  const method = document.querySelector('input[name="bi-method"]:checked')?.value || '';
+  const docs   = {};
+  document.querySelectorAll('.bi-doc').forEach(cb=>{ docs[cb.dataset.key]=cb.checked?1:0; });
+  const otherChk = document.getElementById('bi-doc-other-chk');
+  const otherVal = document.getElementById('bi-doc-other')?.value.trim() || '';
+  const payload = {
+    submit_deadline: document.getElementById('bi-deadline').value,
+    submit_method: method,
+    ...docs,
+    doc_other: (otherChk?.checked ? otherVal : ''),
+    notes: document.getElementById('bi-notes').value,
+  };
+  const r = await fetch(`/nara/confirmed/${CID}/bid_info`,{
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
+  });
+  const d = await r.json();
+  d.ok ? showToast('입찰 정보가 저장되었습니다') : showToast(d.error||'저장 실패',false);
+}
+
+/* ── 내러티브 저장 ── */
 async function saveNarrative(){
   const content = document.getElementById('narrative-content')?.value || '';
-  const r = await fetch(`/nara/confirmed/${CONFIRMED_ID}/narrative`,{
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({content})
+  const r = await fetch(`/nara/confirmed/${CID}/narrative`,{
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content})
   });
   const d = await r.json();
   d.ok ? showToast('내러티브가 저장되었습니다') : showToast(d.error||'저장 실패',false);
 }
 
+/* ── 일정표 ── */
+function _rowOverdue(dueDateVal, statusVal){
+  return dueDateVal && dueDateVal < TODAY && statusVal !== '완료' && statusVal !== '보류';
+}
+function _buildRowHtml(id, task_name, assignee, due_date, status){
+  const uOpts = ['<option value="">-</option>'].concat(USERS.map(u=>`<option value="${_esc(u.username)}"${u.username===assignee?' selected':''}>${_esc(u.username)}</option>`)).join('');
+  const sOpts = ['예정','진행중','완료','보류'].map(s=>`<option${s===status?' selected':''}>${s}</option>`).join('');
+  const delBtn = CAN_EDIT ? `<td><button class="btn btn-danger btn-sm" onclick="delSchedule(${id},this.closest('tr'))">삭제</button></td>` : '';
+  return `
+    <td><input class="sch-input" value="${_esc(task_name)}" onchange="patchSchedule(${id},this.closest('tr'))"></td>
+    <td><select class="sch-select" onchange="patchSchedule(${id},this.closest('tr'))">${uOpts}</select></td>
+    <td><input type="date" class="sch-input" value="${due_date}" onchange="patchSchedule(${id},this.closest('tr'))"></td>
+    <td><select class="sch-select" onchange="patchSchedule(${id},this.closest('tr'))">${sOpts}</select></td>
+    ${delBtn}`;
+}
 async function addSchedule(){
   const task_name = document.getElementById('new-task').value.trim();
   if(!task_name){ showToast('업무명을 입력하세요',false); return; }
   const assignee  = document.getElementById('new-assignee').value;
   const due_date  = document.getElementById('new-due').value;
   const status    = document.getElementById('new-status').value;
-  const rows      = document.querySelectorAll('#sch-tbody tr').length;
-  const r = await fetch(`/nara/confirmed/${CONFIRMED_ID}/schedule`,{
+  const sort_order= document.querySelectorAll('#sch-tbody tr').length;
+  const r = await fetch(`/nara/confirmed/${CID}/schedule`,{
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({task_name, assignee, due_date, status, sort_order: rows})
+    body:JSON.stringify({task_name,assignee,due_date,status,sort_order})
   });
   const d = await r.json();
   if(!d.ok){ showToast(d.error||'추가 실패',false); return; }
-  const tbody = document.getElementById('sch-tbody');
   const empty = document.getElementById('sch-empty');
   if(empty) empty.remove();
   const tr = document.createElement('tr');
   tr.dataset.id = d.id;
-  tr.innerHTML = buildSchRow(d.id, task_name, assignee, due_date, status);
-  tbody.appendChild(tr);
+  if(_rowOverdue(due_date, status)) tr.className='overdue';
+  tr.innerHTML = _buildRowHtml(d.id, task_name, assignee, due_date, status);
+  document.getElementById('sch-tbody').appendChild(tr);
   document.getElementById('new-task').value='';
   document.getElementById('new-due').value='';
   showToast('일정이 추가되었습니다');
 }
-
-function buildSchRow(id, task_name, assignee, due_date, status){
-  const users = {{ users | tojson }};
-  const statusOpts = ['예정','진행중','완료','보류'];
-  const uOpts = ['<option value="">-</option>'].concat(users.map(u=>`<option value="${u.username}"${u.username===assignee?' selected':''}>${u.username}</option>`)).join('');
-  const sOpts = statusOpts.map(s=>`<option${s===status?' selected':''}>${s}</option>`).join('');
-  return `
-    <td><input class="sch-input" value="${_esc(task_name)}" onchange="updateSchedule(${id},this.closest('tr'))"></td>
-    <td><select class="sch-select" style="width:100%" onchange="updateSchedule(${id},this.closest('tr'))">${uOpts}</select></td>
-    <td><input type="date" class="sch-input" value="${due_date}" onchange="updateSchedule(${id},this.closest('tr'))"></td>
-    <td><select class="sch-select" onchange="updateSchedule(${id},this.closest('tr'))">${sOpts}</select></td>
-    <td><button class="btn btn-danger btn-sm" onclick="deleteSchedule(${id},this.closest('tr'))">삭제</button></td>`;
-}
-
-async function updateSchedule(id, tr){
-  const inputs  = tr.querySelectorAll('input, select');
+async function patchSchedule(id, tr){
+  const inputs = tr.querySelectorAll('input,select');
   const task_name = inputs[0].value.trim();
   const assignee  = inputs[1].value;
   const due_date  = inputs[2].value;
   const status    = inputs[3].value;
-  await fetch(`/nara/confirmed/${CONFIRMED_ID}/schedule/${id}`,{
+  tr.className = _rowOverdue(due_date, status) ? 'overdue' : '';
+  await fetch(`/nara/confirmed/${CID}/schedule/${id}`,{
     method:'PATCH', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({task_name, assignee, due_date, status})
+    body:JSON.stringify({task_name,assignee,due_date,status})
   });
 }
-
-async function deleteSchedule(id, tr){
+async function delSchedule(id, tr){
   if(!confirm('일정을 삭제할까요?')) return;
-  const r = await fetch(`/nara/confirmed/${CONFIRMED_ID}/schedule/${id}`,{method:'DELETE'});
+  const r = await fetch(`/nara/confirmed/${CID}/schedule/${id}`,{method:'DELETE'});
   const d = await r.json();
   if(d.ok){ tr.remove(); showToast('삭제되었습니다'); }
   else showToast(d.error||'삭제 실패',false);
 }
 
+/* ── 댓글 ── */
 async function addComment(){
-  const inp = document.getElementById('comment-input');
-  const content = inp.value.trim();
+  const ta = document.getElementById('comment-ta');
+  const content = ta.value.trim();
   if(!content){ showToast('내용을 입력하세요',false); return; }
-  const r = await fetch(`/nara/confirmed/${CONFIRMED_ID}/comment`,{
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({content})
+  const r = await fetch(`/nara/confirmed/${CID}/comment`,{
+    method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content})
   });
   const d = await r.json();
   if(!d.ok){ showToast(d.error||'등록 실패',false); return; }
-  const list  = document.getElementById('comment-list');
   const empty = document.getElementById('comment-empty');
   if(empty) empty.remove();
   const now = new Date().toISOString().slice(0,16).replace('T',' ');
   const div = document.createElement('div');
-  div.className = 'comment-item';
-  div.innerHTML = `<span class="comment-author">{{ session.get('username','') }}</span><span class="comment-time">${now}</span><div class="comment-body">${_esc(content)}</div>`;
+  div.className='comment-item';
+  div.innerHTML=`<span class="comment-author">{{ session.get('username','') }}</span><span class="comment-time">${now}</span><div class="comment-body">${_esc(content)}</div>`;
+  const list = document.getElementById('comment-list');
   list.appendChild(div);
-  list.scrollTop = list.scrollHeight;
-  inp.value = '';
+  list.scrollTop=list.scrollHeight;
+  ta.value='';
   showToast('등록되었습니다');
 }
-
-function _esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 </script>
 {% endblock %}
