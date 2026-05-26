@@ -379,82 +379,79 @@ def filter_bids_with_ai(bids: list) -> list:
 def fetch_bid_by_no(bid_ntce_no: str) -> dict | None:
     """공고번호로 단일 공고를 탐색해 반환. 없으면 None.
 
-    bidNtceNo 파라미터가 API 필터로 작동하지 않으므로
-    오늘 기준 90일을 30일씩 3구간으로 분할해 전체 결과를 페이지 탐색.
-    구간당 최대 3페이지(300건), 찾으면 즉시 반환.
+    공고번호(예: R26BK01523856)에서 일련번호를 추출해 등록일을 역추산.
+    기준점: R26BK01480000 ≈ 2026-04-22, 하루 약 1500건 증가.
+    추정 등록일 ±3일 범위로 API 검색, 페이지당 100건 최대 10페이지.
     """
     key = os.environ.get("NARA_API_KEY", "")
     if not key:
         return None
 
-    today = datetime.now()
-    # 30일 구간 3개: 0~30일전, 30~60일전, 60~90일전
-    segments = [
-        (today - timedelta(days=i * 30), today - timedelta(days=(i - 1) * 30))
-        for i in range(1, 4)          # i=1,2,3
-    ]
-    # segments[0] = (60일전, 30일전) ... 역순이 되므로 최근부터 탐색
-    segments = [
-        (today - timedelta(days=i * 30), today - timedelta(days=(i - 1) * 30))
-        for i in range(1, 4)
-    ]
-    # 가장 최근 구간부터: (0일전~30일전), (30~60일전), (60~90일전)
-    segments = [
-        (today - timedelta(days=30),  today),
-        (today - timedelta(days=60),  today - timedelta(days=30)),
-        (today - timedelta(days=90),  today - timedelta(days=60)),
-    ]
+    # ── 일련번호 추출 및 등록일 추정 ─────────────────────────
+    _BASE_SERIAL = 1_480_000
+    _BASE_DATE   = datetime(2026, 4, 22)
+    _DAILY_RATE  = 1_500
 
+    try:
+        serial       = int(bid_ntce_no[4:])          # R26BK → 앞 4자리 제거
+        days_diff    = (serial - _BASE_SERIAL) / _DAILY_RATE
+        estimated    = _BASE_DATE + timedelta(days=days_diff)
+    except (ValueError, IndexError):
+        estimated = datetime.now()
+
+    MARGIN    = 3   # ±3일
     ROWS      = 100
-    MAX_PAGES = 3
+    MAX_PAGES = 10
 
-    for seg_idx, (seg_start, seg_end) in enumerate(segments, 1):
-        from_date = seg_start.strftime("%Y%m%d%H%M")
-        to_date   = seg_end.strftime("%Y%m%d%H%M")
-        seg_label = f"구간{seg_idx}: {from_date[:8]}~{to_date[:8]}"
-        print(f"[nara 번호검색] {bid_ntce_no} 탐색 중... ({seg_label})")
+    search_start = estimated - timedelta(days=MARGIN)
+    search_end   = estimated + timedelta(days=MARGIN)
+    from_date    = search_start.strftime("%Y%m%d%H%M")
+    to_date      = search_end.strftime("%Y%m%d%H%M")
 
-        for page in range(1, MAX_PAGES + 1):
-            params = {
-                "numOfRows":  str(ROWS),
-                "pageNo":     str(page),
-                "inqryDiv":   "1",
-                "inqryBgnDt": from_date,
-                "inqryEndDt": to_date,
-                "type":       "json",
-            }
-            other_params = urllib.parse.urlencode(params, encoding="utf-8")
-            decoded_key  = urllib.parse.unquote(key)
-            url = (NARA_API_URL
-                   + "?serviceKey=" + urllib.parse.quote(decoded_key, safe='')
-                   + "&" + other_params)
-            try:
-                req = urllib.request.Request(url, headers={"Accept": "application/json"})
-                with urllib.request.urlopen(req, timeout=12) as resp:
-                    raw = resp.read().decode("utf-8")
-                data  = json.loads(raw)
-                body  = data.get("response", {}).get("body", {})
-                total = int(body.get("totalCount", 0) or 0)
-                items = body.get("items", [])
+    print(f"[nara 번호검색] 추정 등록일: {estimated.strftime('%Y-%m-%d')} (±3일 범위 검색)")
+    print(f"[nara 번호검색] 검색 범위: {from_date[:8]} ~ {to_date[:8]}")
+
+    for page in range(1, MAX_PAGES + 1):
+        params = {
+            "numOfRows":  str(ROWS),
+            "pageNo":     str(page),
+            "inqryDiv":   "1",
+            "inqryBgnDt": from_date,
+            "inqryEndDt": to_date,
+            "type":       "json",
+        }
+        other_params = urllib.parse.urlencode(params, encoding="utf-8")
+        decoded_key  = urllib.parse.unquote(key)
+        url = (NARA_API_URL
+               + "?serviceKey=" + urllib.parse.quote(decoded_key, safe='')
+               + "&" + other_params)
+        try:
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                raw = resp.read().decode("utf-8")
+            data  = json.loads(raw)
+            body  = data.get("response", {}).get("body", {})
+            total = int(body.get("totalCount", 0) or 0)
+            items = body.get("items", [])
+            if isinstance(items, dict):
+                items = items.get("item", [])
                 if isinstance(items, dict):
-                    items = items.get("item", [])
-                    if isinstance(items, dict):
-                        items = [items]
-                elif not isinstance(items, list):
-                    items = []
+                    items = [items]
+            elif not isinstance(items, list):
+                items = []
 
-                print(f"  [nara 번호검색] 페이지{page}: {len(items)}건 (전체 {total})")
+            print(f"  [nara 번호검색] 페이지{page}: {len(items)}건 (전체 {total})")
 
-                for item in items:
-                    if item.get("bidNtceNo", "") == bid_ntce_no:
-                        print(f"  [nara 번호검색] ✓ 발견: {bid_ntce_no}")
-                        return _normalize(item)
+            for item in items:
+                if item.get("bidNtceNo", "") == bid_ntce_no:
+                    print(f"  [nara 번호검색] ✓ 발견: {bid_ntce_no}")
+                    return _normalize(item)
 
-                if not items or page * ROWS >= total:
-                    break  # 다음 구간으로
-            except Exception as e:
-                print(f"  [nara 번호검색 오류] {seg_label} 페이지{page}: {e}")
+            if not items or page * ROWS >= total:
                 break
+        except Exception as e:
+            print(f"  [nara 번호검색 오류] 페이지{page}: {e}")
+            break
 
-    print(f"[nara 번호검색] {bid_ntce_no} — 90일 내 결과 없음")
+    print(f"[nara 번호검색] {bid_ntce_no} — ±3일 범위 내 결과 없음")
     return None
