@@ -91,6 +91,7 @@ def fetch_bids_single(keyword: str, from_date: str, to_date: str,
         return json.loads(raw)
 
     try:
+        time.sleep(1)
         data = _do_request()
         time.sleep(0.5)
 
@@ -247,24 +248,8 @@ def _normalize(item: dict) -> dict:
 # 스케줄러 / 스캔
 # ─────────────────────────────────────────────
 
-def start_scheduler(app):
-    global _scheduler_started
-    with _scheduler_lock:
-        if _scheduler_started:
-            return
-        _scheduler_started = True
-
-    def _loop():
-        print("[nara] 스케줄러 시작 (1시간 주기)")
-        while True:
-            try:
-                with app.app_context():
-                    _run_scan()
-            except Exception as e:
-                print(f"[nara] 스캔 오류: {e}")
-            time.sleep(86400)
-
-    threading.Thread(target=_loop, daemon=True).start()
+def start_scheduler(app=None):
+    pass  # 자동 스캔 비활성화 — 수동 스캔만 사용
 
 
 def _run_scan():
@@ -313,6 +298,7 @@ def _run_scan():
         if merged_bids:
             merged_bids = filter_bids_with_ai(merged_bids)
         print(f"[nara AI필터] {keyword!r}: {raw_count}건 → {len(merged_bids)}건")
+        time.sleep(1)  # 키워드당 API 호출 간격
 
         for bid in merged_bids:
             bid_no = bid["bid_ntce_no"]

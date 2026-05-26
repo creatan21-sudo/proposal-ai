@@ -68,7 +68,7 @@ from database.db import (
 from output.txt_writer import write_txt
 from utils.telegram_notify import send_telegram
 from config import GAMMA_API_KEY
-from utils.nara import start_scheduler, manual_scan, fetch_bid_by_no
+from utils.nara import manual_scan, fetch_bid_by_no
 from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           get_nara_settings, save_nara_settings,
                           add_nara_candidate, list_nara_candidates, delete_nara_candidate,
@@ -108,7 +108,6 @@ with app.app_context():
     init_db()
     init_users()
 
-start_scheduler(app)
 
 VIDEO_TYPES = ["홍보영상", "다큐멘터리", "교육영상", "캠페인영상", "뉴스형영상"]
 ALLOWED_EXT     = {".hwp", ".hwpx", ".pdf", ".txt"}
