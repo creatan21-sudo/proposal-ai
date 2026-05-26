@@ -83,12 +83,16 @@ def fetch_bids_single(keyword: str, from_date: str, to_date: str,
            + "?serviceKey=" + urllib.parse.quote(decoded_key, safe='')
            + "&" + other_params)
     print(f"[nara 요청 URL] {url}")
-    try:
+    def _do_request():
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=20) as resp:
             raw = resp.read().decode("utf-8")
         print(f"[nara 응답] {resp.status}: {raw[:200]}")
-        data = json.loads(raw)
+        return json.loads(raw)
+
+    try:
+        data = _do_request()
+        time.sleep(0.5)
 
         err_auth = data.get("response", {}).get("header", {}).get("returnAuthMsg", "")
         err_code = data.get("response", {}).get("header", {}).get("returnReasonCode", "")
@@ -108,8 +112,27 @@ def fetch_bids_single(keyword: str, from_date: str, to_date: str,
         return [_normalize(i) for i in items], total
 
     except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")
-        print(f"[nara] HTTP {e.code} 오류 전문: {body}")
+        if e.code == 429:
+            print(f"[nara] HTTP 429 — 30초 대기 후 재시도")
+            time.sleep(30)
+            try:
+                data = _do_request()
+                time.sleep(0.5)
+                body  = data.get("response", {}).get("body", {})
+                total = int(body.get("totalCount", 0) or 0)
+                items = body.get("items", [])
+                if isinstance(items, dict):
+                    items = items.get("item", [])
+                    if isinstance(items, dict):
+                        items = [items]
+                elif not isinstance(items, list):
+                    items = []
+                return [_normalize(i) for i in items], total
+            except Exception as e2:
+                print(f"[nara] 재시도 실패: {type(e2).__name__}: {e2}")
+                return [], 0
+        body_txt = e.read().decode("utf-8", errors="replace")
+        print(f"[nara] HTTP {e.code} 오류 전문: {body_txt}")
         return [], 0
     except Exception as e:
         print(f"[nara] API 오류 ({keyword}): {type(e).__name__}: {e}")
