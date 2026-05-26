@@ -1,5 +1,6 @@
 # utils/nara.py
 import os
+import re
 import threading
 import time
 import urllib.request
@@ -393,13 +394,14 @@ def fetch_bid_by_no(bid_ntce_no: str) -> dict | None:
     _DAILY_RATE  = 1_500
 
     try:
-        serial       = int(bid_ntce_no[4:])          # R26BK → 앞 4자리 제거
+        match        = re.search(r'\d+', bid_ntce_no)
+        serial       = int(match.group()) if match else 0
         days_diff    = (serial - _BASE_SERIAL) / _DAILY_RATE
         estimated    = _BASE_DATE + timedelta(days=days_diff)
     except (ValueError, IndexError):
         estimated = datetime.now()
 
-    MARGIN    = 3   # ±3일
+    MARGIN    = 5   # ±5일
     ROWS      = 100
     MAX_PAGES = 10
 
