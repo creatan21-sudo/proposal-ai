@@ -29,11 +29,26 @@
           🔄 진행 중 <span id="nav-active-dot" style="display:inline-block;width:8px;height:8px;background:red;border-radius:50%;vertical-align:middle;margin-left:3px;"></span>
         </a>
         {% endif %}
+        <a href="/notifications" style="position:relative;text-decoration:none;font-size:18px;line-height:1;padding:2px 4px;" title="알림">
+          🔔<span id="notif-badge" style="display:none;position:absolute;top:-4px;right:-6px;background:#ef4444;color:#fff;border-radius:99px;font-size:10px;font-weight:700;padding:1px 5px;line-height:1.4;"></span>
+        </a>
         <span class="nav-user">{{ session.get('username', '') }}</span>
         <a href="/logout">로그아웃</a>
       </nav>
     </div>
   </header>
+  <!-- 알림 팝업 -->
+  <div id="notif-popup" style="display:none;position:fixed;top:60px;right:20px;width:340px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.15);z-index:8888;padding:16px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <span style="font-weight:700;font-size:14px;">🔔 새 알림</span>
+      <button onclick="document.getElementById('notif-popup').style.display='none'" style="background:none;border:none;cursor:pointer;font-size:18px;color:#9ca3af;line-height:1;">×</button>
+    </div>
+    <div id="notif-popup-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:12px;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="document.getElementById('notif-popup').style.display='none'" style="padding:6px 14px;background:#f3f4f6;border:none;border-radius:7px;cursor:pointer;font-size:13px;">확인</button>
+      <a href="/notifications" style="padding:6px 14px;background:#4f46e5;color:#fff;border-radius:7px;font-size:13px;text-decoration:none;font-weight:600;">알림 보기</a>
+    </div>
+  </div>
   <script>
   (function() {
     fetch('/active_run').then(r => r.json()).then(data => {
@@ -44,6 +59,48 @@
         el.style.display = 'inline';
       }
     }).catch(function(){});
+  })();
+  // 알림 뱃지 폴링
+  (function(){
+    function updateBadge(){
+      fetch('/notifications/unread_count').then(r=>r.json()).then(d=>{
+        const b=document.getElementById('notif-badge');
+        if(!b) return;
+        if(d.count>0){ b.textContent=d.count>99?'99+':d.count; b.style.display='inline'; }
+        else b.style.display='none';
+      }).catch(function(){});
+    }
+    updateBadge();
+    setInterval(updateBadge, 5000);
+    // 세션당 1번 팝업
+    if(!sessionStorage.getItem('notif_popup_shown')){
+      fetch('/notifications/unread_count').then(r=>r.json()).then(d=>{
+        if(d.count>0){
+          fetch('/notifications').then(r=>r.text()).then(()=>{
+            fetch('/notifications?json=1').then(r=>r.json()).then(ns=>{
+              const list=document.getElementById('notif-popup-list');
+              if(!list) return;
+              (ns.notifications||[]).slice(0,3).forEach(n=>{
+                const div=document.createElement('div');
+                div.style.cssText='background:#eff6ff;border-radius:8px;padding:8px 10px;font-size:13px;';
+                div.innerHTML='<div style="font-weight:600;color:#1e40af;">'+_hesc(n.title)+'</div>'
+                  +'<div style="color:#374151;margin-top:2px;font-size:12px;">'+_hesc(n.message)+'</div>';
+                list.appendChild(div);
+              });
+              document.getElementById('notif-popup').style.display='block';
+              sessionStorage.setItem('notif_popup_shown','1');
+            }).catch(function(){});
+          }).catch(function(){
+            // /notifications?json=1 미지원 시 단순 팝업
+            document.getElementById('notif-popup-list').innerHTML=
+              '<div style="font-size:13px;color:#374151;">읽지 않은 알림이 '+d.count+'건 있습니다.</div>';
+            document.getElementById('notif-popup').style.display='block';
+            sessionStorage.setItem('notif_popup_shown','1');
+          });
+        }
+      }).catch(function(){});
+    }
+    function _hesc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
   })();
   </script>
   <main>

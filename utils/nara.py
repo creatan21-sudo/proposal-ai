@@ -582,4 +582,40 @@ def collect_all_bids(target_date: str = None) -> int:
             conn.execute("DELETE FROM nara_bids WHERE created_at < datetime('now', '-30 days')")
         print(f"[nara 정리] 30일 이전 공고 삭제 완료 (보호: {len(protected)}건)")
 
+    # D-3 / D-1 마감 알림
+    try:
+        from database.db import get_connection as _gc, get_notification_settings, create_notification
+        settings     = get_notification_settings()
+        deadline_uids = settings.get("deadline", [])
+        if deadline_uids:
+            today = datetime.now()
+            with _gc() as conn:
+                rows = conn.execute(
+                    """SELECT cf.id, cf.assignee,
+                              COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm) as nm,
+                              COALESCE(pk.bid_clse_dt, ca.bid_clse_dt) as clse
+                       FROM nara_confirmed cf
+                       LEFT JOIN nara_pickups   pk ON pk.id=cf.pickup_id   AND cf.pickup_id>0
+                       LEFT JOIN nara_candidates ca ON ca.id=cf.candidate_id AND cf.pickup_id=0"""
+                ).fetchall()
+            for r in rows:
+                clse_raw = (r["clse"] or "")[:8]
+                if not clse_raw:
+                    continue
+                try:
+                    clse_dt = datetime.strptime(clse_raw, "%Y%m%d")
+                    diff    = (clse_dt - today).days
+                    if diff in (3, 1):
+                        nm = r["nm"] or f"확정#{r['id']}"
+                        targets = set(deadline_uids)
+                        for uid in targets:
+                            create_notification(uid, f"마감 D-{diff} 알림",
+                                                f"{nm} 마감이 {diff}일 남았습니다.",
+                                                f"/nara/confirmed/{r['id']}")
+                except Exception:
+                    pass
+        print(f"[nara 마감알림] 처리 완료")
+    except Exception as e:
+        print(f"[nara 마감알림] 오류: {e}")
+
     return new_count

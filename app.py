@@ -83,7 +83,10 @@ from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           add_confirmed_comment, list_confirmed_comments,
                           add_confirmed_schedule, list_confirmed_schedule,
                           update_confirmed_schedule, delete_confirmed_schedule,
-                          get_confirmed_bid_info, save_confirmed_bid_info)
+                          get_confirmed_bid_info, save_confirmed_bid_info,
+                          create_notification, list_notifications,
+                          mark_notification_read, mark_all_read, count_unread,
+                          get_notification_settings, save_notification_settings)
 
 app = Flask(__name__)
 # Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
@@ -3991,6 +3994,25 @@ def nara_confirmed_comment_add(confirmed_id):
     if not content:
         return jsonify({"ok": False, "error": "내용을 입력하세요"})
     cid = add_confirmed_comment(confirmed_id, session["username"], content)
+    try:
+        c         = get_confirmed_by_id(confirmed_id)
+        settings  = get_notification_settings()
+        notif_ids = settings.get("comment", [])
+        author    = session.get("username", "")
+        related   = set()
+        if c:
+            from database.db import get_connection as _gc
+            with _gc() as conn:
+                for row in conn.execute("SELECT id, username FROM users WHERE username IN (?,?)",
+                                        (c.get("confirmed_by",""), c.get("assignee",""))).fetchall():
+                    related.add(row["id"])
+        targets = set(notif_ids) | related
+        targets.discard(session.get("user_id"))
+        nm = (c or {}).get("bid_ntce_nm", "") or f"확정#{confirmed_id}"
+        for uid in targets:
+            create_notification(uid, "새 댓글", f"{author}: {content[:50]}", f"/nara/confirmed/{confirmed_id}")
+    except Exception:
+        pass
     return jsonify({"ok": True, "id": cid})
 
 
@@ -4186,10 +4208,11 @@ def nara_candidate_delete(candidate_id):
 def nara_pickup_add():
     data = request.get_json(force=True) or {}
     try:
+        bid_nm  = str(data.get("bid_ntce_nm", ""))
         new_id = add_nara_pickup(
             candidate_id   = int(data.get("candidate_id", 0)),
             bid_ntce_no    = str(data.get("bid_ntce_no",    "")),
-            bid_ntce_nm    = str(data.get("bid_ntce_nm",    "")),
+            bid_ntce_nm    = bid_nm,
             ntce_instt_nm  = str(data.get("ntce_instt_nm",  "")),
             presmpt_prce   = str(data.get("presmpt_prce",   "")),
             bid_clse_dt    = str(data.get("bid_clse_dt",    "")),
@@ -4198,6 +4221,15 @@ def nara_pickup_add():
             reason         = str(data.get("reason",         "")),
             registered_by  = session.get("username", ""),
         )
+        try:
+            settings  = get_notification_settings()
+            notif_ids = settings.get("pickup_auto", [])
+            for uid in notif_ids:
+                create_notification(uid, "새 픽업 등록",
+                                    f"{session.get('username','')}이(가) '{bid_nm}' 픽업 등록",
+                                    "/nara/pickups")
+        except Exception:
+            pass
         return jsonify({"ok": True, "id": new_id})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
@@ -4287,6 +4319,69 @@ def nara_result_add(confirmed_id):
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/notifications")
+@login_required
+def notifications_page():
+    uid    = session.get("user_id")
+    notifs = list_notifications(uid)
+    if request.args.get("json") == "1":
+        return jsonify({"notifications": notifs})
+    return render_template("notifications.html", notifications=notifs)
+
+@app.route("/notifications/unread_count")
+@login_required
+def notifications_unread_count():
+    return jsonify({"count": count_unread(session.get("user_id"))})
+
+@app.route("/notifications/<int:nid>/read", methods=["POST"])
+@login_required
+def notification_read(nid):
+    mark_notification_read(nid, session.get("user_id"))
+    return jsonify({"ok": True})
+
+@app.route("/notifications/read_all", methods=["POST"])
+@login_required
+def notifications_read_all():
+    mark_all_read(session.get("user_id"))
+    return jsonify({"ok": True})
+
+@app.route("/notification_settings", methods=["GET"])
+@operator_or_admin_required
+def notification_settings_page():
+    settings = get_notification_settings()
+    from database.db import get_connection as _gc
+    with _gc() as conn:
+        users = [dict(r) for r in conn.execute("SELECT id, username FROM users ORDER BY username").fetchall()]
+    return render_template("notification_settings.html", settings=settings, users=users)
+
+@app.route("/notification_settings", methods=["POST"])
+@operator_or_admin_required
+def notification_settings_save():
+    data = request.get_json(force=True) or {}
+    for trigger_type in ['candidate_manual', 'pickup_auto', 'deadline', 'comment']:
+        user_ids = [int(x) for x in data.get(trigger_type, []) if str(x).isdigit()]
+        save_notification_settings(trigger_type, user_ids)
+    return jsonify({"ok": True})
+
+@app.route("/nara/notify_candidates", methods=["POST"])
+@operator_or_admin_required
+def nara_notify_candidates():
+    from database.db import get_connection as _gc
+    with _gc() as conn:
+        rows = conn.execute(
+            "SELECT bid_ntce_nm FROM nara_candidates ORDER BY created_at DESC LIMIT 20"
+        ).fetchall()
+    count    = len(rows)
+    names    = "·".join(r["bid_ntce_nm"] or "-" for r in rows[:3])
+    summary  = f"{names} 외 {count-3}건" if count > 3 else names
+    settings = get_notification_settings()
+    targets  = settings.get("candidate_manual", [])
+    for uid in targets:
+        create_notification(uid, f"입찰 후보 알림 ({count}건)",
+                            summary, "/nara/candidates")
+    return jsonify({"ok": True, "sent": len(targets)})
 
 
 @app.route("/nara/search_by_no", methods=["POST"])

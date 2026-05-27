@@ -73,6 +73,12 @@
     <button class="nara-tab" onclick="location.href='/nara/results'">결과</button>
   </div>
 
+  {% if is_ops %}
+  <div style="display:flex;justify-content:flex-end;margin-bottom:12px;">
+    <button onclick="notifyCandidates()" style="padding:8px 16px;background:#6366f1;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;">🔔 알림 발송</button>
+  </div>
+  {% endif %}
+
   <table class="bid-table">
     <thead>
       <tr>
@@ -313,6 +319,14 @@ async function deleteCandidate(id){
   const d = await r.json();
   if(d.ok){ document.getElementById(`cand-row-${id}`)?.remove(); showToast('삭제되었습니다'); }
   else showToast(d.error||'삭제 실패',false);
+}
+async function notifyCandidates(){
+  const count = document.querySelectorAll('tbody tr').length;
+  if(!confirm(`현재 후보 ${count}건을 알림으로 발송할까요?`)) return;
+  const r = await fetch('/nara/notify_candidates',{method:'POST'});
+  const d = await r.json();
+  if(d.ok) showToast(`알림 발송 완료 (${d.sent}명)`);
+  else showToast(d.error||'발송 실패', false);
 }
 </script>
 {% endblock %}

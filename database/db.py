@@ -404,6 +404,23 @@ def init_db() -> None:
                 updated_at          TEXT DEFAULT (datetime('now','localtime'))
             );
 
+            CREATE TABLE IF NOT EXISTS notifications (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id    INTEGER NOT NULL,
+                title      TEXT NOT NULL,
+                message    TEXT DEFAULT '',
+                link       TEXT DEFAULT '',
+                is_read    INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now','localtime'))
+            );
+
+            CREATE TABLE IF NOT EXISTS notification_settings (
+                id               INTEGER PRIMARY KEY AUTOINCREMENT,
+                trigger_type     TEXT NOT NULL UNIQUE,
+                target_user_ids  TEXT DEFAULT '[]',
+                updated_at       TEXT DEFAULT (datetime('now','localtime'))
+            );
+
             CREATE TABLE IF NOT EXISTS pipeline_run_status (
                 case_id      INTEGER NOT NULL,
                 step_key     TEXT    NOT NULL,
@@ -464,6 +481,11 @@ def init_db() -> None:
                 pass  # 이미 존재하는 컬럼 → 무시
         # 모니터링 설정 초기값 (없을 때만)
         conn.execute("INSERT OR IGNORE INTO nara_monitor_settings (id) VALUES (1)")
+        for _tt in ['candidate_manual', 'pickup_auto', 'deadline', 'comment']:
+            conn.execute(
+                "INSERT OR IGNORE INTO notification_settings (trigger_type, target_user_ids) VALUES (?,?)",
+                (_tt, '[]'),
+            )
 
 def save_case(client_name: str, project_name: str, video_type: str,
               dna_json: str, result_json: str = "{}",
@@ -2709,3 +2731,77 @@ def mark_rows_inactive_after(table: str, case_id: int, after_id: int) -> int:
         )
         return cur.rowcount
 
+
+
+# ─────────────────────────────────────────────
+# 알림 함수
+# ─────────────────────────────────────────────
+
+def create_notification(user_id: int, title: str, message: str = "", link: str = "") -> int:
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO notifications (user_id, title, message, link) VALUES (?,?,?,?)",
+            (user_id, title, message, link),
+        )
+        return cur.lastrowid or 0
+
+
+def list_notifications(user_id: int, unread_only: bool = False) -> list:
+    with get_connection() as conn:
+        if unread_only:
+            rows = conn.execute(
+                "SELECT * FROM notifications WHERE user_id=? AND is_read=0 ORDER BY created_at DESC LIMIT 50",
+                (user_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM notifications WHERE user_id=? ORDER BY created_at DESC LIMIT 100",
+                (user_id,),
+            ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def mark_notification_read(notification_id: int, user_id: int) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE notifications SET is_read=1 WHERE id=? AND user_id=?",
+            (notification_id, user_id),
+        )
+
+
+def mark_all_read(user_id: int) -> None:
+    with get_connection() as conn:
+        conn.execute("UPDATE notifications SET is_read=1 WHERE user_id=?", (user_id,))
+
+
+def count_unread(user_id: int) -> int:
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM notifications WHERE user_id=? AND is_read=0", (user_id,)
+        ).fetchone()[0]
+
+
+def get_notification_settings() -> dict:
+    import json as _json
+    with get_connection() as conn:
+        rows = conn.execute("SELECT trigger_type, target_user_ids FROM notification_settings").fetchall()
+    result = {}
+    for r in rows:
+        try:
+            result[r["trigger_type"]] = _json.loads(r["target_user_ids"] or "[]")
+        except Exception:
+            result[r["trigger_type"]] = []
+    return result
+
+
+def save_notification_settings(trigger_type: str, user_ids: list) -> None:
+    import json as _json
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO notification_settings (trigger_type, target_user_ids, updated_at)
+               VALUES (?,?,datetime('now','localtime'))
+               ON CONFLICT(trigger_type) DO UPDATE SET
+                 target_user_ids=excluded.target_user_ids,
+                 updated_at=excluded.updated_at""",
+            (trigger_type, _json.dumps(user_ids)),
+        )
