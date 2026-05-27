@@ -16,18 +16,44 @@
 /* 캘린더 */
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:#e5e7eb;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;}
 .cal-dh{background:#f3f4f6;padding:8px;text-align:center;font-size:12px;font-weight:700;color:#6b7280;}
-.cal-cell{background:#fff;min-height:90px;padding:5px 6px;vertical-align:top;}
+.cal-dh.weekend{color:#ef4444;}
+.cal-cell{background:#fff;height:82px;padding:5px 6px;cursor:pointer;overflow:hidden;box-sizing:border-box;}
+.cal-cell:hover{background:#f5f3ff;}
 .cal-cell.other-month{background:#f9fafb;}
+.cal-cell.other-month:hover{background:#f3f4f6;}
 .cal-cell.today{background:#eff6ff;}
-.cal-day{font-size:12px;font-weight:600;color:#374151;margin-bottom:3px;}
+.cal-cell.today:hover{background:#e0e7ff;}
+.cal-day-row{display:flex;align-items:center;gap:4px;margin-bottom:3px;}
+.cal-day{font-size:12px;font-weight:600;color:#374151;}
 .cal-cell.today .cal-day{color:#4f46e5;font-weight:800;}
-.cal-event{font-size:11px;padding:2px 5px;border-radius:4px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer;max-width:100%;display:block;}
+.cal-cell.other-month .cal-day{color:#d1d5db;}
+.cal-dday{font-size:10px;font-weight:700;padding:1px 4px;border-radius:4px;background:#dc2626;color:#fff;white-space:nowrap;}
+.cal-event{font-size:10px;padding:1px 5px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;line-height:1.5;}
 .ev-deadline{background:#fee2e2;color:#dc2626;}
 .ev-deadline.urgent{background:#dc2626;color:#fff;font-weight:700;}
 .ev-submit{background:#fef9c3;color:#854d0e;}
 .ev-schedule{background:#dbeafe;color:#1e40af;}
 .ev-done{background:#d1fae5;color:#065f46;}
-.cal-more{font-size:10px;color:#9ca3af;cursor:pointer;padding:1px 4px;}
+.cal-more{font-size:10px;color:#6366f1;font-weight:600;cursor:pointer;padding:1px 3px;}
+.cal-more:hover{text-decoration:underline;}
+
+/* 날짜 팝업 */
+.day-popup-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;align-items:center;justify-content:center;}
+.day-popup-overlay.open{display:flex;}
+.day-popup{background:#fff;border-radius:14px;padding:0;width:380px;max-width:94vw;max-height:80vh;box-shadow:0 20px 60px rgba(0,0,0,.25);display:flex;flex-direction:column;}
+.day-popup-head{padding:16px 20px 12px;border-bottom:1px solid #e5e7eb;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;}
+.day-popup-date{font-size:15px;font-weight:700;color:#111827;}
+.day-popup-close{background:none;border:none;font-size:20px;color:#9ca3af;cursor:pointer;line-height:1;padding:0 2px;}
+.day-popup-close:hover{color:#374151;}
+.day-popup-body{overflow-y:auto;padding:12px 20px 16px;flex:1;}
+.day-popup-item{display:flex;align-items:flex-start;gap:10px;padding:9px 10px;border-radius:8px;margin-bottom:6px;cursor:pointer;border:1px solid #e5e7eb;transition:box-shadow .12s;}
+.day-popup-item:hover{box-shadow:0 2px 8px rgba(0,0,0,.1);}
+.day-popup-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0;margin-top:4px;}
+.day-popup-info{flex:1;min-width:0;}
+.day-popup-nm{font-size:13px;font-weight:600;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.day-popup-meta{display:flex;gap:6px;margin-top:3px;flex-wrap:wrap;}
+.day-popup-type{font-size:11px;padding:1px 7px;border-radius:99px;font-weight:600;}
+.day-popup-instt{font-size:11px;color:#9ca3af;}
 
 /* 타임라인 */
 .tl-wrap{overflow-x:auto;}
@@ -36,7 +62,6 @@
 .tl-head-day{padding:6px 2px;text-align:center;font-size:11px;width:28px;min-width:28px;border-bottom:1px solid #e5e7eb;color:#6b7280;background:#f3f4f6;}
 .tl-head-day.today-col{color:#4f46e5;font-weight:800;background:#eff6ff;}
 .tl-cell{position:relative;border-bottom:1px solid #f3f4f6;height:34px;width:28px;min-width:28px;}
-.tl-bar{position:absolute;top:6px;height:22px;border-radius:4px;font-size:10px;color:#fff;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:3px 5px;cursor:pointer;z-index:1;}
 .tl-today-line{position:absolute;top:0;bottom:0;width:2px;background:#ef4444;z-index:3;pointer-events:none;}
 
 /* 리스트 */
@@ -88,97 +113,140 @@
   <div id="view-list" style="display:none;"></div>
 </div>
 
+<!-- 날짜 팝업 -->
+<div class="day-popup-overlay" id="day-popup-overlay" onclick="if(event.target===this)closeDayPopup()">
+  <div class="day-popup">
+    <div class="day-popup-head">
+      <span class="day-popup-date" id="day-popup-date"></span>
+      <button class="day-popup-close" onclick="closeDayPopup()">×</button>
+    </div>
+    <div class="day-popup-body" id="day-popup-body"></div>
+  </div>
+</div>
+
 <script>
-// ── 서버 데이터 ──────────────────────────────
 const CONFIRMED = {{ confirmed | tojson }};
 const SCHEDULES = {{ schedules | tojson }};
 
-// ── 이벤트 빌드 ─────────────────────────────
 const EVENTS = [];
 CONFIRMED.forEach(c => {
-  const clse = (c.bid_clse_dt || '').slice(0, 10);
-  if (clse) EVENTS.push({date: clse, type: 'deadline', title: c.bid_ntce_nm || '확정공고', confirmed_id: c.id, assignee: c.assignee || '', instt: c.ntce_instt_nm || ''});
-  const sub = (c.submit_deadline || '').slice(0, 10);
-  if (sub) EVENTS.push({date: sub, type: 'submit', title: c.bid_ntce_nm || '확정공고', confirmed_id: c.id, assignee: c.assignee || '', instt: c.ntce_instt_nm || ''});
+  const clse = (c.bid_clse_dt||'').slice(0,10);
+  if(clse) EVENTS.push({date:clse,type:'deadline',title:c.bid_ntce_nm||'확정공고',confirmed_id:c.id,assignee:c.assignee||'',instt:c.ntce_instt_nm||''});
+  const sub = (c.submit_deadline||'').slice(0,10);
+  if(sub)  EVENTS.push({date:sub, type:'submit',  title:c.bid_ntce_nm||'확정공고',confirmed_id:c.id,assignee:c.assignee||'',instt:c.ntce_instt_nm||''});
 });
 SCHEDULES.forEach(s => {
-  const d = (s.due_date || '').slice(0, 10);
-  if (d) EVENTS.push({date: d, type: s.status === '완료' ? 'done' : 'schedule', title: `${s.task_name} (${s.bid_ntce_nm || ''})`, confirmed_id: s.confirmed_id, assignee: s.assignee || '', status: s.status || ''});
+  const d = (s.due_date||'').slice(0,10);
+  if(d) EVENTS.push({date:d,type:s.status==='완료'?'done':'schedule',title:`${s.task_name} (${s.bid_ntce_nm||''})`,confirmed_id:s.confirmed_id,assignee:s.assignee||'',instt:'',status:s.status||''});
 });
 
-// ── 현재 상태 ────────────────────────────────
-const TODAY = new Date().toISOString().slice(0, 10);
-let curYear  = new Date().getFullYear();
-let curMonth = new Date().getMonth(); // 0-indexed
-let curView  = 'cal';
+const TODAY   = new Date().toISOString().slice(0,10);
+let curYear   = new Date().getFullYear();
+let curMonth  = new Date().getMonth();
+let curView   = 'cal';
 
-// ── 뷰 전환 ──────────────────────────────────
-function switchView(v) {
-  curView = v;
-  ['cal','tl','list'].forEach(x => {
-    document.getElementById('view-'+x).style.display = x === v ? '' : 'none';
-    document.getElementById('btn-'+x).classList.toggle('active', x === v);
+const TYPE_LABEL = {deadline:'입찰 마감',submit:'제출 마감',schedule:'일정',done:'완료'};
+const TYPE_BG    = {deadline:'#fee2e2',submit:'#fef9c3',schedule:'#dbeafe',done:'#d1fae5'};
+const TYPE_COLOR = {deadline:'#dc2626',submit:'#b45309',schedule:'#1e40af',done:'#065f46'};
+const DOT_COLOR  = {deadline:'#dc2626',submit:'#f59e0b',schedule:'#3b82f6',done:'#10b981'};
+
+function switchView(v){
+  curView=v;
+  ['cal','tl','list'].forEach(x=>{
+    document.getElementById('view-'+x).style.display=x===v?'':'none';
+    document.getElementById('btn-'+x).classList.toggle('active',x===v);
   });
   render();
 }
-
-function prevMonth(){ curMonth--; if(curMonth<0){curMonth=11;curYear--;} render(); }
-function nextMonth(){ curMonth++; if(curMonth>11){curMonth=0;curYear++;} render(); }
-function goToday(){ const t=new Date(); curYear=t.getFullYear(); curMonth=t.getMonth(); render(); }
-
+function prevMonth(){curMonth--;if(curMonth<0){curMonth=11;curYear--;}render();}
+function nextMonth(){curMonth++;if(curMonth>11){curMonth=0;curYear++;}render();}
+function goToday(){const t=new Date();curYear=t.getFullYear();curMonth=t.getMonth();render();}
 function updateMonthLabel(){
-  document.getElementById('nav-month-label').textContent =
-    `${curYear}년 ${String(curMonth+1).padStart(2,'0')}월`;
+  document.getElementById('nav-month-label').textContent=`${curYear}년 ${String(curMonth+1).padStart(2,'0')}월`;
 }
-
-function render(){
-  updateMonthLabel();
-  if(curView==='cal')  renderCal();
-  if(curView==='tl')   renderTimeline();
-  if(curView==='list') renderList();
-}
+function render(){updateMonthLabel();if(curView==='cal')renderCal();if(curView==='tl')renderTimeline();if(curView==='list')renderList();}
 
 // ── 캘린더 ───────────────────────────────────
 function renderCal(){
   const el = document.getElementById('view-cal');
-  const days = ['일','월','화','수','목','금','토'];
+  const DAY_NAMES = ['일','월','화','수','목','금','토'];
   let html = '<div class="cal-grid">';
-  days.forEach(d => html += `<div class="cal-dh">${d}</div>`);
+  DAY_NAMES.forEach((d,i)=>html+=`<div class="cal-dh${i===0||i===6?' weekend':''}">${d}</div>`);
 
-  const first  = new Date(curYear, curMonth, 1);
-  const last   = new Date(curYear, curMonth+1, 0);
+  const first   = new Date(curYear, curMonth, 1);
+  const last    = new Date(curYear, curMonth+1, 0);
   const startWd = first.getDay();
+  const totalCells = Math.ceil((startWd + last.getDate()) / 7) * 7;
 
-  // 이전 달 빈칸
-  for(let i=0;i<startWd;i++){
-    const d = new Date(curYear, curMonth, -startWd+i+1);
-    html += `<div class="cal-cell other-month"><div class="cal-day" style="color:#d1d5db;">${d.getDate()}</div></div>`;
-  }
-
-  for(let day=1;day<=last.getDate();day++){
-    const ds  = `${curYear}-${String(curMonth+1).padStart(2,'0')}-${String(day).padStart(2,'0')}`;
+  for(let i=0; i<totalCells; i++){
+    const dayNum  = i - startWd + 1;
+    const isThis  = dayNum >= 1 && dayNum <= last.getDate();
+    const dateObj = new Date(curYear, curMonth, dayNum);
+    const ds      = dateObj.toISOString().slice(0,10);
     const isToday = ds === TODAY;
-    const evs = EVENTS.filter(e=>e.date===ds);
-    const show = evs.slice(0,3);
-    const more = evs.length - show.length;
-    html += `<div class="cal-cell${isToday?' today':''}">`;
-    html += `<div class="cal-day">${day}</div>`;
-    show.forEach(e=>{
-      const urgent = e.type==='deadline' && dayDiff(ds,TODAY)<= 3 && ds>=TODAY;
-      const cls = e.type==='done'?'ev-done':e.type==='submit'?'ev-submit':e.type==='schedule'?'ev-schedule':`ev-deadline${urgent?' urgent':''}`;
-      html += `<span class="cal-event ${cls}" onclick="location.href='/nara/confirmed/${e.confirmed_id}'" title="${_hesc(e.title)}">${_hesc(e.title)}</span>`;
-    });
-    if(more>0) html += `<div class="cal-more">+${more}개 더</div>`;
+    const evs     = EVENTS.filter(e=>e.date===ds);
+    const show    = evs.slice(0,2);
+    const more    = evs.length - show.length;
+
+    // D-day 계산 (이 날짜에 deadline 이벤트가 있을 때)
+    const deadlineEv = evs.find(e=>e.type==='deadline');
+    const diff = deadlineEv ? dayDiff(ds, TODAY) : null;
+    const showDday = diff !== null && diff >= 0 && diff <= 3;
+
+    let cellClass = 'cal-cell';
+    if(!isThis) cellClass += ' other-month';
+    else if(isToday) cellClass += ' today';
+
+    const clickData = `'${ds}'`;
+    html += `<div class="${cellClass}" onclick="openDayPopup(${clickData})">`;
+    html += `<div class="cal-day-row">`;
+    html += `<span class="cal-day">${dateObj.getDate()}</span>`;
+    if(isThis && showDday) html += `<span class="cal-dday">D-${diff===0?'day':diff}</span>`;
+    html += `</div>`;
+
+    if(isThis){
+      show.forEach(e=>{
+        const urgent = e.type==='deadline' && diff!==null && diff<=3 && diff>=0;
+        const cls = e.type==='done'?'ev-done':e.type==='submit'?'ev-submit':e.type==='schedule'?'ev-schedule':`ev-deadline${urgent?' urgent':''}`;
+        html += `<span class="cal-event ${cls}">${_hesc(e.title)}</span>`;
+      });
+      if(more>0) html += `<div class="cal-more">+${more}개 더</div>`;
+    }
     html += '</div>';
-  }
-  // 나머지 빈칸
-  const remaining = (7 - (startWd + last.getDate()) % 7) % 7;
-  for(let i=1;i<=remaining;i++){
-    html += `<div class="cal-cell other-month"><div class="cal-day" style="color:#d1d5db;">${i}</div></div>`;
   }
   html += '</div>';
   el.innerHTML = html;
 }
+
+// ── 날짜 팝업 ────────────────────────────────
+function openDayPopup(ds){
+  const evs = EVENTS.filter(e=>e.date===ds);
+  if(!evs.length) return;
+  document.getElementById('day-popup-date').textContent = ds;
+  const body = document.getElementById('day-popup-body');
+  if(!evs.length){ body.innerHTML='<div style="text-align:center;padding:20px;color:#9ca3af;font-size:13px;">이벤트가 없습니다</div>'; }
+  else{
+    body.innerHTML = evs.map(e=>{
+      const dot  = DOT_COLOR[e.type]||'#9ca3af';
+      const bg   = TYPE_BG[e.type]||'#f3f4f6';
+      const col  = TYPE_COLOR[e.type]||'#374151';
+      const lbl  = TYPE_LABEL[e.type]||e.type;
+      return `<div class="day-popup-item" onclick="location.href='/nara/confirmed/${e.confirmed_id}'">
+        <div class="day-popup-dot" style="background:${dot}"></div>
+        <div class="day-popup-info">
+          <div class="day-popup-nm">${_hesc(e.title)}</div>
+          <div class="day-popup-meta">
+            <span class="day-popup-type" style="background:${bg};color:${col};">${lbl}</span>
+            ${e.instt?`<span class="day-popup-instt">${_hesc(e.instt)}</span>`:''}
+            ${e.assignee?`<span class="day-popup-instt">👤 ${_hesc(e.assignee)}</span>`:''}
+          </div>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('day-popup-overlay').classList.add('open');
+}
+function closeDayPopup(){ document.getElementById('day-popup-overlay').classList.remove('open'); }
 
 // ── 타임라인 ─────────────────────────────────
 function renderTimeline(){
@@ -196,85 +264,64 @@ function renderTimeline(){
 
   let bodyHtml = '';
   CONFIRMED.forEach(c=>{
-    const clse = (c.bid_clse_dt||'').slice(0,10);
+    const clse  = (c.bid_clse_dt||'').slice(0,10);
     const start = (c.created_at||'').slice(0,10);
-    const nm    = c.bid_ntce_nm || `확정#${c.id}`;
+    const nm    = c.bid_ntce_nm||`확정#${c.id}`;
     bodyHtml += `<tr><td class="tl-label" title="${_hesc(nm)}"><a href="/nara/confirmed/${c.id}" style="color:#2563eb;text-decoration:none;font-size:12px;">${_hesc(nm.slice(0,20))}</a></td>`;
-
     for(let d=1;d<=daysInMonth;d++){
       const ds = `${curYear}-${String(curMonth+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
-      bodyHtml += `<td class="tl-cell" style="position:relative;">`;
-      // 기간 막대 (확정일~마감일)
-      if(clse && start) {
-        const barStart = new Date(start), barEnd = new Date(clse);
-        const cellDate = new Date(ds);
-        if(cellDate >= barStart && cellDate <= barEnd){
-          const isFirst = ds === start || d===1;
-          const isLast  = ds === clse || d===daysInMonth;
-          const urgent  = dayDiff(clse, TODAY)<=3 && clse>=TODAY;
-          const bg = urgent ? '#dc2626' : '#6366f1';
-          const br = `border-radius:${isFirst?'4px':0} ${isLast?'4px':0} ${isLast?'4px':0} ${isFirst?'4px':0}`;
-          bodyHtml += `<div style="position:absolute;top:6px;left:0;right:0;height:22px;background:${bg};${br};opacity:.8;"></div>`;
-          if(isFirst) bodyHtml += `<div style="position:absolute;top:9px;left:4px;right:2px;font-size:10px;color:#fff;white-space:nowrap;overflow:hidden;z-index:2;">${_hesc(nm.slice(0,12))}</div>`;
+      bodyHtml += `<td class="tl-cell">`;
+      if(clse && start){
+        const cellDate=new Date(ds), barStart=new Date(start), barEnd=new Date(clse);
+        if(cellDate>=barStart && cellDate<=barEnd){
+          const isFirst=ds===start||d===1, isLast=ds===clse||d===daysInMonth;
+          const urgent=dayDiff(clse,TODAY)<=3&&clse>=TODAY;
+          const bg=urgent?'#dc2626':'#6366f1';
+          const br=`border-radius:${isFirst?'4px':'0'} ${isLast?'4px':'0'} ${isLast?'4px':'0'} ${isFirst?'4px':'0'}`;
+          bodyHtml+=`<div style="position:absolute;top:6px;left:0;right:0;height:22px;background:${bg};${br};opacity:.8;"></div>`;
+          if(isFirst) bodyHtml+=`<div style="position:absolute;top:9px;left:4px;right:2px;font-size:10px;color:#fff;white-space:nowrap;overflow:hidden;z-index:2;">${_hesc(nm.slice(0,12))}</div>`;
         }
       }
-      // 오늘 세로선
-      if(isCurMonth && d===todayD) bodyHtml += `<div class="tl-today-line"></div>`;
-      bodyHtml += '</td>';
+      if(isCurMonth&&d===todayD) bodyHtml+=`<div class="tl-today-line"></div>`;
+      bodyHtml+='</td>';
     }
-    bodyHtml += '</tr>';
+    bodyHtml+='</tr>';
   });
-
-  if(!CONFIRMED.length) bodyHtml = `<tr><td colspan="${daysInMonth+1}" style="padding:40px;text-align:center;color:#9ca3af;font-size:13px;">확정된 과업이 없습니다</td></tr>`;
-
-  el.innerHTML = `<div class="tl-wrap"><table class="tl-table"><thead>${headHtml}</thead><tbody>${bodyHtml}</tbody></table></div>`;
+  if(!CONFIRMED.length) bodyHtml=`<tr><td colspan="${daysInMonth+1}" style="padding:40px;text-align:center;color:#9ca3af;font-size:13px;">확정된 과업이 없습니다</td></tr>`;
+  el.innerHTML=`<div class="tl-wrap"><table class="tl-table"><thead>${headHtml}</thead><tbody>${bodyHtml}</tbody></table></div>`;
 }
 
 // ── 리스트 ───────────────────────────────────
 function renderList(){
   const el = document.getElementById('view-list');
-  if(!EVENTS.length){ el.innerHTML='<div style="text-align:center;padding:60px;color:#9ca3af;font-size:14px;">일정이 없습니다</div>'; return; }
-
-  const sorted = [...EVENTS].sort((a,b)=>a.date.localeCompare(b.date));
-  const groups = {};
-  sorted.forEach(e=>{ (groups[e.date]=groups[e.date]||[]).push(e); });
-
-  const typeLabel = {deadline:'입찰 마감',submit:'제출 마감',schedule:'일정',done:'완료'};
-  const typeBg    = {deadline:'#fee2e2',submit:'#fef9c3',schedule:'#dbeafe',done:'#d1fae5'};
-  const typeColor = {deadline:'#dc2626',submit:'#b45309',schedule:'#1e40af',done:'#065f46'};
-  const dotColor  = {deadline:'#dc2626',submit:'#f59e0b',schedule:'#3b82f6',done:'#10b981'};
-
-  let html = '';
+  if(!EVENTS.length){el.innerHTML='<div style="text-align:center;padding:60px;color:#9ca3af;font-size:14px;">일정이 없습니다</div>';return;}
+  const sorted=[...EVENTS].sort((a,b)=>a.date.localeCompare(b.date));
+  const groups={};
+  sorted.forEach(e=>{(groups[e.date]=groups[e.date]||[]).push(e);});
+  let html='';
   Object.keys(groups).sort().forEach(date=>{
-    const isPast = date < TODAY;
-    const isToday= date === TODAY;
-    html += `<div class="list-date-group">`;
-    html += `<div class="list-date-label${isPast?' past':''}">`;
-    if(isToday) html += `<span style="background:#4f46e5;color:#fff;border-radius:5px;padding:1px 7px;font-size:11px;">오늘</span>`;
-    html += `${date}`;
-    html += `</div>`;
+    const isPast=date<TODAY, isToday=date===TODAY;
+    html+=`<div class="list-date-group"><div class="list-date-label${isPast?' past':''}">`;
+    if(isToday) html+=`<span style="background:#4f46e5;color:#fff;border-radius:5px;padding:1px 7px;font-size:11px;">오늘</span>`;
+    html+=`${date}</div>`;
     groups[date].forEach(e=>{
-      const urgent = e.type==='deadline' && dayDiff(date,TODAY)<=3 && date>=TODAY;
-      html += `<div class="list-item${isPast?' past':''}" onclick="location.href='/nara/confirmed/${e.confirmed_id}'">`;
-      html += `<div class="list-dot" style="background:${dotColor[e.type]||'#9ca3af'};${urgent?'animation:pulse 1s infinite':''}"></div>`;
-      html += `<div class="list-nm">${_hesc(e.title)}</div>`;
-      html += `<div class="list-instt">${_hesc(e.instt||'')}</div>`;
-      html += `<span class="list-type" style="background:${typeBg[e.type]};color:${typeColor[e.type]};">${typeLabel[e.type]||e.type}${urgent?' 🔴':''}</span>`;
-      if(e.assignee) html += `<div class="list-assignee">👤 ${_hesc(e.assignee)}</div>`;
-      html += '</div>';
+      const urgent=e.type==='deadline'&&dayDiff(date,TODAY)<=3&&date>=TODAY;
+      html+=`<div class="list-item${isPast?' past':''}" onclick="location.href='/nara/confirmed/${e.confirmed_id}'">`;
+      html+=`<div class="list-dot" style="background:${DOT_COLOR[e.type]||'#9ca3af'}"></div>`;
+      html+=`<div class="list-nm">${_hesc(e.title)}</div>`;
+      html+=`<div class="list-instt">${_hesc(e.instt||'')}</div>`;
+      html+=`<span class="list-type" style="background:${TYPE_BG[e.type]};color:${TYPE_COLOR[e.type]};">${TYPE_LABEL[e.type]||e.type}${urgent?' 🔴':''}</span>`;
+      if(e.assignee) html+=`<div class="list-assignee">👤 ${_hesc(e.assignee)}</div>`;
+      html+='</div>';
     });
-    html += '</div>';
+    html+='</div>';
   });
-  el.innerHTML = html;
+  el.innerHTML=html;
 }
 
-// ── 유틸 ─────────────────────────────────────
-function dayDiff(dateStr, baseStr){
-  return Math.round((new Date(dateStr)-new Date(baseStr))/(1000*60*60*24));
-}
-function _hesc(s){ return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function dayDiff(a,b){return Math.round((new Date(a)-new Date(b))/(864e5));}
+function _hesc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
-// 초기 렌더
 render();
 </script>
 {% endblock %}
