@@ -418,7 +418,7 @@ def fetch_bid_by_no(bid_ntce_no: str) -> dict | None:
     today = datetime.now()
     # 30일씩 2구간: 0~30일전, 30~60일전
     date_ranges = []
-    for i in range(2):
+    for i in range(1):
         end   = today - timedelta(days=i * 30)
         start = today - timedelta(days=(i + 1) * 30)
         date_ranges.append((start, end))
@@ -428,7 +428,7 @@ def fetch_bid_by_no(bid_ntce_no: str) -> dict | None:
         to_date   = end.strftime("%Y%m%d%H%M")
         print(f"[nara 번호검색] {bid_ntce_no} 탐색 중... ({from_date[:8]}~{to_date[:8]})")
 
-        for page in range(1, 6):  # 최대 5페이지
+        for page in range(1, 4):  # 최대 3페이지
             params = {
                 "numOfRows": "100",
                 "pageNo":    str(page),
@@ -443,9 +443,9 @@ def fetch_bid_by_no(bid_ntce_no: str) -> dict | None:
                    + "?serviceKey=" + urllib.parse.quote(decoded_key, safe='')
                    + "&" + other_params)
             try:
-                time.sleep(0.1)
+                time.sleep(0)
                 req = urllib.request.Request(url, headers={"Accept": "application/json"})
-                with urllib.request.urlopen(req, timeout=8) as resp:
+                with urllib.request.urlopen(req, timeout=15) as resp:
                     raw = resp.read().decode("utf-8")
                 data  = json.loads(raw)
                 body  = data.get("response", {}).get("body", {})
@@ -470,5 +470,5 @@ def fetch_bid_by_no(bid_ntce_no: str) -> dict | None:
                 print(f"[nara 번호검색] 오류: {e}")
                 break
 
-    print(f"[nara 번호검색] {bid_ntce_no} — 60일 내 결과 없음")
+    print(f"[nara 번호검색] {bid_ntce_no} — 30일 내 결과 없음")
     return None
