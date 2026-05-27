@@ -4273,14 +4273,23 @@ def nara_result_add(confirmed_id):
 @app.route("/nara/search_by_no", methods=["POST"])
 @login_required
 def nara_search_by_no():
+    import threading
     data   = request.get_json(force=True) or {}
     bid_no = str(data.get("bid_no", "")).strip()
     bid_no = bid_no.split("-")[0].strip()  # R26BK01514926-000 → R26BK01514926
     if not bid_no:
         return jsonify({"ok": False, "error": "공고번호를 입력하세요"})
-    result = fetch_bid_by_no(bid_no)
-    if result:
-        return jsonify({"ok": True, "bid": result})
+
+    result_box = [None]
+    def _search():
+        result_box[0] = fetch_bid_by_no(bid_no)
+    t = threading.Thread(target=_search, daemon=True)
+    t.start()
+    t.join(timeout=20)
+    if t.is_alive():
+        return jsonify({"ok": False, "error": "검색 시간이 초과되었습니다 (20초). 잠시 후 다시 시도하세요."})
+    if result_box[0]:
+        return jsonify({"ok": True, "bid": result_box[0]})
     return jsonify({"ok": False, "error": "공고를 찾을 수 없습니다"})
 
 @app.route("/nara/add_to_candidates", methods=["POST"])
