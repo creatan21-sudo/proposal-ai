@@ -3983,6 +3983,20 @@ def nara_confirmed_detail(confirmed_id):
         )
         schedule = list_confirmed_schedule(confirmed_id)
     bid_info   = get_confirmed_bid_info(confirmed_id)
+    # PT 일시가 있고 일정에 "PT 발표"가 없으면 자동 추가
+    if bid_info and bid_info.get("pt_date") and bid_info.get("doc_pt"):
+        existing_tasks = [s["task_name"] for s in schedule]
+        if "PT 발표" not in existing_tasks:
+            pt_due = (bid_info.get("pt_date") or "")[:10]
+            add_confirmed_schedule(
+                confirmed_id=confirmed_id,
+                task_name="PT 발표",
+                assignee=c.get("assignee") or "",
+                due_date=pt_due,
+                status="예정",
+                sort_order=1,
+            )
+            schedule = list_confirmed_schedule(confirmed_id)
     from database.db import get_connection
     with get_connection() as conn:
         users = [dict(r) for r in conn.execute(

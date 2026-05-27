@@ -126,6 +126,29 @@
             {{ label }}
           </label>
           {% endfor %}
+          <label>
+            <input type="checkbox" id="bi-doc-pt"
+                   {% if bi.doc_pt %}checked{% endif %}
+                   onchange="togglePtFields(this.checked)">
+            PT (발표)
+          </label>
+        </div>
+        <div id="pt-fields" style="margin-top:10px;display:{% if bi.doc_pt %}grid{% else %}none{% endif %};grid-template-columns:1fr 1fr 1fr;gap:8px;">
+          <div>
+            <div class="field-label">PT 일시</div>
+            <input type="datetime-local" id="bi-pt-date" class="field-input"
+                   value="{{ bi.pt_date or '' }}">
+          </div>
+          <div>
+            <div class="field-label">소요시간</div>
+            <input type="text" id="bi-pt-duration" class="field-input"
+                   value="{{ bi.pt_duration or '' }}" placeholder="예: 10분">
+          </div>
+          <div>
+            <div class="field-label">장소</div>
+            <input type="text" id="bi-pt-location" class="field-input"
+                   value="{{ bi.pt_location or '' }}" placeholder="장소 입력">
+          </div>
         </div>
         <div style="margin-top:8px;display:flex;align-items:center;gap:6px;">
           <label style="font-size:13px;white-space:nowrap;">
@@ -162,10 +185,21 @@
         <div class="checklist-readonly field-readonly">
           {% set docs = [('doc_qualitative','정성평가'),('doc_quantitative','정량평가'),('doc_presentation','PT'),('doc_summary','요약본'),('doc_sample_video','샘플영상')] %}
           {% for key, label in docs %}{% if bi[key] %}<span>✅ {{ label }}</span>{% endif %}{% endfor %}
+          {% if bi.doc_pt %}<span>✅ PT 발표</span>{% endif %}
           {% if bi.doc_other %}<span>✅ {{ bi.doc_other }}</span>{% endif %}
           {% if not bi %}—{% endif %}
         </div>
       </div>
+      {% if bi.doc_pt %}
+      <div style="grid-column:1/-1;">
+        <div class="field-label">PT 정보</div>
+        <div class="field-readonly">
+          {% if bi.pt_date %}일시: {{ bi.pt_date }}{% endif %}
+          {% if bi.pt_duration %} · 소요: {{ bi.pt_duration }}{% endif %}
+          {% if bi.pt_location %} · 장소: {{ bi.pt_location }}{% endif %}
+        </div>
+      </div>
+      {% endif %}
       <div><div class="field-label">비고</div><div class="field-readonly" style="white-space:pre-wrap">{{ bi.notes or '-' }}</div></div>
     </div>
     {% endif %}
@@ -287,18 +321,27 @@ function showToast(msg, ok=true){
 function _esc(s){return(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 /* ── 입찰 정보 저장 ── */
+function togglePtFields(show){
+  const el = document.getElementById('pt-fields');
+  if(el) el.style.display = show ? 'grid' : 'none';
+}
 async function saveBidInfo(){
-  const method = document.querySelector('input[name="bi-method"]:checked')?.value || '';
-  const docs   = {};
+  const method   = document.querySelector('input[name="bi-method"]:checked')?.value || '';
+  const docs     = {};
   document.querySelectorAll('.bi-doc').forEach(cb=>{ docs[cb.dataset.key]=cb.checked?1:0; });
   const otherChk = document.getElementById('bi-doc-other-chk');
   const otherVal = document.getElementById('bi-doc-other')?.value.trim() || '';
-  const payload = {
+  const ptChk    = document.getElementById('bi-doc-pt')?.checked;
+  const payload  = {
     submit_deadline: document.getElementById('bi-deadline').value,
     submit_method: method,
     ...docs,
     doc_other: (otherChk?.checked ? otherVal : ''),
     notes: document.getElementById('bi-notes').value,
+    doc_pt:      ptChk ? 1 : 0,
+    pt_date:     ptChk ? (document.getElementById('bi-pt-date')?.value || '') : '',
+    pt_duration: ptChk ? (document.getElementById('bi-pt-duration')?.value.trim() || '') : '',
+    pt_location: ptChk ? (document.getElementById('bi-pt-location')?.value.trim() || '') : '',
   };
   const r = await fetch(`/nara/confirmed/${CID}/bid_info`,{
     method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)

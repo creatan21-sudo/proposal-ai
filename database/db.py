@@ -474,6 +474,10 @@ def init_db() -> None:
             "ALTER TABLE final_proposals  ADD COLUMN is_active INTEGER DEFAULT 1",
             "ALTER TABLE nara_confirmed   ADD COLUMN assignee  TEXT DEFAULT ''",
             "ALTER TABLE nara_confirmed   ADD COLUMN pickup_id INTEGER DEFAULT 0",
+            "ALTER TABLE confirmed_bid_info ADD COLUMN doc_pt       INTEGER DEFAULT 0",
+            "ALTER TABLE confirmed_bid_info ADD COLUMN pt_date      TEXT DEFAULT ''",
+            "ALTER TABLE confirmed_bid_info ADD COLUMN pt_duration  TEXT DEFAULT ''",
+            "ALTER TABLE confirmed_bid_info ADD COLUMN pt_location  TEXT DEFAULT ''",
         ]:
             try:
                 conn.execute(migration)
@@ -2445,8 +2449,9 @@ def save_confirmed_bid_info(confirmed_id: int, data: dict, updated_by: str) -> N
                (confirmed_id, submit_deadline, submit_method,
                 doc_qualitative, doc_quantitative, doc_presentation,
                 doc_summary, doc_sample_video, doc_other, notes,
+                doc_pt, pt_date, pt_duration, pt_location,
                 updated_by, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
                ON CONFLICT(confirmed_id) DO UPDATE SET
                  submit_deadline=excluded.submit_deadline,
                  submit_method=excluded.submit_method,
@@ -2457,6 +2462,10 @@ def save_confirmed_bid_info(confirmed_id: int, data: dict, updated_by: str) -> N
                  doc_sample_video=excluded.doc_sample_video,
                  doc_other=excluded.doc_other,
                  notes=excluded.notes,
+                 doc_pt=excluded.doc_pt,
+                 pt_date=excluded.pt_date,
+                 pt_duration=excluded.pt_duration,
+                 pt_location=excluded.pt_location,
                  updated_by=excluded.updated_by,
                  updated_at=excluded.updated_at""",
             (confirmed_id,
@@ -2469,6 +2478,10 @@ def save_confirmed_bid_info(confirmed_id: int, data: dict, updated_by: str) -> N
              int(data.get("doc_sample_video", 0)),
              data.get("doc_other", ""),
              data.get("notes", ""),
+             int(data.get("doc_pt", 0)),
+             data.get("pt_date", ""),
+             data.get("pt_duration", ""),
+             data.get("pt_location", ""),
              updated_by),
         )
 
