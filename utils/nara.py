@@ -380,47 +380,25 @@ _COMPANY_PROFILE = """
 """
 
 def filter_bids_with_ai(bids: list) -> list:
-    """Claude API로 영상/콘텐츠/홍보 제작 관련 공고만 필터링."""
+    """키워드 매칭으로 관련 공고 필터링 (Claude API 미사용)."""
     if not bids:
         return []
 
-    bid_list = "\n".join([
-        f"{i+1}. [{b['bid_ntce_no']}] {b['bid_ntce_nm']} / {b['ntce_instt_nm']} / 예산: {b['presmpt_prce']}원"
-        for i, b in enumerate(bids)
-    ])
+    INCLUDE = ['홍보', '영상', '콘텐츠', '제작', '방송', '미디어', 'SNS', '유튜브',
+               '기획', '캠페인', '광고', '행사', '촬영', '편집', '홍보물', '프로그램']
+    EXCLUDE = ['공사', '토목', '건설', '청소', '경비', '급식', '납품', '구입']
 
-    prompt = f"""당신은 입찰 공고 분류 전문가입니다.
+    result = []
+    for bid in bids:
+        nm          = bid.get('bid_ntce_nm', '') or ''
+        has_include = any(k in nm for k in INCLUDE)
+        # 포함 키워드가 하나도 없고 제외 키워드만 있으면 제외
+        has_exclude = (not has_include) and any(k in nm for k in EXCLUDE)
+        if has_include and not has_exclude:
+            result.append(bid)
 
-[회사 프로필]
-{_COMPANY_PROFILE}
-
-[입찰 공고 목록]
-{bid_list}
-
-위 공고 중 이 회사가 입찰할 수 있는 관련 공고 번호를 골라주세요.
-
-★ 포함 규칙 (공고명에 아래 단어 중 하나라도 있으면 무조건 포함):
-홍보, 영상, 콘텐츠, 제작, 방송, 미디어, SNS, 유튜브, 기획, 캠페인, 광고, 행사, 촬영, 편집
-
-★ 제외 규칙 (아래 단어가 핵심 목적인 경우에만 제외):
-공사, 토목, 건설, 시설물, 청소, 경비, 급식, 물품 구매, 납품, 구입, 소프트웨어 개발, 시스템 구축
-
-★ 중요: 위 포함 단어와 제외 단어가 동시에 있으면 포함으로 처리하세요.
-   판단이 불명확하면 무조건 포함하세요. 목표 통과율은 30~40%입니다.
-
-반드시 아래 JSON 형식으로만 응답하세요:
-{{"relevant": [1, 3, 5]}}
-번호는 위 목록의 순서 번호입니다."""
-
-    try:
-        from core.claude_client import call_json
-        result = call_json(prompt, max_tokens=512)
-        relevant_indices = result.get("relevant", [])
-        filtered = [bids[i - 1] for i in relevant_indices if 1 <= i <= len(bids)]
-        return filtered
-    except Exception as e:
-        print(f"[nara AI필터] 오류 — 전체 반환: {e}")
-        return bids
+    print(f"[nara 키워드필터] {len(bids)}건 → {len(result)}건")
+    return result
 
 
 # ─────────────────────────────────────────────
