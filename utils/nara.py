@@ -407,39 +407,68 @@ def filter_bids_with_ai(bids: list) -> list:
 # ─────────────────────────────────────────────
 
 def fetch_bid_by_no(bid_ntce_no: str) -> dict | None:
-    """공고번호로 상세 조회 API 직접 호출."""
+    """공고번호 역추산으로 등록일 추정 후 ±5일 범위 검색."""
     key = os.environ.get("NARA_API_KEY", "")
     if not key:
         return None
 
-    bid_ord = "000"
-    params = {
-        "numOfRows":  "1",
-        "pageNo":     "1",
-        "inqryDiv":   "1",
-        "bidNtceNo":  bid_ntce_no,
-        "bidNtceOrd": bid_ord,
-        "type":       "json",
-    }
-    other_params = urllib.parse.urlencode(params)
-    decoded_key  = urllib.parse.unquote(key)
-    url = (NARA_DETAIL_URL
-           + "?serviceKey=" + urllib.parse.quote(decoded_key, safe='')
-           + "&" + other_params)
+    _BASE_SERIAL = 1_544_446
+    _BASE_DATE   = datetime(2026, 5, 27)
+    _DAILY_RATE  = 1_841
+    MARGIN       = 5
 
-    print(f"[nara 번호검색] 상세조회: {bid_ntce_no}")
     try:
-        req = urllib.request.Request(url, headers={"Accept": "application/json"})
-        with urllib.request.urlopen(req, timeout=15) as resp:
-            raw = resp.read().decode("utf-8")
-        print(f"[nara 번호검색] 응답: {raw[:200]}")
-        data  = json.loads(raw)
-        items = data.get("response", {}).get("body", {}).get("items", [])
-        if isinstance(items, dict):
-            items = [items]
-        if items:
-            return _normalize(items[0])
-    except Exception as e:
-        print(f"[nara 번호검색] 오류: {e}")
+        serial    = int(bid_ntce_no[5:])  # R26BK 5자리 제거
+        days_diff = (serial - _BASE_SERIAL) / _DAILY_RATE
+        estimated = _BASE_DATE + timedelta(days=days_diff)
+    except (ValueError, IndexError):
+        estimated = datetime.now()
 
+    from_date = (estimated - timedelta(days=MARGIN)).strftime("%Y%m%d%H%M")
+    to_date   = (estimated + timedelta(days=MARGIN)).strftime("%Y%m%d%H%M")
+    print(f"[nara 번호검색] {bid_ntce_no} 추정일: {estimated.strftime('%Y-%m-%d')} 범위: {from_date[:8]}~{to_date[:8]}")
+
+    for page in range(1, 6):  # 최대 5페이지
+        params = {
+            "numOfRows":  "100",
+            "pageNo":     str(page),
+            "inqryDiv":   "1",
+            "inqryBgnDt": from_date,
+            "inqryEndDt": to_date,
+            "type":       "json",
+        }
+        other_params = urllib.parse.urlencode(params)
+        decoded_key  = urllib.parse.unquote(key)
+        url = (NARA_API_URL
+               + "?serviceKey=" + urllib.parse.quote(decoded_key, safe='')
+               + "&" + other_params)
+        try:
+            time.sleep(0)
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                raw = resp.read().decode("utf-8")
+            data  = json.loads(raw)
+            body  = data.get("response", {}).get("body", {})
+            total = int(body.get("totalCount", 0) or 0)
+            items = body.get("items", [])
+            if isinstance(items, dict):
+                items = items.get("item", [])
+                if isinstance(items, dict):
+                    items = [items]
+            elif not isinstance(items, list):
+                items = []
+            if not items:
+                break
+            print(f"  [nara 번호검색] 페이지{page}: {len(items)}건 (전체 {total})")
+            for item in items:
+                if item.get("bidNtceNo", "") == bid_ntce_no:
+                    print(f"[nara 번호검색] 발견! {bid_ntce_no}")
+                    return _normalize(item)
+            if len(items) < 100:
+                break
+        except Exception as e:
+            print(f"[nara 번호검색] 오류: {e}")
+            break
+
+    print(f"[nara 번호검색] {bid_ntce_no} — 결과 없음")
     return None
