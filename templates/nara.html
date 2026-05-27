@@ -258,6 +258,9 @@
 <div class="modal-overlay" id="bid-no-modal" onclick="if(event.target===this)closeBidNoModal()">
   <div class="modal-box" style="width:520px;">
     <div class="modal-title">📌 공고번호로 후보 등록</div>
+    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:8px;padding:10px 12px;font-size:12px;color:#1e40af;margin-bottom:14px;">
+      나라장터 원문을 확인하고 공고명을 입력하세요. 나머지 항목은 선택입니다.
+    </div>
     <div style="margin-bottom:14px;">
       <div class="modal-label">공고번호</div>
       <input type="text" id="bno-no" class="modal-textarea" readonly
@@ -273,8 +276,8 @@
         <input type="text" id="bno-nm" class="modal-textarea" style="resize:none;height:auto;padding:8px 12px;font-size:13px;" placeholder="공고명 입력">
       </div>
       <div>
-        <div class="modal-label">발주처 <span style="color:#ef4444;">*</span></div>
-        <input type="text" id="bno-instt" class="modal-textarea" style="resize:none;height:auto;padding:8px 12px;font-size:13px;" placeholder="발주처 입력">
+        <div class="modal-label">발주처 <span style="color:#9ca3af;font-weight:400;">(선택)</span></div>
+        <input type="text" id="bno-instt" class="modal-textarea" style="resize:none;height:auto;padding:8px 12px;font-size:13px;" placeholder="발주처명 (선택 — 나라장터 원문에서 확인 후 입력)">
       </div>
       <div>
         <div class="modal-label">예산 <span style="color:#9ca3af;font-weight:400;">(선택)</span></div>
@@ -333,8 +336,7 @@ async function submitBidNoCandidate(){
   const nm     = document.getElementById('bno-nm').value.trim();
   const instt  = document.getElementById('bno-instt').value.trim();
   const reason = document.getElementById('bno-reason').value.trim();
-  if(!nm){    showToast('공고명을 입력하세요', false); return; }
-  if(!instt){  showToast('발주처를 입력하세요', false); return; }
+  if(!nm){ showToast('공고명을 입력하세요', false); return; }
   if(!reason){ showToast('등록 이유를 입력하세요', false); return; }
   const prce  = document.getElementById('bno-prce').value.trim();
   const clse  = document.getElementById('bno-clse').value;
