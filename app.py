@@ -4105,6 +4105,14 @@ def nara_reset_keywords():
         conn.execute("DELETE FROM nara_keywords")
     return jsonify({"ok": True})
 
+@app.route("/nara/reset_all_bids", methods=["POST"])
+@operator_or_admin_required
+def nara_reset_all_bids():
+    from database.db import get_connection
+    with get_connection() as conn:
+        conn.execute("DELETE FROM nara_bids")
+    return jsonify({"ok": True, "message": "전체 공고 삭제 완료"})
+
 @app.route("/nara/scan", methods=["POST"])
 @login_required
 def nara_manual_scan():

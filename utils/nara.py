@@ -378,14 +378,13 @@ def filter_bids_with_ai(bids: list) -> list:
 - 캠페인, 홍보물 제작
 - 행사 기획, 이벤트 대행
 
-제외 기준 (아래에 명확히 해당할 때만 제외):
+제외 기준 (아래에 명확히 해당할 때만 제외 — 최소한으로 적용):
 - 건설, 토목, 시설공사
-- IT 시스템 개발, 소프트웨어 개발
-- 학술 연구, 조사 용역
-- 물품 구매, 납품
 - 청소, 경비, 시설관리
+- 물품 구매, 납품
 
 ※ 판단이 애매하면 반드시 포함으로 처리하세요.
+   홍보, 영상, 콘텐츠, 제작, 기획, 방송, 미디어 관련 단어가 하나라도 있으면 무조건 포함하세요.
    공고명에 "홍보"라는 단어가 포함된 경우 특별한 이유가 없는 한 반드시 포함으로 처리하세요.
 
 반드시 아래 JSON 형식으로만 응답하세요:
@@ -521,11 +520,19 @@ def collect_all_bids(target_date: str = None) -> int:
             print(f"[nara 전체수집] 전체 {total}건, {(total + 99) // 100}페이지")
         if not items:
             break
-        for item in items:
-            bid_no = item.get("bidNtceNo", "")
-            if bid_no and not is_nara_bid_seen(bid_no):
-                save_nara_bid(_normalize(item), matched_keyword="전체수집")
+
+        # 미수집 항목만 추려서 AI 필터링
+        new_items = [
+            _normalize(i) for i in items
+            if i.get("bidNtceNo") and not is_nara_bid_seen(i.get("bidNtceNo"))
+        ]
+        if new_items:
+            filtered = filter_bids_with_ai(new_items)
+            for bid in filtered:
+                save_nara_bid(bid, matched_keyword="전체수집")
                 new_count += 1
+            print(f"[nara 전체수집] 페이지{page}: {len(items)}건 → 신규 {len(new_items)}건 → AI필터 {len(filtered)}건 저장")
+
         time.sleep(0.5)
         if len(items) < 100:
             break
