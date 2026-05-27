@@ -68,7 +68,7 @@ from database.db import (
 from output.txt_writer import write_txt
 from utils.telegram_notify import send_telegram
 from config import GAMMA_API_KEY
-from utils.nara import manual_scan, fetch_bid_by_no
+from utils.nara import manual_scan, fetch_bid_by_no, collect_all_bids
 from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           get_nara_settings, save_nara_settings,
                           add_nara_candidate, list_nara_candidates, delete_nara_candidate,
@@ -3882,14 +3882,19 @@ def nara_dashboard():
     page         = max(1, int(request.args.get("page", 1)))
     keyword      = request.args.get("keyword", "").strip()
     hide_expired = request.args.get("hide_expired", "0") == "1"
+    search_nm    = request.args.get("search_nm", "").strip()
+    search_instt = request.args.get("search_instt", "").strip()
     keywords     = get_nara_keywords()
-    paged        = list_nara_bids_paged(keyword=keyword, page=page, per_page=50, hide_expired=hide_expired)
+    paged        = list_nara_bids_paged(keyword=keyword, page=page, per_page=50,
+                                        hide_expired=hide_expired,
+                                        search_nm=search_nm, search_instt=search_instt)
     settings     = get_nara_settings()
     candidate_nos = get_candidate_bid_nos()
     return render_template("nara.html", keywords=keywords,
                            bids=paged["items"], pagination=paged,
                            settings=settings, candidate_nos=candidate_nos,
-                           kw_filter=keyword, hide_expired=hide_expired)
+                           kw_filter=keyword, hide_expired=hide_expired,
+                           search_nm=search_nm, search_instt=search_instt)
 
 @app.route("/nara/candidates")
 @login_required
@@ -4110,13 +4115,42 @@ def nara_manual_scan():
     threading.Thread(target=_scan, daemon=True).start()
     return jsonify({"ok": True, "message": "스캔 시작! 잠시 후 목록을 확인하세요."})
 
+@app.route("/nara/collect_all", methods=["POST"])
+@operator_or_admin_required
+def nara_collect_all():
+    import threading
+    def _collect():
+        with app.app_context():
+            collect_all_bids()
+    threading.Thread(target=_collect, daemon=True).start()
+    return jsonify({"ok": True, "message": "전체 수집 시작! 완료까지 수분 소요됩니다."})
+
+@app.route("/nara/collect_date", methods=["POST"])
+@operator_or_admin_required
+def nara_collect_date():
+    import threading
+    data        = request.get_json(force=True) or {}
+    target_date = (data.get("date") or "").replace("-", "")
+    if not target_date:
+        return jsonify({"ok": False, "error": "날짜를 입력하세요"})
+    def _collect():
+        with app.app_context():
+            collect_all_bids(target_date)
+    threading.Thread(target=_collect, daemon=True).start()
+    return jsonify({"ok": True, "message": f"{target_date} 수집 시작!"})
+
 @app.route("/nara/bids")
 @login_required
 def nara_list_bids():
     keyword      = request.args.get("keyword", "").strip()
     hide_expired = request.args.get("hide_expired", "0") == "1"
-    bids         = list_nara_bids(keyword=keyword, limit=200, hide_expired=hide_expired)
-    return jsonify({"ok": True, "bids": bids})
+    search_nm    = request.args.get("search_nm", "").strip()
+    search_instt = request.args.get("search_instt", "").strip()
+    page         = max(1, int(request.args.get("page", 1)))
+    paged        = list_nara_bids(keyword=keyword, search_nm=search_nm,
+                                   search_instt=search_instt,
+                                   hide_expired=hide_expired, page=page, per_page=50)
+    return jsonify({"ok": True, **paged})
 
 @app.route("/nara/settings", methods=["POST"])
 @login_required

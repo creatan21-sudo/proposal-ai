@@ -2142,20 +2142,35 @@ def is_nara_bid_seen(bid_ntce_no: str) -> bool:
         row = conn.execute("SELECT 1 FROM nara_bids WHERE bid_ntce_no=?", (bid_ntce_no,)).fetchone()
     return row is not None
 
-def list_nara_bids(keyword: str = "", limit: int = 200, hide_expired: bool = True) -> list:
+def list_nara_bids(keyword: str = "", search_nm: str = "", search_instt: str = "",
+                   hide_expired: bool = True, page: int = 1, per_page: int = 50) -> dict:
     conditions, params = [], []
     if keyword:
         conditions.append("matched_keyword=?")
         params.append(keyword)
+    if search_nm:
+        conditions.append("bid_ntce_nm LIKE ?")
+        params.append(f"%{search_nm}%")
+    if search_instt:
+        conditions.append("ntce_instt_nm LIKE ?")
+        params.append(f"%{search_instt}%")
     if hide_expired:
         conditions.append("(bid_clse_dt IS NULL OR bid_clse_dt = '' OR bid_clse_dt >= date('now'))")
-    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
-    params.append(limit)
+    where  = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    offset = (page - 1) * per_page
     with get_connection() as conn:
-        rows = conn.execute(
-            f"SELECT * FROM nara_bids {where} ORDER BY created_at DESC LIMIT ?", params
+        total = conn.execute(f"SELECT COUNT(*) FROM nara_bids {where}", params).fetchone()[0]
+        rows  = conn.execute(
+            f"SELECT * FROM nara_bids {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            params + [per_page, offset],
         ).fetchall()
-    return [dict(r) for r in rows]
+    return {
+        "items":    [dict(r) for r in rows],
+        "total":    total,
+        "page":     page,
+        "per_page": per_page,
+        "pages":    max(1, -(-total // per_page)),
+    }
 
 def delete_nara_bid(bid_id: int):
     with get_connection() as conn:
@@ -2523,12 +2538,20 @@ def delete_nara_pickup(pickup_id: int) -> None:
         conn.execute("DELETE FROM nara_pickups WHERE id=?", (pickup_id,))
 
 
-def list_nara_bids_paged(keyword: str = "", page: int = 1, per_page: int = 50, hide_expired: bool = True) -> dict:
+def list_nara_bids_paged(keyword: str = "", page: int = 1, per_page: int = 50,
+                         hide_expired: bool = True,
+                         search_nm: str = "", search_instt: str = "") -> dict:
     offset = (page - 1) * per_page
     conditions, base_params = [], []
     if keyword:
         conditions.append("matched_keyword=?")
         base_params.append(keyword)
+    if search_nm:
+        conditions.append("bid_ntce_nm LIKE ?")
+        base_params.append(f"%{search_nm}%")
+    if search_instt:
+        conditions.append("ntce_instt_nm LIKE ?")
+        base_params.append(f"%{search_instt}%")
     if hide_expired:
         conditions.append("(bid_clse_dt IS NULL OR bid_clse_dt = '' OR bid_clse_dt >= date('now'))")
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""

@@ -492,3 +492,44 @@ def fetch_bid_by_no(bid_ntce_no: str) -> dict | None:
 
     print(f"[nara 번호검색] {bid_ntce_no} — 결과 없음")
     return None
+
+
+# ─────────────────────────────────────────────
+# 전체 공고 일괄 수집
+# ─────────────────────────────────────────────
+
+def collect_all_bids(target_date: str = None) -> int:
+    """특정 날짜(YYYYMMDD)의 전체 공고를 수집해서 DB에 저장. 반환값: 신규 저장 건수."""
+    key = os.environ.get("NARA_API_KEY", "")
+    if not key:
+        return 0
+
+    if not target_date:
+        target_date = datetime.now().strftime("%Y%m%d")
+
+    from_date = target_date + "0000"
+    to_date   = target_date + "2359"
+    print(f"[nara 전체수집] {target_date} 수집 시작")
+
+    from database.db import save_nara_bid, is_nara_bid_seen
+
+    page      = 1
+    new_count = 0
+    while True:
+        items, total = _fetch_page(key, from_date, to_date, page, 100)
+        if page == 1:
+            print(f"[nara 전체수집] 전체 {total}건, {(total + 99) // 100}페이지")
+        if not items:
+            break
+        for item in items:
+            bid_no = item.get("bidNtceNo", "")
+            if bid_no and not is_nara_bid_seen(bid_no):
+                save_nara_bid(_normalize(item), matched_keyword="전체수집")
+                new_count += 1
+        time.sleep(0.5)
+        if len(items) < 100:
+            break
+        page += 1
+
+    print(f"[nara 전체수집] 완료 — 신규 {new_count}건 저장")
+    return new_count
