@@ -4370,17 +4370,24 @@ def notification_settings_save():
 def nara_notify_candidates():
     from database.db import get_connection as _gc
     with _gc() as conn:
-        rows = conn.execute(
-            "SELECT bid_ntce_nm FROM nara_candidates ORDER BY created_at DESC LIMIT 20"
+        today_candidates = conn.execute(
+            """SELECT bid_ntce_no, bid_ntce_nm, ntce_instt_nm
+               FROM nara_candidates
+               WHERE date(created_at) = date('now', 'localtime')
+               ORDER BY created_at DESC"""
         ).fetchall()
-    count    = len(rows)
-    names    = "·".join(r["bid_ntce_nm"] or "-" for r in rows[:3])
-    summary  = f"{names} 외 {count-3}건" if count > 3 else names
+    if not today_candidates:
+        return jsonify({"ok": False, "error": "오늘 등록된 후보가 없습니다"})
+    count   = len(today_candidates)
+    lines   = [f"• {r['bid_ntce_nm'] or r['bid_ntce_no']}" for r in today_candidates[:5]]
+    message = "\n".join(lines)
+    if count > 5:
+        message += f"\n... 외 {count - 5}건"
     settings = get_notification_settings()
     targets  = settings.get("candidate_manual", [])
     for uid in targets:
-        create_notification(uid, f"입찰 후보 알림 ({count}건)",
-                            summary, "/nara/candidates")
+        create_notification(uid, f"오늘 신규 후보 {count}건 등록",
+                            message, "/nara/candidates")
     return jsonify({"ok": True, "sent": len(targets)})
 
 

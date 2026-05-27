@@ -2180,10 +2180,14 @@ def list_nara_bids(keyword: str = "", search_nm: str = "", search_instt: str = "
         conditions.append("(bid_clse_dt IS NULL OR bid_clse_dt = '' OR bid_clse_dt >= date('now'))")
     where  = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     offset = (page - 1) * per_page
+    dedup  = f"SELECT * FROM nara_bids WHERE id IN (SELECT MAX(id) FROM nara_bids GROUP BY bid_ntce_no)"
+    outer_where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     with get_connection() as conn:
-        total = conn.execute(f"SELECT COUNT(*) FROM nara_bids {where}", params).fetchone()[0]
+        total = conn.execute(
+            f"SELECT COUNT(*) FROM ({dedup}) {outer_where}", params
+        ).fetchone()[0]
         rows  = conn.execute(
-            f"SELECT * FROM nara_bids {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM ({dedup}) {outer_where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
             params + [per_page, offset],
         ).fetchall()
     return {
@@ -2577,10 +2581,13 @@ def list_nara_bids_paged(keyword: str = "", page: int = 1, per_page: int = 50,
     if hide_expired:
         conditions.append("(bid_clse_dt IS NULL OR bid_clse_dt = '' OR bid_clse_dt >= date('now'))")
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    dedup = "SELECT * FROM nara_bids WHERE id IN (SELECT MAX(id) FROM nara_bids GROUP BY bid_ntce_no)"
     with get_connection() as conn:
-        total = conn.execute(f"SELECT COUNT(*) FROM nara_bids {where}", base_params).fetchone()[0]
+        total = conn.execute(
+            f"SELECT COUNT(*) FROM ({dedup}) {where}", base_params
+        ).fetchone()[0]
         rows  = conn.execute(
-            f"SELECT * FROM nara_bids {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM ({dedup}) {where} ORDER BY created_at DESC LIMIT ? OFFSET ?",
             base_params + [per_page, offset],
         ).fetchall()
     return {
