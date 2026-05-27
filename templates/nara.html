@@ -270,15 +270,11 @@
         🔗 나라장터에서 확인 →
       </a>
     </div>
+    <div style="margin-bottom:10px;">
+      <div class="modal-label">공고명 <span style="color:#ef4444;">*</span></div>
+      <input type="text" id="bno-nm" class="modal-textarea" style="resize:none;height:auto;padding:8px 12px;font-size:13px;" placeholder="공고명 입력">
+    </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
-      <div>
-        <div class="modal-label">공고명 <span style="color:#ef4444;">*</span></div>
-        <input type="text" id="bno-nm" class="modal-textarea" style="resize:none;height:auto;padding:8px 12px;font-size:13px;" placeholder="공고명 입력">
-      </div>
-      <div>
-        <div class="modal-label">발주처 <span style="color:#9ca3af;font-weight:400;">(선택)</span></div>
-        <input type="text" id="bno-instt" class="modal-textarea" style="resize:none;height:auto;padding:8px 12px;font-size:13px;" placeholder="발주처명 (선택 — 나라장터 원문에서 확인 후 입력)">
-      </div>
       <div>
         <div class="modal-label">예산 <span style="color:#9ca3af;font-weight:400;">(선택)</span></div>
         <input type="number" id="bno-prce" class="modal-textarea" style="resize:none;height:auto;padding:8px 12px;font-size:13px;" placeholder="원 단위 숫자">
@@ -323,7 +319,6 @@ function searchByBidNo(){
   document.getElementById('bno-no').value    = bidNo;
   document.getElementById('bno-g2b-link').href = g2bUrl;
   document.getElementById('bno-nm').value    = '';
-  document.getElementById('bno-instt').value = '';
   document.getElementById('bno-prce').value  = '';
   document.getElementById('bno-clse').value  = '';
   document.getElementById('bno-reason').value= '';
@@ -334,7 +329,6 @@ function closeBidNoModal(){ document.getElementById('bid-no-modal').classList.re
 async function submitBidNoCandidate(){
   const bidNo  = document.getElementById('bno-no').value.trim();
   const nm     = document.getElementById('bno-nm').value.trim();
-  const instt  = document.getElementById('bno-instt').value.trim();
   const reason = document.getElementById('bno-reason').value.trim();
   if(!nm){ showToast('공고명을 입력하세요', false); return; }
   if(!reason){ showToast('등록 이유를 입력하세요', false); return; }
@@ -346,7 +340,7 @@ async function submitBidNoCandidate(){
   try{
     const r = await fetch('/nara/add_to_candidates',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
-        bid_ntce_no: bidNo, bid_ntce_nm: nm, ntce_instt_nm: instt,
+        bid_ntce_no: bidNo, bid_ntce_nm: nm, ntce_instt_nm: '',
         presmpt_prce: prce, bid_clse_dt: clse,
         ntce_url: g2bUrl, matched_keyword: '', reason
       })});
