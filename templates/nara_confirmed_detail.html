@@ -164,6 +164,36 @@
         </div>
       </div>
       <div>
+        <div class="field-label">가격투찰</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;">
+            <input type="checkbox" id="bi-price-bid-chk"
+                   {% if bi.price_bid_date %}checked{% endif %}
+                   onchange="togglePriceBidFields(this.checked)">
+            가격투찰 일정 등록
+          </label>
+        </div>
+        <div id="price-bid-fields" style="display:{% if bi.price_bid_date %}grid{% else %}none{% endif %};grid-template-columns:1fr 1fr;gap:8px;">
+          <div>
+            <div class="field-label">투찰 일시</div>
+            <input type="datetime-local" id="bi-price-bid-date" class="field-input"
+                   value="{{ bi.price_bid_date or '' }}">
+          </div>
+          <div>
+            <div class="field-label">투찰 방법</div>
+            <div class="radio-group" style="margin-top:8px;">
+              {% for m in ['온라인','오프라인'] %}
+              <label>
+                <input type="radio" name="bi-price-bid-method" value="{{ m }}"
+                       {% if (bi.price_bid_method or '') == m %}checked{% endif %}>
+                {{ m }}
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
         <div class="field-label">비고</div>
         <textarea id="bi-notes" class="field-input" rows="4"
                   style="resize:vertical;">{{ bi.notes or '' }}</textarea>
@@ -197,6 +227,15 @@
           {% if bi.pt_date %}일시: {{ bi.pt_date }}{% endif %}
           {% if bi.pt_duration %} · 소요: {{ bi.pt_duration }}{% endif %}
           {% if bi.pt_location %} · 장소: {{ bi.pt_location }}{% endif %}
+        </div>
+      </div>
+      {% endif %}
+      {% if bi.price_bid_date %}
+      <div style="grid-column:1/-1;">
+        <div class="field-label">가격투찰</div>
+        <div class="field-readonly">
+          일시: {{ bi.price_bid_date }}
+          {% if bi.price_bid_method %} · {{ bi.price_bid_method }}{% endif %}
         </div>
       </div>
       {% endif %}
@@ -325,23 +364,31 @@ function togglePtFields(show){
   const el = document.getElementById('pt-fields');
   if(el) el.style.display = show ? 'grid' : 'none';
 }
+function togglePriceBidFields(show){
+  const el = document.getElementById('price-bid-fields');
+  if(el) el.style.display = show ? 'grid' : 'none';
+}
 async function saveBidInfo(){
-  const method   = document.querySelector('input[name="bi-method"]:checked')?.value || '';
-  const docs     = {};
+  const method      = document.querySelector('input[name="bi-method"]:checked')?.value || '';
+  const docs        = {};
   document.querySelectorAll('.bi-doc').forEach(cb=>{ docs[cb.dataset.key]=cb.checked?1:0; });
-  const otherChk = document.getElementById('bi-doc-other-chk');
-  const otherVal = document.getElementById('bi-doc-other')?.value.trim() || '';
-  const ptChk    = document.getElementById('bi-doc-pt')?.checked;
-  const payload  = {
+  const otherChk    = document.getElementById('bi-doc-other-chk');
+  const otherVal    = document.getElementById('bi-doc-other')?.value.trim() || '';
+  const ptChk       = document.getElementById('bi-doc-pt')?.checked;
+  const pbChk       = document.getElementById('bi-price-bid-chk')?.checked;
+  const pbMethod    = document.querySelector('input[name="bi-price-bid-method"]:checked')?.value || '';
+  const payload     = {
     submit_deadline: document.getElementById('bi-deadline').value,
     submit_method: method,
     ...docs,
     doc_other: (otherChk?.checked ? otherVal : ''),
     notes: document.getElementById('bi-notes').value,
-    doc_pt:      ptChk ? 1 : 0,
-    pt_date:     ptChk ? (document.getElementById('bi-pt-date')?.value || '') : '',
-    pt_duration: ptChk ? (document.getElementById('bi-pt-duration')?.value.trim() || '') : '',
-    pt_location: ptChk ? (document.getElementById('bi-pt-location')?.value.trim() || '') : '',
+    doc_pt:          ptChk ? 1 : 0,
+    pt_date:         ptChk ? (document.getElementById('bi-pt-date')?.value || '') : '',
+    pt_duration:     ptChk ? (document.getElementById('bi-pt-duration')?.value.trim() || '') : '',
+    pt_location:     ptChk ? (document.getElementById('bi-pt-location')?.value.trim() || '') : '',
+    price_bid_date:  pbChk ? (document.getElementById('bi-price-bid-date')?.value || '') : '',
+    price_bid_method: pbChk ? pbMethod : '',
   };
   const r = await fetch(`/nara/confirmed/${CID}/bid_info`,{
     method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)

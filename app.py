@@ -3997,6 +3997,20 @@ def nara_confirmed_detail(confirmed_id):
                 sort_order=1,
             )
             schedule = list_confirmed_schedule(confirmed_id)
+    # 가격투찰 일시가 있고 일정에 "가격투찰"이 없으면 자동 추가
+    if bid_info and bid_info.get("price_bid_date"):
+        existing_tasks = [s["task_name"] for s in schedule]
+        if "가격투찰" not in existing_tasks:
+            pb_due = (bid_info.get("price_bid_date") or "")[:10]
+            add_confirmed_schedule(
+                confirmed_id=confirmed_id,
+                task_name="가격투찰",
+                assignee=c.get("assignee") or "",
+                due_date=pb_due,
+                status="예정",
+                sort_order=2,
+            )
+            schedule = list_confirmed_schedule(confirmed_id)
     from database.db import get_connection
     with get_connection() as conn:
         users = [dict(r) for r in conn.execute(
