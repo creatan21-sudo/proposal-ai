@@ -23,6 +23,9 @@
         {% if session.get('is_admin') %}
         <a href="/admin" class="nav-admin">관리자</a>
         {% endif %}
+        {% if session.get('is_admin') or session.get('role') == 'operator' %}
+        <a href="/notification_settings">알림 설정</a>
+        {% endif %}
         <a href="/profile">프로필</a>
         {% if session.get('role') != 'user' %}
         <a href="#" id="nav-active-run" style="display:none" title="">
