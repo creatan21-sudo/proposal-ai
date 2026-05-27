@@ -182,9 +182,9 @@
       <tr>
         <th style="width:33%">공고명</th>
         <th style="width:16%">공고기관</th>
-        <th style="width:11%">추정가격</th>
-        <th style="width:11%">마감일</th>
-        <th style="width:9%">수집일</th>
+        <th style="width:11%;cursor:pointer;user-select:none;" onclick="sortBy('prce')" title="클릭 시 정렬">추정가격 <span id="sort-prce" style="font-size:11px;"></span></th>
+        <th style="width:11%;cursor:pointer;user-select:none;" onclick="sortBy('clse')" title="클릭 시 정렬">마감일 <span id="sort-clse" style="font-size:11px;"></span></th>
+        <th style="width:9%;cursor:pointer;user-select:none;" onclick="sortBy('created')" title="클릭 시 정렬">수집일 <span id="sort-created" style="font-size:11px;"></span></th>
         <th style="width:7%">공고</th>
         <th style="width:9%">후보</th>
       </tr>
@@ -192,7 +192,7 @@
     <tbody id="bid-tbody">
       {% if bids %}
         {% for b in bids %}
-        <tr data-nm="{{ b.bid_ntce_nm | e }}" data-instt="{{ b.ntce_instt_nm | e }}" data-kw="{{ b.matched_keyword | e }}" data-clse="{{ (b.bid_clse_dt or '')[:8] }}">
+        <tr data-nm="{{ b.bid_ntce_nm | e }}" data-instt="{{ b.ntce_instt_nm | e }}" data-kw="{{ b.matched_keyword | e }}" data-clse="{{ (b.bid_clse_dt or '')[:8] }}" data-prce="{{ b.presmpt_prce or '0' }}" data-created="{{ (b.created_at or '')[:10] }}">
           <td>
             <div class="bid-nm">
               <a href="{{ b.ntce_url if b.ntce_url else 'https://www.g2b.go.kr/index.jsp?bidNtceNo=' + b.bid_ntce_no }}"
@@ -502,6 +502,35 @@ function clearSearch(){
   applySearch();
 }
 function filterBids(){ applySearch(); }
+let _sortCol=null, _sortDir=1;
+function sortBy(col){
+  if(_sortCol===col) _sortDir*=-1;
+  else{ _sortCol=col; _sortDir=-1; }  // 첫 클릭: 내림차순(높은/최신/늦은 순)
+  const tbody=document.getElementById('bid-tbody');
+  const rows=Array.from(tbody.querySelectorAll('tr[data-nm]'));
+  rows.sort((a,b)=>{
+    let va,vb;
+    if(col==='prce'){
+      va=parseFloat(a.dataset.prce)||0;
+      vb=parseFloat(b.dataset.prce)||0;
+    } else if(col==='clse'){
+      // 마감일 없는 항목은 항상 맨 뒤
+      va=a.dataset.clse||'99999999';
+      vb=b.dataset.clse||'99999999';
+    } else {
+      va=a.dataset.created||'';
+      vb=b.dataset.created||'';
+    }
+    if(va<vb) return _sortDir;
+    if(va>vb) return -_sortDir;
+    return 0;
+  });
+  rows.forEach(r=>tbody.appendChild(r));
+  ['prce','clse','created'].forEach(c=>{
+    const el=document.getElementById('sort-'+c);
+    if(el) el.textContent=c===col?(_sortDir===-1?' ▼':' ▲'):'';
+  });
+}
 function toggleExpired(cb){
   const url=new URL(window.location);
   url.searchParams.set('hide_expired', cb.checked?'1':'0');
