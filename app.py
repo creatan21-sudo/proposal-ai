@@ -4285,7 +4285,7 @@ def nara_search_by_no():
         result_box[0] = fetch_bid_by_no(bid_no)
     t = threading.Thread(target=_search, daemon=True)
     t.start()
-    t.join(timeout=60)
+    t.join(timeout=30)
     if t.is_alive():
         return jsonify({"ok": False, "error": "검색 시간이 초과되었습니다 (20초). 잠시 후 다시 시도하세요."})
     if result_box[0]:

@@ -6,6 +6,7 @@ import time
 import urllib.request
 import urllib.parse
 import json
+import concurrent.futures
 from datetime import datetime, timedelta
 
 NARA_API_KEY = os.environ.get("NARA_API_KEY", "")
@@ -410,8 +411,43 @@ _BASE_SERIAL = 1_544_446
 _BASE_DATE   = datetime(2026, 5, 27)
 _DAILY_RATE  = 1_841
 
+
+def _fetch_page(key: str, from_date: str, to_date: str, page: int, rows: int) -> tuple:
+    """단일 페이지 조회. (items, total) 반환."""
+    params = {
+        "numOfRows":  str(rows),
+        "pageNo":     str(page),
+        "inqryDiv":   "1",
+        "inqryBgnDt": from_date,
+        "inqryEndDt": to_date,
+        "type":       "json",
+    }
+    other_params = urllib.parse.urlencode(params)
+    decoded_key  = urllib.parse.unquote(key)
+    url = (NARA_API_URL
+           + "?serviceKey=" + urllib.parse.quote(decoded_key, safe='')
+           + "&" + other_params)
+    try:
+        req = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            raw = resp.read().decode("utf-8")
+        data  = json.loads(raw)
+        body  = data.get("response", {}).get("body", {})
+        total = int(body.get("totalCount", 0) or 0)
+        items = body.get("items", [])
+        if isinstance(items, dict):
+            items = items.get("item", [])
+            if isinstance(items, dict):
+                items = [items]
+        elif not isinstance(items, list):
+            items = []
+        return items, total
+    except:
+        return [], 0
+
+
 def fetch_bid_by_no(bid_ntce_no: str) -> dict | None:
-    """역추산으로 등록일 추정 후 ±2일을 하루씩 검색."""
+    """역추산 ±1일, 첫 페이지 확인 후 나머지 페이지 병렬 조회."""
     key = os.environ.get("NARA_API_KEY", "")
     if not key:
         return None
@@ -423,52 +459,36 @@ def fetch_bid_by_no(bid_ntce_no: str) -> dict | None:
     except:
         estimated = datetime.now()
 
-    for delta in range(-2, 3):  # ±2일, 총 5일
+    for delta in range(-1, 2):  # ±1일, 총 3일
         target    = estimated + timedelta(days=delta)
         from_date = target.strftime("%Y%m%d") + "0000"
         to_date   = target.strftime("%Y%m%d") + "2359"
         print(f"[nara 번호검색] {bid_ntce_no} — {target.strftime('%Y-%m-%d')} 검색")
 
-        page = 1
-        while page <= 10:
-            params = {
-                "numOfRows":  "100",
-                "pageNo":     str(page),
-                "inqryDiv":   "1",
-                "inqryBgnDt": from_date,
-                "inqryEndDt": to_date,
-                "type":       "json",
+        first_items, total = _fetch_page(key, from_date, to_date, 1, 100)
+        if not first_items:
+            continue
+
+        for item in first_items:
+            if item.get("bidNtceNo") == bid_ntce_no:
+                print(f"[nara 번호검색] 발견! {bid_ntce_no}")
+                return _normalize(item)
+
+        total_pages = (total + 99) // 100
+        if total_pages <= 1:
+            continue
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            futures = {
+                executor.submit(_fetch_page, key, from_date, to_date, p, 100): p
+                for p in range(2, min(total_pages + 1, 11))
             }
-            other_params = urllib.parse.urlencode(params)
-            decoded_key  = urllib.parse.unquote(key)
-            url = (NARA_API_URL
-                   + "?serviceKey=" + urllib.parse.quote(decoded_key, safe='')
-                   + "&" + other_params)
-            try:
-                req = urllib.request.Request(url, headers={"Accept": "application/json"})
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    raw = resp.read().decode("utf-8")
-                data  = json.loads(raw)
-                body  = data.get("response", {}).get("body", {})
-                total = int(body.get("totalCount", 0) or 0)
-                items = body.get("items", [])
-                if isinstance(items, dict):
-                    items = items.get("item", [])
-                    if isinstance(items, dict):
-                        items = [items]
-                elif not isinstance(items, list):
-                    items = []
-                print(f"  페이지{page}: {len(items)}건 (전체 {total})")
+            for future in concurrent.futures.as_completed(futures):
+                items, _ = future.result()
                 for item in items:
-                    if item.get("bidNtceNo", "") == bid_ntce_no:
+                    if item.get("bidNtceNo") == bid_ntce_no:
                         print(f"[nara 번호검색] 발견! {bid_ntce_no}")
                         return _normalize(item)
-                if not items or len(items) < 100:
-                    break
-                page += 1
-            except Exception as e:
-                print(f"[nara 번호검색] 오류: {e}")
-                break
 
     print(f"[nara 번호검색] {bid_ntce_no} — 결과 없음")
     return None
