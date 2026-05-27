@@ -129,21 +129,6 @@
       {% endif %}
     </div>
   </div>
-  <!-- 전체 공고 수집 -->
-  {% if session.get('role') in ('admin', 'operator') %}
-  <div class="kw-section" style="margin-top:10px;">
-    <h3>📥 전체 공고 수집</h3>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-      <button class="btn btn-scan" onclick="collectAll()">📥 오늘 전체 수집</button>
-      <input type="date" id="collect-date"
-             style="padding:7px 10px;border:1px solid #d1d5db;border-radius:7px;font-size:13px;outline:none;"
-             onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#d1d5db'">
-      <button class="btn btn-primary" onclick="collectDate()">날짜 수집</button>
-      <span style="font-size:12px;color:#9ca3af;">하루 약 1,800건 · 수분 소요</span>
-    </div>
-  </div>
-  {% endif %}
-
   <div class="bid-header">
     <h3>📌 수집된 공고 <span class="bid-count" id="bid-count">({{ bids|length }}건)</span></h3>
     <div class="bid-filter">
@@ -524,20 +509,6 @@ function clearSearch(){
   applySearch();
 }
 function filterBids(){ applySearch(); }
-async function collectAll(){
-  if(!confirm('오늘 전체 공고를 수집합니다. 수분 소요됩니다.')) return;
-  const r = await fetch('/nara/collect_all',{method:'POST'});
-  const d = await r.json();
-  showToast(d.message || (d.ok?'수집 시작!':'오류'), d.ok);
-}
-async function collectDate(){
-  const date = document.getElementById('collect-date')?.value;
-  if(!date){ showToast('날짜를 선택하세요', false); return; }
-  if(!confirm(`${date} 공고를 수집합니다.`)) return;
-  const r = await fetch('/nara/collect_date',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date})});
-  const d = await r.json();
-  showToast(d.message || (d.ok?'수집 시작!':'오류'), d.ok);
-}
 function toggleExpired(cb){
   const url=new URL(window.location);
   url.searchParams.set('hide_expired', cb.checked?'1':'0');

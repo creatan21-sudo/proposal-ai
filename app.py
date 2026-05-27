@@ -68,7 +68,7 @@ from database.db import (
 from output.txt_writer import write_txt
 from utils.telegram_notify import send_telegram
 from config import GAMMA_API_KEY
-from utils.nara import manual_scan, fetch_bid_by_no, collect_all_bids
+from utils.nara import manual_scan, fetch_bid_by_no, start_scheduler
 from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           get_nara_settings, save_nara_settings,
                           add_nara_candidate, list_nara_candidates, delete_nara_candidate,
@@ -108,6 +108,7 @@ with app.app_context():
     init_db()
     init_users()
 
+start_scheduler(app)
 
 VIDEO_TYPES = ["홍보영상", "다큐멘터리", "교육영상", "캠페인영상", "뉴스형영상"]
 ALLOWED_EXT     = {".hwp", ".hwpx", ".pdf", ".txt"}
@@ -4122,30 +4123,6 @@ def nara_manual_scan():
             manual_scan()
     threading.Thread(target=_scan, daemon=True).start()
     return jsonify({"ok": True, "message": "스캔 시작! 잠시 후 목록을 확인하세요."})
-
-@app.route("/nara/collect_all", methods=["POST"])
-@operator_or_admin_required
-def nara_collect_all():
-    import threading
-    def _collect():
-        with app.app_context():
-            collect_all_bids()
-    threading.Thread(target=_collect, daemon=True).start()
-    return jsonify({"ok": True, "message": "전체 수집 시작! 완료까지 수분 소요됩니다."})
-
-@app.route("/nara/collect_date", methods=["POST"])
-@operator_or_admin_required
-def nara_collect_date():
-    import threading
-    data        = request.get_json(force=True) or {}
-    target_date = (data.get("date") or "").replace("-", "")
-    if not target_date:
-        return jsonify({"ok": False, "error": "날짜를 입력하세요"})
-    def _collect():
-        with app.app_context():
-            collect_all_bids(target_date)
-    threading.Thread(target=_collect, daemon=True).start()
-    return jsonify({"ok": True, "message": f"{target_date} 수집 시작!"})
 
 @app.route("/nara/bids")
 @login_required

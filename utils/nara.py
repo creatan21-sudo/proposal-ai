@@ -251,7 +251,38 @@ def _normalize(item: dict) -> dict:
 # ─────────────────────────────────────────────
 
 def start_scheduler(app=None):
-    pass  # 자동 스캔 비활성화 — 수동 스캔만 사용
+    import threading
+
+    def _run():
+        time.sleep(10)
+        try:
+            if app:
+                with app.app_context():
+                    collect_all_bids()
+            else:
+                collect_all_bids()
+        except Exception as e:
+            print(f"[nara 초기수집] 오류: {e}")
+
+        while True:
+            now      = datetime.utcnow()
+            next_run = now.replace(hour=18, minute=0, second=0, microsecond=0)
+            if now >= next_run:
+                next_run += timedelta(days=1)
+            wait_seconds = (next_run - now).total_seconds()
+            print(f"[nara 스케줄러] 다음 수집: {next_run} UTC ({wait_seconds/3600:.1f}시간 후)")
+            time.sleep(wait_seconds)
+            try:
+                if app:
+                    with app.app_context():
+                        collect_all_bids()
+                else:
+                    collect_all_bids()
+            except Exception as e:
+                print(f"[nara 스케줄러] 오류: {e}")
+
+    threading.Thread(target=_run, daemon=True).start()
+    print("[nara 스케줄러] 시작 — 초기수집 후 매일 새벽 3시 자동 수집")
 
 
 def _run_scan():
@@ -539,4 +570,26 @@ def collect_all_bids(target_date: str = None) -> int:
         page += 1
 
     print(f"[nara 전체수집] 완료 — 신규 {new_count}건 저장")
+
+    # 30일 이전 공고 자동 정리 (후보/픽업/확정 등록 공고는 보호)
+    from database.db import get_connection
+    with get_connection() as conn:
+        protected = set()
+        for table in ['nara_candidates', 'nara_pickups', 'nara_confirmed']:
+            try:
+                rows = conn.execute(f"SELECT bid_ntce_no FROM {table}").fetchall()
+                protected.update(r[0] for r in rows if r[0])
+            except:
+                pass
+        if protected:
+            placeholders = ','.join('?' * len(protected))
+            conn.execute(
+                f"DELETE FROM nara_bids WHERE created_at < datetime('now', '-30 days') "
+                f"AND bid_ntce_no NOT IN ({placeholders})",
+                list(protected),
+            )
+        else:
+            conn.execute("DELETE FROM nara_bids WHERE created_at < datetime('now', '-30 days')")
+        print(f"[nara 정리] 30일 이전 공고 삭제 완료 (보호: {len(protected)}건)")
+
     return new_count
