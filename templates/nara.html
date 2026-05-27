@@ -174,11 +174,6 @@
            oninput="applySearch()" value="{{ search_instt or '' }}"
            style="flex:1;min-width:120px;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;outline:none;"
            onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#d1d5db'">
-    <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;white-space:nowrap;">
-      <input type="checkbox" id="ai-filter" onchange="applySearch()"
-             style="width:14px;height:14px;cursor:pointer;">
-      AI 필터만
-    </label>
     <button class="btn btn-primary" onclick="applySearch()" style="padding:8px 16px;font-size:13px;">🔍 검색</button>
     <button onclick="clearSearch()" style="padding:8px 14px;font-size:13px;background:#fff;border:1px solid #d1d5db;border-radius:8px;cursor:pointer;color:#6b7280;">초기화</button>
   </div>
@@ -478,7 +473,6 @@ function applySearch(){
   const instt       = (document.getElementById('search-instt')?.value||'').toLowerCase();
   const kw          = document.getElementById('kw-filter')?.value||'';
   const hideExpired = document.getElementById('hide-expired')?.checked;
-  const aiFilter    = document.getElementById('ai-filter')?.checked;
   const clseUntil   = (document.getElementById('clse-until')?.value||'').replace(/-/g,'');
   const today       = new Date().toISOString().slice(0,10).replace(/-/g,'');
   let count = 0;
@@ -494,7 +488,7 @@ function applySearch(){
                && (!kw || trKw === kw)
                && (!hideExpired || !expired)
                && withinUntil
-               && (!aiFilter || trKw !== '전체수집');
+               ;
     tr.style.display = match ? '' : 'none';
     if(match) count++;
   });
@@ -505,7 +499,6 @@ function clearSearch(){
   document.getElementById('search-instt').value='';
   document.getElementById('kw-filter').value='';
   document.getElementById('clse-until').value='';
-  const ai = document.getElementById('ai-filter'); if(ai) ai.checked=false;
   applySearch();
 }
 function filterBids(){ applySearch(); }
