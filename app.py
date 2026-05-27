@@ -1913,6 +1913,37 @@ def my_change_password():
 # 프로필 (텔레그램 Chat ID 설정)
 # ─────────────────────────────────────────────
 
+@app.route("/schedule")
+@login_required
+def schedule_page():
+    from database.db import get_connection
+    with get_connection() as conn:
+        confirmed = conn.execute("""
+            SELECT cf.id,
+                   COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm) as bid_ntce_nm,
+                   COALESCE(pk.ntce_instt_nm, ca.ntce_instt_nm) as ntce_instt_nm,
+                   COALESCE(pk.bid_clse_dt, ca.bid_clse_dt) as bid_clse_dt,
+                   cf.assignee, cf.confirmed_by, cf.created_at,
+                   bi.submit_deadline, bi.submit_method
+            FROM nara_confirmed cf
+            LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
+            LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
+            LEFT JOIN confirmed_bid_info bi ON bi.confirmed_id = cf.id
+            ORDER BY COALESCE(pk.bid_clse_dt, ca.bid_clse_dt) ASC
+        """).fetchall()
+        schedules = conn.execute("""
+            SELECT s.*, COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm) as bid_ntce_nm
+            FROM confirmed_schedule s
+            JOIN nara_confirmed cf ON cf.id = s.confirmed_id
+            LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
+            LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
+            ORDER BY s.due_date ASC
+        """).fetchall()
+    return render_template("schedule.html",
+                           confirmed=[dict(r) for r in confirmed],
+                           schedules=[dict(r) for r in schedules])
+
+
 @app.route("/profile", methods=["GET", "POST"])
 @login_required
 def profile():
