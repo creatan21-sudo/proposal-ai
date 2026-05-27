@@ -254,18 +254,42 @@
   {% endif %}
 </div>
 
-<!-- 공고번호 검색 결과 모달 -->
+<!-- 공고번호 직접 입력 후보 등록 모달 -->
 <div class="modal-overlay" id="bid-no-modal" onclick="if(event.target===this)closeBidNoModal()">
   <div class="modal-box" style="width:520px;">
-    <div class="modal-title">🔎 공고번호 검색 결과</div>
-    <div id="bid-no-result" style="margin-bottom:16px;"></div>
-    <div id="bid-no-reason-wrap" style="display:none;">
-      <div class="modal-label">후보 등록 이유 <span style="color:#9ca3af;font-weight:400;">(필수)</span></div>
-      <textarea id="bid-no-reason" class="modal-textarea" rows="3" placeholder="예: 수주 가능성 높음, 전문 분야 등"></textarea>
+    <div class="modal-title">📌 공고번호로 후보 등록</div>
+    <div style="margin-bottom:14px;">
+      <div class="modal-label">공고번호</div>
+      <input type="text" id="bno-no" class="modal-textarea" readonly
+             style="resize:none;height:auto;padding:8px 12px;background:#f9fafb;color:#6b7280;font-size:13px;">
+      <a id="bno-g2b-link" href="#" target="_blank"
+         style="display:inline-block;margin-top:6px;font-size:12px;color:#4f46e5;text-decoration:underline;">
+        🔗 나라장터에서 확인 →
+      </a>
     </div>
-    <div class="modal-btns" style="margin-top:14px;">
-      <button onclick="closeBidNoModal()" style="padding:8px 18px;background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:7px;cursor:pointer;font-size:13px;">닫기</button>
-      <button id="bid-no-add-btn" onclick="addBidNoToCandidate()" style="display:none;padding:8px 20px;background:#4f46e5;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">📌 후보 등록</button>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
+      <div>
+        <div class="modal-label">공고명 <span style="color:#ef4444;">*</span></div>
+        <input type="text" id="bno-nm" class="modal-textarea" style="resize:none;height:auto;padding:8px 12px;font-size:13px;" placeholder="공고명 입력">
+      </div>
+      <div>
+        <div class="modal-label">발주처 <span style="color:#ef4444;">*</span></div>
+        <input type="text" id="bno-instt" class="modal-textarea" style="resize:none;height:auto;padding:8px 12px;font-size:13px;" placeholder="발주처 입력">
+      </div>
+      <div>
+        <div class="modal-label">예산 <span style="color:#9ca3af;font-weight:400;">(선택)</span></div>
+        <input type="number" id="bno-prce" class="modal-textarea" style="resize:none;height:auto;padding:8px 12px;font-size:13px;" placeholder="원 단위 숫자">
+      </div>
+      <div>
+        <div class="modal-label">마감일 <span style="color:#9ca3af;font-weight:400;">(선택)</span></div>
+        <input type="date" id="bno-clse" class="modal-textarea" style="resize:none;height:auto;padding:8px 10px;font-size:13px;">
+      </div>
+    </div>
+    <div class="modal-label">등록 이유 <span style="color:#9ca3af;font-weight:400;">(필수)</span></div>
+    <textarea id="bno-reason" class="modal-textarea" rows="3" placeholder="예: 수주 가능성 높음, 전문 분야 등"></textarea>
+    <div class="modal-btns">
+      <button onclick="closeBidNoModal()" style="padding:8px 18px;background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:7px;cursor:pointer;font-size:13px;">취소</button>
+      <button id="bno-submit-btn" onclick="submitBidNoCandidate()" style="padding:8px 20px;background:#4f46e5;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">📌 후보 등록</button>
     </div>
   </div>
 </div>
@@ -288,56 +312,44 @@
 <script>
 const _CAND_NOS = new Set({{ candidate_nos | list | tojson }});
 
-/* ── 공고번호 직접 검색 ── */
-let _bidNoResult = null;
-async function searchByBidNo(){
+/* ── 공고번호 직접 입력 후보 등록 ── */
+function searchByBidNo(){
   const bidNo = document.getElementById('search-bid-no').value.trim();
   if(!bidNo){ showToast('공고번호를 입력하세요', false); return; }
-  document.getElementById('bid-no-result').innerHTML = '<span style="color:#6b7280;font-size:13px;">⏳ 검색 중...</span>';
-  document.getElementById('bid-no-reason-wrap').style.display='none';
-  document.getElementById('bid-no-add-btn').style.display='none';
+  const g2bUrl = `https://www.g2b.go.kr/link/PNPE027_01/?bidPbancNo=${encodeURIComponent(bidNo)}&bidPbancOrd=000`;
+  document.getElementById('bno-no').value    = bidNo;
+  document.getElementById('bno-g2b-link').href = g2bUrl;
+  document.getElementById('bno-nm').value    = '';
+  document.getElementById('bno-instt').value = '';
+  document.getElementById('bno-prce').value  = '';
+  document.getElementById('bno-clse').value  = '';
+  document.getElementById('bno-reason').value= '';
   document.getElementById('bid-no-modal').classList.add('open');
-  try{
-    const r = await fetch('/nara/search_by_no',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({bid_no:bidNo})});
-    const d = await r.json();
-    if(d.ok && d.bid){
-      _bidNoResult = d.bid;
-      const b = d.bid;
-      const prce = b.presmpt_prce&&!isNaN(b.presmpt_prce)?Number(b.presmpt_prce).toLocaleString()+'원':'-';
-      document.getElementById('bid-no-result').innerHTML = `
-        <div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:14px;">
-          <div style="font-weight:700;color:#1d4ed8;margin-bottom:8px;font-size:14px;">${b.bid_ntce_nm||'-'}</div>
-          <div style="font-size:12px;color:#6b7280;display:grid;grid-template-columns:80px 1fr;gap:4px 8px;">
-            <span style="font-weight:600;">공고번호</span><span>${b.bid_ntce_no||'-'}</span>
-            <span style="font-weight:600;">발주처</span><span>${b.ntce_instt_nm||'-'}</span>
-            <span style="font-weight:600;">추정가격</span><span style="color:#059669;font-weight:600;">${prce}</span>
-            <span style="font-weight:600;">마감일</span><span>${(b.bid_clse_dt||'-').slice(0,10)}</span>
-          </div>
-          ${b.ntce_url?`<a href="${b.ntce_url}" target="_blank" style="display:inline-block;margin-top:10px;font-size:12px;color:#4f46e5;text-decoration:underline;">🔗 공고 바로가기</a>`:''}
-        </div>`;
-      document.getElementById('bid-no-reason-wrap').style.display='block';
-      document.getElementById('bid-no-add-btn').style.display='inline-block';
-      document.getElementById('bid-no-reason').value='';
-    } else {
-      _bidNoResult = null;
-      document.getElementById('bid-no-result').innerHTML = `<span style="color:#ef4444;font-size:13px;">❌ ${d.error||'공고를 찾을 수 없습니다'}</span>`;
-    }
-  }catch(e){
-    document.getElementById('bid-no-result').innerHTML = `<span style="color:#ef4444;font-size:13px;">오류: ${e}</span>`;
-  }
+  setTimeout(()=>document.getElementById('bno-nm').focus(), 50);
 }
-function closeBidNoModal(){ document.getElementById('bid-no-modal').classList.remove('open'); _bidNoResult=null; }
-async function addBidNoToCandidate(){
-  if(!_bidNoResult) return;
-  const reason = document.getElementById('bid-no-reason').value.trim();
+function closeBidNoModal(){ document.getElementById('bid-no-modal').classList.remove('open'); }
+async function submitBidNoCandidate(){
+  const bidNo  = document.getElementById('bno-no').value.trim();
+  const nm     = document.getElementById('bno-nm').value.trim();
+  const instt  = document.getElementById('bno-instt').value.trim();
+  const reason = document.getElementById('bno-reason').value.trim();
+  if(!nm){    showToast('공고명을 입력하세요', false); return; }
+  if(!instt){  showToast('발주처를 입력하세요', false); return; }
   if(!reason){ showToast('등록 이유를 입력하세요', false); return; }
-  const btn = document.getElementById('bid-no-add-btn');
+  const prce  = document.getElementById('bno-prce').value.trim();
+  const clse  = document.getElementById('bno-clse').value;
+  const g2bUrl= `https://www.g2b.go.kr/link/PNPE027_01/?bidPbancNo=${encodeURIComponent(bidNo)}&bidPbancOrd=000`;
+  const btn = document.getElementById('bno-submit-btn');
   btn.disabled=true; btn.textContent='등록 중...';
   try{
     const r = await fetch('/nara/add_to_candidates',{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({..._bidNoResult, reason})});
+      body:JSON.stringify({
+        bid_ntce_no: bidNo, bid_ntce_nm: nm, ntce_instt_nm: instt,
+        presmpt_prce: prce, bid_clse_dt: clse,
+        ntce_url: g2bUrl, matched_keyword: '', reason
+      })});
     const d = await r.json();
-    if(d.ok){ closeBidNoModal(); showToast('후보로 등록되었습니다'); _CAND_NOS.add(_bidNoResult.bid_ntce_no); }
+    if(d.ok){ closeBidNoModal(); showToast('후보로 등록되었습니다'); _CAND_NOS.add(bidNo); }
     else showToast(d.error||'등록 실패', false);
   }catch(e){ showToast('오류: '+e, false); }
   btn.disabled=false; btn.textContent='📌 후보 등록';
