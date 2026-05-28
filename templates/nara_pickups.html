@@ -13,7 +13,8 @@
 .bid-table th{background:#f3f4f6;padding:10px 12px;text-align:left;font-weight:600;color:#374151;border-bottom:1px solid #e5e7eb}
 .bid-table td{padding:11px 12px;border-bottom:1px solid #f3f4f6;vertical-align:top;color:#374151}
 .bid-table tr:hover td{background:#fafafa}
-.bid-nm a{color:#2563eb;text-decoration:underline;font-weight:600;}
+.bid-nm-link{color:#2563eb;font-weight:600;cursor:pointer;text-decoration:underline;}
+.bid-nm-link:hover{color:#1d4ed8;}
 .bid-prce{font-weight:600;color:#059669;}
 .bid-date{color:#6b7280;font-size:12px;}
 .bid-empty{text-align:center;padding:48px;color:#9ca3af;font-size:14px}
@@ -22,11 +23,14 @@
 .btn-confirm:hover{background:#3730a3;}
 .btn-del{background:#fff;color:#ef4444;border:1px solid #fca5a5;}
 .btn-del:hover{background:#fef2f2;}
+/* 공통 모달 */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;}
 .modal-overlay.open{display:flex;}
 .modal-box{background:#fff;border-radius:14px;padding:0;width:480px;max-width:94vw;max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.25);}
-.modal-head{padding:20px 24px 14px;border-bottom:1px solid #e5e7eb;flex-shrink:0;}
-.modal-title{font-weight:700;font-size:16px;margin:0 0 4px;}
+.modal-head{padding:20px 24px 14px;border-bottom:1px solid #e5e7eb;flex-shrink:0;display:flex;justify-content:space-between;align-items:flex-start;gap:12px;}
+.modal-title{font-weight:700;font-size:15px;color:#111827;flex:1;line-height:1.4;}
+.modal-close{background:none;border:none;font-size:20px;color:#9ca3af;cursor:pointer;line-height:1;padding:0;flex-shrink:0;}
+.modal-close:hover{color:#374151;}
 .modal-nm{font-size:13px;font-weight:600;color:#1d4ed8;}
 .modal-body{flex:1;overflow-y:auto;padding:16px 24px;}
 .modal-foot{padding:14px 24px;border-top:1px solid #e5e7eb;flex-shrink:0;}
@@ -35,6 +39,13 @@
 .modal-textarea:focus{outline:none;border-color:#4f46e5;}
 .modal-select{width:100%;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;background:#fff;margin-bottom:14px;}
 .modal-btns{display:flex;gap:8px;justify-content:flex-end;}
+/* 상세 팝업 */
+.detail-row{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid #f3f4f6;font-size:13px;}
+.detail-row:last-child{border-bottom:none;}
+.detail-label{color:#9ca3af;font-weight:600;min-width:70px;flex-shrink:0;}
+.detail-value{color:#111827;}
+.reason-box{background:#f9fafb;border-radius:8px;padding:12px;font-size:13px;color:#374151;line-height:1.6;white-space:pre-wrap;margin-top:4px;}
+/* 페이지네이션 */
 .pagination{display:flex;gap:4px;justify-content:center;margin-top:20px;flex-wrap:wrap;}
 .page-btn{padding:6px 12px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;color:#374151;background:#fff;cursor:pointer;text-decoration:none;transition:all .15s;}
 .page-btn:hover{background:#f3f4f6;}
@@ -59,14 +70,13 @@
   <table class="bid-table">
     <thead>
       <tr>
-        <th style="width:28%">공고명</th>
-        <th style="width:14%">발주처</th>
-        <th style="width:10%">추정가격</th>
-        <th style="width:10%">마감일</th>
+        <th style="width:32%">공고명</th>
+        <th style="width:16%">발주처</th>
+        <th style="width:11%">추정가격</th>
+        <th style="width:11%">마감일</th>
         <th style="width:9%">등록자</th>
-        <th style="width:14%">픽업 이유</th>
-        <th style="width:8%">등록일</th>
-        <th style="width:10%">액션</th>
+        <th style="width:9%">등록일</th>
+        <th style="width:12%">액션</th>
       </tr>
     </thead>
     <tbody>
@@ -74,15 +84,23 @@
         {% for p in pickups %}
         <tr id="pickup-row-{{ p.id }}">
           <td class="bid-nm">
-            <a href="{{ p.ntce_url if p.ntce_url else 'https://www.g2b.go.kr/index.jsp?bidNtceNo=' + p.bid_ntce_no }}" target="_blank">
+            <span class="bid-nm-link"
+              onclick="openDetailModal(
+                '{{ p.bid_ntce_nm | replace("'", "\\'") | e }}',
+                '{{ p.ntce_instt_nm | replace("'", "\\'") | e }}',
+                '{{ p.presmpt_prce | e }}',
+                '{{ (p.bid_clse_dt or '')[:10] }}',
+                '{{ p.registered_by | replace("'", "\\'") | e }}',
+                '{{ p.reason | replace("'", "\\'") | e }}',
+                '{{ p.bid_ntce_no | e }}'
+              )">
               {{ p.bid_ntce_nm or '-' }}
-            </a>
+            </span>
           </td>
           <td>{{ p.ntce_instt_nm or '-' }}</td>
           <td class="bid-prce">{% if p.presmpt_prce and p.presmpt_prce.isdigit() %}{{ '{:,}'.format(p.presmpt_prce|int) }}원{% else %}-{% endif %}</td>
           <td class="bid-date">{{ (p.bid_clse_dt or '-')[:10] }}</td>
           <td style="font-size:12px;">{{ p.registered_by or '-' }}</td>
-          <td style="font-size:12px;color:#6b7280;max-width:160px;">{{ p.reason or '-' }}</td>
           <td class="bid-date">{{ (p.created_at or '-')[:10] }}</td>
           <td style="display:flex;gap:4px;flex-wrap:wrap;">
             {% if is_ops %}
@@ -96,7 +114,7 @@
         </tr>
         {% endfor %}
       {% else %}
-        <tr><td colspan="8" class="bid-empty">픽업된 공고가 없습니다</td></tr>
+        <tr><td colspan="7" class="bid-empty">픽업된 공고가 없습니다</td></tr>
       {% endif %}
     </tbody>
   </table>
@@ -112,14 +130,41 @@
   {% endif %}
 </div>
 
+<!-- 공고 상세 팝업 -->
+<div class="modal-overlay" id="detail-modal" onclick="if(event.target===this)closeDetailModal()">
+  <div class="modal-box">
+    <div class="modal-head">
+      <div class="modal-title" id="detail-nm"></div>
+      <button class="modal-close" onclick="closeDetailModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="detail-row"><span class="detail-label">발주처</span><span class="detail-value" id="detail-instt"></span></div>
+      <div class="detail-row"><span class="detail-label">추정가격</span><span class="detail-value" id="detail-prce"></span></div>
+      <div class="detail-row"><span class="detail-label">마감일</span><span class="detail-value" id="detail-clse"></span></div>
+      <div class="detail-row"><span class="detail-label">등록자</span><span class="detail-value" id="detail-reg"></span></div>
+      <div style="margin-top:14px;">
+        <div class="modal-label">픽업 이유</div>
+        <div class="reason-box" id="detail-reason"></div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <a id="detail-g2b-link" href="#" target="_blank"
+         style="display:inline-block;padding:8px 16px;background:#f0fdf4;color:#065f46;border:1px solid #86efac;border-radius:7px;font-size:13px;font-weight:600;text-decoration:none;">
+        🔗 공고 원문 보기 →
+      </a>
+    </div>
+  </div>
+</div>
+
 <!-- 확정 모달 -->
 <div class="modal-overlay" id="confirm-modal" onclick="if(event.target===this)closeConfirmModal()">
   <div class="modal-box">
     <div class="modal-head">
       <div class="modal-title">✅ 확정 처리</div>
-      <div class="modal-nm" id="confirm-modal-nm"></div>
+      <button class="modal-close" onclick="closeConfirmModal()">×</button>
     </div>
     <div class="modal-body">
+      <div class="modal-nm" id="confirm-modal-nm" style="margin-bottom:14px;"></div>
       <div class="modal-label">담당자를 지정하세요</div>
       <select id="confirm-assignee" class="modal-select">
         <option value="">-- 담당자 선택 --</option>
@@ -140,6 +185,21 @@
 <script>
 function showToast(msg,ok=true){const t=document.getElementById('toast');t.textContent=msg;t.style.background=ok?'#1f2937':'#b91c1c';t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800)}
 
+/* ── 상세 팝업 ── */
+function openDetailModal(nm, instt, prce, clse, reg, reason, bidNo){
+  document.getElementById('detail-nm').textContent     = nm || '-';
+  document.getElementById('detail-instt').textContent  = instt || '-';
+  document.getElementById('detail-prce').textContent   = prce && /^\d+$/.test(prce) ? Number(prce).toLocaleString()+'원' : (prce || '-');
+  document.getElementById('detail-clse').textContent   = clse || '-';
+  document.getElementById('detail-reg').textContent    = reg || '-';
+  document.getElementById('detail-reason').textContent = reason || '-';
+  document.getElementById('detail-g2b-link').href =
+    `https://www.g2b.go.kr/link/PNPE027_01/?bidPbancNo=${encodeURIComponent(bidNo)}&bidPbancOrd=000`;
+  document.getElementById('detail-modal').classList.add('open');
+}
+function closeDetailModal(){ document.getElementById('detail-modal').classList.remove('open'); }
+
+/* ── 확정 모달 ── */
 let _confirmPickupId = null;
 async function openConfirmModal(btn){
   _confirmPickupId = parseInt(btn.dataset.id);
