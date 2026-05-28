@@ -82,18 +82,16 @@
     <tbody>
       {% if pickups %}
         {% for p in pickups %}
-        <tr id="pickup-row-{{ p.id }}">
+        <tr id="pickup-row-{{ p.id }}"
+            data-no="{{ p.bid_ntce_no | e }}"
+            data-nm="{{ p.bid_ntce_nm | e }}"
+            data-instt="{{ p.ntce_instt_nm | e }}"
+            data-prce="{{ p.presmpt_prce | e }}"
+            data-clse="{{ (p.bid_clse_dt or '')[:10] }}"
+            data-reason="{{ p.reason | e }}"
+            data-by="{{ p.registered_by | e }}">
           <td class="bid-nm">
-            <span class="bid-nm-link"
-              onclick="openDetailModal(
-                '{{ p.bid_ntce_nm | replace("'", "\\'") | e }}',
-                '{{ p.ntce_instt_nm | replace("'", "\\'") | e }}',
-                '{{ p.presmpt_prce | e }}',
-                '{{ (p.bid_clse_dt or '')[:10] }}',
-                '{{ p.registered_by | replace("'", "\\'") | e }}',
-                '{{ p.reason | replace("'", "\\'") | e }}',
-                '{{ p.bid_ntce_no | e }}'
-              )">
+            <span class="bid-nm-link" onclick="openPickupDetail(this.closest('tr'))">
               {{ p.bid_ntce_nm or '-' }}
             </span>
           </td>
@@ -186,15 +184,22 @@
 function showToast(msg,ok=true){const t=document.getElementById('toast');t.textContent=msg;t.style.background=ok?'#1f2937':'#b91c1c';t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800)}
 
 /* ── 상세 팝업 ── */
-function openDetailModal(nm, instt, prce, clse, reg, reason, bidNo){
-  document.getElementById('detail-nm').textContent     = nm || '-';
-  document.getElementById('detail-instt').textContent  = instt || '-';
+function openPickupDetail(row){
+  const no     = row.dataset.no     || '';
+  const nm     = row.dataset.nm     || '-';
+  const instt  = row.dataset.instt  || '-';
+  const prce   = row.dataset.prce   || '';
+  const clse   = row.dataset.clse   || '-';
+  const reason = row.dataset.reason || '-';
+  const by     = row.dataset.by     || '-';
+  document.getElementById('detail-nm').textContent     = nm;
+  document.getElementById('detail-instt').textContent  = instt;
   document.getElementById('detail-prce').textContent   = prce && /^\d+$/.test(prce) ? Number(prce).toLocaleString()+'원' : (prce || '-');
-  document.getElementById('detail-clse').textContent   = clse || '-';
-  document.getElementById('detail-reg').textContent    = reg || '-';
-  document.getElementById('detail-reason').textContent = reason || '-';
+  document.getElementById('detail-clse').textContent   = clse;
+  document.getElementById('detail-reg').textContent    = by;
+  document.getElementById('detail-reason').textContent = reason;
   document.getElementById('detail-g2b-link').href =
-    `https://www.g2b.go.kr/link/PNPE027_01/?bidPbancNo=${encodeURIComponent(bidNo)}&bidPbancOrd=000`;
+    `https://www.g2b.go.kr/link/PNPE027_01/?bidPbancNo=${encodeURIComponent(no)}&bidPbancOrd=000`;
   document.getElementById('detail-modal').classList.add('open');
 }
 function closeDetailModal(){ document.getElementById('detail-modal').classList.remove('open'); }
