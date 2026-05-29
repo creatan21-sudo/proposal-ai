@@ -4278,13 +4278,15 @@ def nara_candidate_delete(candidate_id):
 def nara_pickup_add():
     data = request.get_json(force=True) or {}
     try:
-        bid_nm  = str(data.get("bid_ntce_nm", ""))
+        bid_nm   = str(data.get("bid_ntce_nm",   ""))
+        instt_nm = str(data.get("ntce_instt_nm", ""))
+        prce     = str(data.get("presmpt_prce",  ""))
         new_id = add_nara_pickup(
             candidate_id   = int(data.get("candidate_id", 0)),
             bid_ntce_no    = str(data.get("bid_ntce_no",    "")),
             bid_ntce_nm    = bid_nm,
-            ntce_instt_nm  = str(data.get("ntce_instt_nm",  "")),
-            presmpt_prce   = str(data.get("presmpt_prce",   "")),
+            ntce_instt_nm  = instt_nm,
+            presmpt_prce   = prce,
             bid_clse_dt    = str(data.get("bid_clse_dt",    "")),
             ntce_url       = str(data.get("ntce_url",       "")),
             matched_keyword= str(data.get("matched_keyword","")),
@@ -4294,10 +4296,10 @@ def nara_pickup_add():
         try:
             settings  = get_notification_settings()
             notif_ids = settings.get("pickup_auto", [])
+            prce_str  = f"{int(prce):,}원" if prce.isdigit() else (prce + "원" if prce else "-")
+            notif_msg = f"공고명: {bid_nm}\n발주처: {instt_nm or '-'}\n추정가격: {prce_str}"
             for uid in notif_ids:
-                create_notification(uid, "새 픽업 등록",
-                                    f"{session.get('username','')}이(가) '{bid_nm}' 픽업 등록",
-                                    "/nara/pickups")
+                create_notification(uid, "📌 픽업 공고 등록", notif_msg, "/nara/pickups")
         except Exception:
             pass
         return jsonify({"ok": True, "id": new_id})
