@@ -254,13 +254,26 @@ def start_scheduler(app=None):
     import threading
 
     def _run():
-        time.sleep(10)
+        time.sleep(60)
+
         try:
-            if app:
-                with app.app_context():
+            from database.db import get_connection
+            today = datetime.now().strftime("%Y-%m-%d")
+            with get_connection() as conn:
+                count = conn.execute(
+                    "SELECT COUNT(*) FROM nara_bids WHERE date(created_at)=?",
+                    (today,)
+                ).fetchone()[0]
+
+            if count == 0:
+                print(f"[nara 스케줄러] 오늘치 데이터 없음 — 수집 시작")
+                if app:
+                    with app.app_context():
+                        collect_all_bids()
+                else:
                     collect_all_bids()
             else:
-                collect_all_bids()
+                print(f"[nara 스케줄러] 오늘치 데이터 {count}건 있음 — 수집 스킵")
         except Exception as e:
             print(f"[nara 초기수집] 오류: {e}")
 
@@ -282,7 +295,7 @@ def start_scheduler(app=None):
                 print(f"[nara 스케줄러] 오류: {e}")
 
     threading.Thread(target=_run, daemon=True).start()
-    print("[nara 스케줄러] 시작 — 초기수집 후 매일 새벽 3시 자동 수집")
+    print("[nara 스케줄러] 시작 — 매일 새벽 3시 자동 수집")
 
 
 def _run_scan():
