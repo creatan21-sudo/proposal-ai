@@ -397,6 +397,10 @@ def filter_bids_with_ai(bids: list) -> list:
     if not bids:
         return []
 
+    if bids:
+        print(f"[nara 키워드필터 디버그] 첫 번째 공고명: '{bids[0].get('bid_ntce_nm', '')}'")
+        print(f"[nara 키워드필터 디버그] 키: {list(bids[0].keys())}")
+
     INCLUDE = ['홍보', '영상', '콘텐츠', '제작', '방송', '미디어', 'SNS', '유튜브',
                '기획', '캠페인', '광고', '행사', '촬영', '편집', '홍보물', '프로그램']
     EXCLUDE = ['공사', '토목', '건설', '청소', '경비', '급식', '납품', '구입']
