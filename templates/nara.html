@@ -298,6 +298,7 @@
 <div class="toast" id="toast"></div>
 <script>
 const _CAND_NOS = new Set({{ candidate_nos | list | tojson }});
+let _bnoNtceUrl = '';
 
 /* ── 공고번호 후보 등록 ── */
 function _bnoSetStatus(msg, isError=false){
@@ -323,22 +324,31 @@ function searchByBidNo(){
   _bnoSetStatus('⏳ 공고 정보 조회 중...');
   document.getElementById('bid-no-modal').classList.add('open');
   // 백그라운드 API 조회
+  _bnoNtceUrl = '';
   fetch('/nara/search_by_no',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify({bid_no:bidNo})})
   .then(r=>r.json()).then(d=>{
+    console.log('[공고번호검색] 응답:', d);
     if(d.ok && d.bid){
       const b = d.bid;
       document.getElementById('bno-nm').value    = b.bid_ntce_nm    || '';
       document.getElementById('bno-instt').value = b.ntce_instt_nm  || '';
       document.getElementById('bno-prce').value  = b.presmpt_prce   || '';
       document.getElementById('bno-clse').value  = b.bid_clse_dt    || '';
+      _bnoNtceUrl = b.ntce_url || '';
+      console.log('[공고번호검색] 자동채우기 완료:', {
+        nm: b.bid_ntce_nm, instt: b.ntce_instt_nm,
+        prce: b.presmpt_prce, clse: b.bid_clse_dt, url: b.ntce_url
+      });
       _bnoSetStatus('✅ 공고 정보를 자동으로 가져왔습니다. 확인 후 등록하세요.');
       setTimeout(()=>document.getElementById('bno-reason').focus(), 50);
     } else {
+      console.log('[공고번호검색] 조회 실패 또는 bid 없음:', d.error || '');
       _bnoSetStatus('조회 실패 — 직접 입력해주세요.', true);
       setTimeout(()=>document.getElementById('bno-nm').focus(), 50);
     }
-  }).catch(()=>{
+  }).catch(e=>{
+    console.log('[공고번호검색] fetch 오류:', e);
     _bnoSetStatus('조회 실패 — 직접 입력해주세요.', true);
     setTimeout(()=>document.getElementById('bno-nm').focus(), 50);
   });
@@ -353,7 +363,7 @@ async function submitBidNoCandidate(){
   const instt  = document.getElementById('bno-instt').value.trim();
   const prce   = document.getElementById('bno-prce').value.trim();
   const clse   = document.getElementById('bno-clse').value.trim();
-  const g2bUrl = `https://www.g2b.go.kr/link/PNPE027_01/?bidPbancNo=${encodeURIComponent(bidNo)}&bidPbancOrd=000`;
+  const g2bUrl = _bnoNtceUrl || `https://www.g2b.go.kr/link/PNPE027_01/?bidPbancNo=${encodeURIComponent(bidNo)}&bidPbancOrd=000`;
   const btn = document.getElementById('bno-submit-btn');
   btn.disabled=true; btn.textContent='등록 중...';
   try{
