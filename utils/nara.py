@@ -422,9 +422,9 @@ def filter_bids_with_ai(bids: list) -> list:
 # 공고번호 직접 조회
 # ─────────────────────────────────────────────
 
-_BASE_SERIAL = 1_544_446
-_BASE_DATE   = datetime(2026, 5, 27)
-_DAILY_RATE  = 1_841
+_BASE_SERIAL = 1_550_000
+_BASE_DATE   = datetime(2026, 5, 29)
+_DAILY_RATE  = 2_800
 
 
 def _fetch_page(key: str, from_date: str, to_date: str, page: int, rows: int) -> tuple:
