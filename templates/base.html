@@ -5,29 +5,38 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Prointerz{% endblock %}</title>
   <link rel="stylesheet" href="/static/style.css">
+  <style>
+  nav a.nav-active{background:var(--bg);color:var(--text);font-weight:600;}
+  .sub-nav{background:#f8f9fb;border-bottom:1px solid #e5e7eb;}
+  .sub-nav-inner{max-width:1100px;margin:0 auto;padding:0 24px;display:flex;gap:2px;}
+  .sub-nav a{display:inline-block;padding:7px 16px;font-size:13px;color:#6b7280;text-decoration:none;border-bottom:2px solid transparent;transition:color .15s,border-color .15s;}
+  .sub-nav a:hover{color:#4f46e5;}
+  .sub-nav a.active{color:#4f46e5;border-bottom-color:#4f46e5;font-weight:600;}
+  </style>
   {% block head %}{% endblock %}
 </head>
 <body>
+{% set path = request.path %}
   <header>
     <div class="header-inner">
       <a href="/" class="logo">Prointerz</a>
       <nav>
-        <a href="/nara">입찰</a>
-        <a href="/schedule">일정</a>
+        <a href="/nara" class="{{ 'nav-active' if path.startswith('/nara') else '' }}">입찰</a>
+        <a href="/schedule" class="{{ 'nav-active' if path == '/schedule' else '' }}">일정</a>
         {% if session.get('role') != 'user' %}
-        <a href="/proposal">작성</a>
-        <a href="/history">DB</a>
-        <a href="/learning">입력</a>
+        <a href="/proposal" class="{{ 'nav-active' if path.startswith('/proposal') or path.startswith('/run/') else '' }}">작성</a>
+        <a href="/history" class="{{ 'nav-active' if path.startswith('/history') else '' }}">DB</a>
+        <a href="/learning" class="{{ 'nav-active' if path.startswith('/learning') else '' }}">입력</a>
         {% else %}
-        <a href="/history">공유 DB</a>
+        <a href="/history" class="{{ 'nav-active' if path.startswith('/history') else '' }}">공유 DB</a>
         {% endif %}
         {% if session.get('is_admin') %}
-        <a href="/admin" class="nav-admin">관리자</a>
+        <a href="/admin" class="nav-admin {{ 'nav-active' if path.startswith('/admin') else '' }}">관리자</a>
         {% endif %}
         {% if session.get('is_admin') or session.get('role') == 'operator' %}
-        <a href="/notification_settings">알림 설정</a>
+        <a href="/notification_settings" class="{{ 'nav-active' if path == '/notification_settings' else '' }}">알림 설정</a>
         {% endif %}
-        <a href="/profile">프로필</a>
+        <a href="/profile" class="{{ 'nav-active' if path == '/profile' else '' }}">프로필</a>
         {% if session.get('role') != 'user' %}
         <a href="#" id="nav-active-run" style="display:none" title="">
           🔄 진행 중 <span id="nav-active-dot" style="display:inline-block;width:8px;height:8px;background:red;border-radius:50%;vertical-align:middle;margin-left:3px;"></span>
@@ -40,6 +49,17 @@
         <a href="/logout">로그아웃</a>
       </nav>
     </div>
+    {% if path.startswith('/nara') %}
+    <div class="sub-nav">
+      <div class="sub-nav-inner">
+        <a href="/nara" class="{{ 'active' if path == '/nara' else '' }}">공고</a>
+        <a href="/nara/candidates" class="{{ 'active' if path == '/nara/candidates' else '' }}">후보</a>
+        <a href="/nara/pickups" class="{{ 'active' if path == '/nara/pickups' else '' }}">픽업</a>
+        <a href="/nara/confirmed" class="{{ 'active' if path.startswith('/nara/confirmed') else '' }}">확정</a>
+        <a href="/nara/results" class="{{ 'active' if path == '/nara/results' else '' }}">결과</a>
+      </div>
+    </div>
+    {% endif %}
   </header>
   <!-- 알림 팝업 -->
   <div id="notif-popup" style="display:none;position:fixed;top:60px;right:20px;width:340px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.15);z-index:8888;padding:16px;">

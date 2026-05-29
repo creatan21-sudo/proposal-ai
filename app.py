@@ -4019,11 +4019,22 @@ def nara_confirmed_detail(confirmed_id):
     is_ops      = session.get("role") in ("admin", "operator")
     is_assignee = session.get("username") == c.get("assignee")
     can_edit    = is_ops or is_assignee
+    can_edit_narrative = bool(session.get("is_admin")) or is_assignee
+    narrative_qa = None
+    if narrative:
+        try:
+            parsed = json.loads(narrative["content"])
+            if isinstance(parsed, dict) and any(parsed.values()):
+                narrative_qa = parsed
+        except Exception:
+            pass
     from datetime import datetime as _dt
     return render_template("nara_confirmed_detail.html",
-                           c=c, narrative=narrative, comments=comments,
+                           c=c, narrative=narrative, narrative_qa=narrative_qa,
+                           comments=comments,
                            schedule=schedule, bid_info=bid_info,
                            users=users, can_edit=can_edit, is_ops=is_ops,
+                           can_edit_narrative=can_edit_narrative,
                            now=_dt.now().strftime("%Y-%m-%d %H:%M"))
 
 
@@ -4033,9 +4044,9 @@ def nara_confirmed_narrative_save(confirmed_id):
     c = get_confirmed_by_id(confirmed_id)
     if not c:
         return jsonify({"ok": False, "error": "Not found"}), 404
-    is_ops      = session.get("role") in ("admin", "operator")
+    is_admin    = session.get("is_admin")
     is_assignee = session.get("username") == c.get("assignee")
-    if not (is_ops or is_assignee):
+    if not (is_admin or is_assignee):
         return jsonify({"ok": False, "error": "권한 없음"}), 403
     data    = request.get_json(force=True) or {}
     content = (data.get("content") or "").strip()

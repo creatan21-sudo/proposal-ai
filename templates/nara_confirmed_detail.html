@@ -246,16 +246,64 @@
 
   <!-- ③ 전략 내러티브 -->
   <div class="card">
-    <div class="section-title">📝 전략 내러티브</div>
-    {% if can_edit %}
-    <textarea id="narrative-content" class="narrative-ta"
-              placeholder="이 공고에 대한 전략, 강점, 접근 방향 등을 작성하세요...">{{ narrative.content if narrative else '' }}</textarea>
-    <div class="save-row">
-      <button class="btn btn-primary" onclick="saveNarrative()">💾 저장</button>
+    <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>📝 전략 내러티브</span>
+      {% if can_edit_narrative %}
+      <button class="btn btn-ghost btn-sm" id="narrative-edit-btn" onclick="toggleNarrativeEdit()">✏️ 내러티브 작성</button>
+      {% endif %}
     </div>
-    {% else %}
-    <div class="narrative-ro">{{ (narrative.content if narrative else '') or '아직 작성된 내러티브가 없습니다.' }}</div>
+
+    {% set nq_labels = [
+      ('q1','우리 회사가 본 과업을 하는데 내세울 어떤 경쟁력이 있을까요?'),
+      ('q2','본 과업은 기존에 어떤 문제나 위기를 갖고 있나요?'),
+      ('q3','문제를 타개하고 좋은 성과를 이루어내기 위해 어떤 전략이 필요할까요?'),
+      ('q4','추구하는 전략을 사람들에게 각인시킬 직관적인 컨셉은 무엇인가요?'),
+      ('q5','컨셉에 맞게 실행할 콘텐츠 아이디어는 어떤 것인가요?'),
+      ('q6','운영이나 관리 부문에 내세울만한 특별한 장점은 어떤 것인가요?'),
+      ('q7','추가로 기재할 중요한 내용이 있다면 무엇인가요?'),
+    ] %}
+
+    <!-- 보기 모드 -->
+    <div id="narrative-view">
+      {% if narrative_qa %}
+        {% set ns = namespace(found=false) %}
+        {% for key, label in nq_labels %}{% if narrative_qa.get(key) %}{% set ns.found = true %}{% endif %}{% endfor %}
+        {% if ns.found %}
+          {% for key, label in nq_labels %}
+            {% if narrative_qa.get(key) %}
+            <div style="margin-bottom:16px;">
+              <div style="font-size:12px;font-weight:600;color:#6b7280;margin-bottom:4px;">{{ loop.index }}. {{ label }}</div>
+              <div class="narrative-ro" style="min-height:0;">{{ narrative_qa[key] }}</div>
+            </div>
+            {% endif %}
+          {% endfor %}
+        {% else %}
+          <div class="narrative-ro" style="color:#9ca3af;">아직 작성된 내러티브가 없습니다.</div>
+        {% endif %}
+      {% elif narrative and narrative.content %}
+        <div class="narrative-ro">{{ narrative.content }}</div>
+      {% else %}
+        <div class="narrative-ro" style="color:#9ca3af;">아직 작성된 내러티브가 없습니다.</div>
+      {% endif %}
+    </div>
+
+    <!-- 편집 모드 -->
+    {% if can_edit_narrative %}
+    <div id="narrative-edit" style="display:none;">
+      {% for key, label in nq_labels %}
+      <div style="margin-bottom:16px;">
+        <div class="field-label">{{ loop.index }}. {{ label }}</div>
+        <textarea id="nq-{{ key }}" class="narrative-ta" rows="3"
+                  placeholder="답변을 입력하세요...">{{ narrative_qa[key] if narrative_qa and narrative_qa.get(key) else '' }}</textarea>
+      </div>
+      {% endfor %}
+      <div class="save-row" style="gap:8px;">
+        <button class="btn btn-ghost" onclick="toggleNarrativeEdit()">취소</button>
+        <button class="btn btn-primary" onclick="saveNarrative()">💾 저장</button>
+      </div>
+    </div>
     {% endif %}
+
     {% if narrative and narrative.updated_by %}
     <div class="updated-hint">최종 수정: {{ narrative.updated_by }} · {{ (narrative.updated_at or '')[:16] }}</div>
     {% endif %}
@@ -351,6 +399,7 @@ const CID    = {{ c.id }};
 const USERS  = {{ users | tojson }};
 const TODAY  = new Date().toISOString().slice(0,10);
 const CAN_EDIT = {{ 'true' if can_edit else 'false' }};
+const CAN_EDIT_NARRATIVE = {{ 'true' if can_edit_narrative else 'false' }};
 
 function showToast(msg, ok=true){
   const t=document.getElementById('toast');
@@ -397,14 +446,30 @@ async function saveBidInfo(){
   d.ok ? showToast('입찰 정보가 저장되었습니다') : showToast(d.error||'저장 실패',false);
 }
 
-/* ── 내러티브 저장 ── */
+/* ── 내러티브 ── */
+function toggleNarrativeEdit(){
+  const view = document.getElementById('narrative-view');
+  const edit = document.getElementById('narrative-edit');
+  const btn  = document.getElementById('narrative-edit-btn');
+  if(!edit) return;
+  const isEditing = edit.style.display !== 'none';
+  edit.style.display = isEditing ? 'none' : 'block';
+  view.style.display = isEditing ? 'block' : 'none';
+  btn.textContent    = isEditing ? '✏️ 내러티브 작성' : '← 보기';
+}
 async function saveNarrative(){
-  const content = document.getElementById('narrative-content')?.value || '';
+  const data = {};
+  for(let i=1; i<=7; i++){
+    const el = document.getElementById(`nq-q${i}`);
+    if(el) data[`q${i}`] = el.value.trim();
+  }
+  const content = JSON.stringify(data);
   const r = await fetch(`/nara/confirmed/${CID}/narrative`,{
     method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({content})
   });
   const d = await r.json();
-  d.ok ? showToast('내러티브가 저장되었습니다') : showToast(d.error||'저장 실패',false);
+  if(d.ok){ showToast('내러티브가 저장되었습니다'); setTimeout(()=>location.reload(), 800); }
+  else showToast(d.error||'저장 실패', false);
 }
 
 /* ── 일정표 ── */
