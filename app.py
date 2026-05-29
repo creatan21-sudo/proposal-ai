@@ -86,7 +86,8 @@ from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           get_confirmed_bid_info, save_confirmed_bid_info,
                           create_notification, list_notifications,
                           mark_notification_read, mark_all_read, count_unread,
-                          get_notification_settings, save_notification_settings)
+                          get_notification_settings, save_notification_settings,
+                          get_last_notification_time, record_notification_sent)
 
 app = Flask(__name__)
 # Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
@@ -4260,6 +4261,8 @@ def nara_candidate_add():
             reason         = str(data.get("reason",         "")),
             registered_by  = session.get("username", ""),
         )
+        if not new_id:
+            return jsonify({"ok": False, "error": "이미 후보에 등록된 공고입니다"})
         return jsonify({"ok": True, "id": new_id})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
@@ -4441,25 +4444,35 @@ def notification_settings_save():
 @operator_or_admin_required
 def nara_notify_candidates():
     from database.db import get_connection as _gc
+    last_sent = get_last_notification_time('candidate_manual')
     with _gc() as conn:
-        today_candidates = conn.execute(
-            """SELECT bid_ntce_no, bid_ntce_nm, ntce_instt_nm
-               FROM nara_candidates
-               WHERE date(created_at) = date('now', 'localtime')
-               ORDER BY created_at DESC"""
-        ).fetchall()
-    if not today_candidates:
-        return jsonify({"ok": False, "error": "오늘 등록된 후보가 없습니다"})
-    count   = len(today_candidates)
-    lines   = [f"• {r['bid_ntce_nm'] or r['bid_ntce_no']}" for r in today_candidates[:5]]
+        if last_sent:
+            candidates = conn.execute(
+                """SELECT bid_ntce_no, bid_ntce_nm, ntce_instt_nm
+                   FROM nara_candidates
+                   WHERE created_at > ?
+                   ORDER BY created_at DESC""",
+                (last_sent,),
+            ).fetchall()
+        else:
+            candidates = conn.execute(
+                """SELECT bid_ntce_no, bid_ntce_nm, ntce_instt_nm
+                   FROM nara_candidates
+                   WHERE date(created_at) = date('now', 'localtime')
+                   ORDER BY created_at DESC"""
+            ).fetchall()
+    if not candidates:
+        return jsonify({"ok": False, "error": "이전 알림 이후 신규 등록된 후보가 없습니다"})
+    count   = len(candidates)
+    lines   = [f"• {r['bid_ntce_nm'] or r['bid_ntce_no']}" for r in candidates[:5]]
     message = "\n".join(lines)
     if count > 5:
-        message += f"\n... 외 {count - 5}건"
+        message += f"\n외 {count - 5}건"
     settings = get_notification_settings()
     targets  = settings.get("candidate_manual", [])
     for uid in targets:
-        create_notification(uid, f"오늘 신규 후보 {count}건 등록",
-                            message, "/nara/candidates")
+        create_notification(uid, f"📋 신규 후보 {count}건", message, "/nara/candidates")
+    record_notification_sent('candidate_manual')
     return jsonify({"ok": True, "sent": len(targets)})
 
 
@@ -4501,6 +4514,8 @@ def nara_add_to_candidates():
             reason         = str(data.get("reason",         "")),
             registered_by  = session.get("username", ""),
         )
+        if not new_id:
+            return jsonify({"ok": False, "error": "이미 후보에 등록된 공고입니다"})
         return jsonify({"ok": True, "id": new_id})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})

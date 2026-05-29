@@ -439,6 +439,12 @@ def init_db() -> None:
                 session_id     TEXT    DEFAULT '',
                 status         TEXT    DEFAULT 'pending'
             );
+
+            CREATE TABLE IF NOT EXISTS notification_log (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                trigger_type TEXT NOT NULL,
+                sent_at      TEXT DEFAULT (datetime('now','localtime'))
+            );
         """)
         # ── 마이그레이션: 기존 DB에 누락된 컬럼 추가 ──
         for migration in [
@@ -480,6 +486,15 @@ def init_db() -> None:
             "ALTER TABLE confirmed_bid_info ADD COLUMN pt_location      TEXT DEFAULT ''",
             "ALTER TABLE confirmed_bid_info ADD COLUMN price_bid_date   TEXT DEFAULT ''",
             "ALTER TABLE confirmed_bid_info ADD COLUMN price_bid_method TEXT DEFAULT ''",
+            # nara_candidates 중복 제거 + UNIQUE INDEX
+            "DELETE FROM nara_candidates WHERE id NOT IN (SELECT MIN(id) FROM nara_candidates GROUP BY bid_ntce_no)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_nara_candidates_no ON nara_candidates(bid_ntce_no)",
+            # nara_pickups 중복 제거 + UNIQUE INDEX
+            "DELETE FROM nara_pickups WHERE id NOT IN (SELECT MIN(id) FROM nara_pickups GROUP BY bid_ntce_no)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_nara_pickups_no ON nara_pickups(bid_ntce_no)",
+            # nara_confirmed bid_ntce_no 컬럼 추가 + UNIQUE INDEX (비어 있는 행 제외)
+            "ALTER TABLE nara_confirmed ADD COLUMN bid_ntce_no TEXT DEFAULT ''",
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_nara_confirmed_no ON nara_confirmed(bid_ntce_no) WHERE bid_ntce_no != ''",
         ]:
             try:
                 conn.execute(migration)
@@ -2301,9 +2316,11 @@ def delete_nara_candidate(candidate_id: int) -> None:
 def confirm_nara_candidate(candidate_id: int, confirmed_by: str,
                            notes: str, assignee: str = "") -> int:
     with get_connection() as conn:
+        row = conn.execute("SELECT bid_ntce_no FROM nara_candidates WHERE id=?", (candidate_id,)).fetchone()
+        bid_no = row[0] if row else ''
         cur = conn.execute(
-            "INSERT INTO nara_confirmed (candidate_id, confirmed_by, notes, assignee) VALUES (?,?,?,?)",
-            (candidate_id, confirmed_by, notes, assignee),
+            "INSERT OR IGNORE INTO nara_confirmed (candidate_id, confirmed_by, notes, assignee, bid_ntce_no) VALUES (?,?,?,?,?)",
+            (candidate_id, confirmed_by, notes, assignee, bid_no),
         )
         return cur.lastrowid or 0
 
@@ -2496,9 +2513,11 @@ def save_confirmed_bid_info(confirmed_id: int, data: dict, updated_by: str) -> N
 def confirm_nara_pickup(pickup_id: int, confirmed_by: str,
                         notes: str = "", assignee: str = "") -> int:
     with get_connection() as conn:
+        row = conn.execute("SELECT bid_ntce_no FROM nara_pickups WHERE id=?", (pickup_id,)).fetchone()
+        bid_no = row[0] if row else ''
         cur = conn.execute(
-            "INSERT INTO nara_confirmed (pickup_id, candidate_id, confirmed_by, notes, assignee) VALUES (?,0,?,?,?)",
-            (pickup_id, confirmed_by, notes, assignee),
+            "INSERT OR IGNORE INTO nara_confirmed (pickup_id, candidate_id, confirmed_by, notes, assignee, bid_ntce_no) VALUES (?,0,?,?,?,?)",
+            (pickup_id, confirmed_by, notes, assignee, bid_no),
         )
         return cur.lastrowid or 0
 
@@ -2767,7 +2786,7 @@ def mark_rows_inactive_after(table: str, case_id: int, after_id: int) -> int:
 def create_notification(user_id: int, title: str, message: str = "", link: str = "") -> int:
     with get_connection() as conn:
         cur = conn.execute(
-            "INSERT INTO notifications (user_id, title, message, link) VALUES (?,?,?,?)",
+            "INSERT OR IGNORE INTO notifications (user_id, title, message, link) VALUES (?,?,?,?)",
             (user_id, title, message, link),
         )
         return cur.lastrowid or 0
@@ -2831,4 +2850,21 @@ def save_notification_settings(trigger_type: str, user_ids: list) -> None:
                  target_user_ids=excluded.target_user_ids,
                  updated_at=excluded.updated_at""",
             (trigger_type, _json.dumps(user_ids)),
+        )
+
+
+def get_last_notification_time(trigger_type: str):
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT sent_at FROM notification_log WHERE trigger_type=? ORDER BY sent_at DESC LIMIT 1",
+            (trigger_type,),
+        ).fetchone()
+    return row[0] if row else None
+
+
+def record_notification_sent(trigger_type: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO notification_log (trigger_type) VALUES (?)",
+            (trigger_type,),
         )
