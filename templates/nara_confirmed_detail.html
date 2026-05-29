@@ -294,7 +294,9 @@
       <div style="margin-bottom:16px;">
         <div class="field-label">{{ loop.index }}. {{ label }}</div>
         <textarea id="nq-{{ key }}" class="narrative-ta" rows="3"
-                  placeholder="답변을 입력하세요...">{{ narrative_qa[key] if narrative_qa and narrative_qa.get(key) else '' }}</textarea>
+                  placeholder="답변을 입력하세요..."
+                  oninput="limitLines(this)">{{ narrative_qa[key] if narrative_qa and narrative_qa.get(key) else '' }}</textarea>
+        <div style="font-size:11px;color:#9ca3af;margin-top:3px;">5줄 내외 권장 · 10줄 이상 입력 불가</div>
       </div>
       {% endfor %}
       <div class="save-row" style="gap:8px;">
@@ -447,6 +449,13 @@ async function saveBidInfo(){
 }
 
 /* ── 내러티브 ── */
+function limitLines(textarea, max=10){
+  const lines = textarea.value.split('\n');
+  if(lines.length > max){
+    textarea.value = lines.slice(0, max).join('\n');
+    showToast('10줄 이상 입력할 수 없습니다', false);
+  }
+}
 function toggleNarrativeEdit(){
   const view = document.getElementById('narrative-view');
   const edit = document.getElementById('narrative-edit');
