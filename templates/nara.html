@@ -309,6 +309,7 @@ function _bnoSetStatus(msg, isError=false){
 }
 function searchByBidNo(){
   const bidNo = document.getElementById('search-bid-no').value.trim();
+  console.log('[공고번호검색] 클릭:', bidNo);
   if(!bidNo){ showToast('공고번호를 입력하세요', false); return; }
   const g2bUrl = `https://www.g2b.go.kr/link/PNPE027_01/?bidPbancNo=${encodeURIComponent(bidNo)}&bidPbancOrd=000`;
   window.open(g2bUrl, '_blank');

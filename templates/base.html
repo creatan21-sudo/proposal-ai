@@ -96,7 +96,7 @@
       }).catch(function(){});
     }
     updateBadge();
-    setInterval(updateBadge, 5000);
+    setInterval(updateBadge, 60000);
     // 세션당 1번 팝업
     if(!sessionStorage.getItem('notif_popup_shown')){
       fetch('/notifications/unread_count').then(r=>r.json()).then(d=>{
