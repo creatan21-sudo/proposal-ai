@@ -465,7 +465,6 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
   ('marketing',      'STEP 10', '마케팅/홍보 전략', '📣'),
   ('pt_qa',          'STEP 11', 'PT/Q&A',           '📝'),
   ('critic',         'STEP 12', '크리틱',           '🔎'),
-  ('ppt_design',     'STEP 13', 'PPT 설계',         '🗂'),
 ] %}
 
 {# 첫 번째 데이터 있는 스텝 계산 #}
@@ -1815,8 +1814,13 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
 
 /* 인쇄 스타일 */
 @media print {
+  nav, .sub-nav,
   .detail-tabs,
-  #all-view-toolbar { display: none !important; }
+  #all-view-toolbar,
+  #ppt-design-panel,
+  .no-print,
+  button { display: none !important; }
+  body { font-size: 12pt; line-height: 1.6; }
   .detail-step-header-tab { display: none !important; }
   .detail-step-card {
     break-inside: avoid;
@@ -1831,6 +1835,7 @@ document.getElementById('pt-script-modal').addEventListener('click', function(e)
     print-color-adjust: exact;
   }
   .dv-cards { grid-template-columns: repeat(2, 1fr) !important; }
+  .det-wrap, .detail-steps { width: 100%; margin: 0; padding: 0; }
 }
 
 .detail-step-badge {
