@@ -467,82 +467,33 @@ def _ai_filter_batch(bids: list) -> list | None:
         return None
 
 
-_MUST_INCLUDE = [
-    '홍보영상', '홍보 영상',
-    '영상제작', '영상 제작',
-    '영상물제작', '영상물 제작',
-    '방송제작', '방송 제작',
-    '방송프로그램', '방송 프로그램',
-    '다큐멘터리', '다큐',
-    '유튜브', 'SNS채널', 'SNS 채널',
-    '채널운영', '채널 운영',
-    '캠페인영상', '캠페인 영상',
-    '정책홍보영상', '정책 홍보 영상',
-    'AI영상', 'AI 영상',
-    '숏폼', '릴스',
-]
-
-_CONDITIONAL = {
-    '콘텐츠': ['영상', '방송', '미디어', '유튜브', 'SNS', '동영상', '촬영'],
-    '행사':   ['영상', '방송', '촬영', '중계', '미디어', '콘텐츠'],
-    '홍보':   ['영상', '콘텐츠', '방송', '유튜브', 'SNS', '채널', '촬영', '미디어'],
-    '제작':   ['영상', '방송', '동영상', '촬영', '다큐', '콘텐츠'],
-}
-
-_EXCLUDE_KEYWORDS = [
-    '공사', '토목', '건설', '하수', '상수도', '도로', '교량', '철도',
-    '청소', '경비', '급식', '납품', '구입',
-    '소프트웨어개발', '시스템구축', '시스템 구축',
-    '인쇄홍보물', '인쇄 홍보물', '현수막', '배너',
-    '실감콘텐츠', 'XR콘텐츠', 'XR 콘텐츠', 'VR콘텐츠', 'AR콘텐츠',
-    '교육콘텐츠', '교육 콘텐츠',
-    '배우', '출연자', '모델섭외', '모델 섭외',
-]
-
-
 def filter_bids_with_ai(bids: list, source: str = 'keyword') -> list:
-    """공고 필터링.
-
-    source='keyword'  : MUST_INCLUDE → CONDITIONAL → EXCLUDE 3단계 정밀 필터 적용.
-    source='collect_all': Claude AI 업무범위 판단 적용, 실패 시 키워드 폴백.
-    """
-    if not bids:
-        return []
-
+    """키워드 스캔으로 가져온 공고는 필터 없이 전달. collect_all만 필터 적용."""
     if source == 'keyword':
-        result = []
-        for bid in bids:
-            nm = bid.get('bid_ntce_nm', '') or ''
+        print(f"[nara 키워드필터] {len(bids)}건 → {len(bids)}건 (키워드 스캔, 필터 스킵)")
+        return bids
 
-            if any(p in nm for p in _EXCLUDE_KEYWORDS):
-                continue
-
-            if any(p in nm for p in _MUST_INCLUDE):
-                result.append(bid)
-                continue
-
-            for trigger, required in _CONDITIONAL.items():
-                if trigger in nm and any(r in nm for r in required):
-                    result.append(bid)
-                    break
-
-        print(f"[nara 키워드필터] {len(bids)}건 → {len(result)}건")
-        return result
-
-    # source == 'collect_all': AI 업무범위 판단
+    # collect_all 경로만 필터 적용
+    INCLUDE = [
+        '홍보영상', '홍보 영상', '영상제작', '영상 제작',
+        '방송제작', '방송 제작', '방송프로그램', '방송 프로그램',
+        '유튜브', 'SNS', '채널운영', '채널 운영',
+        '캠페인영상', '캠페인 영상', '영상콘텐츠', '영상 콘텐츠',
+        '홍보콘텐츠', '홍보 콘텐츠', '미디어콘텐츠', '미디어 콘텐츠',
+        '행사기획', '행사 기획', '기념식',
+    ]
+    EXCLUDE = [
+        '공사', '토목', '건설', '청소', '경비', '급식', '납품',
+        '소프트웨어개발', '시스템구축',
+    ]
     result = []
-    fallback_used = False
-    for start in range(0, len(bids), _FILTER_BATCH):
-        batch = bids[start:start + _FILTER_BATCH]
-        filtered = _ai_filter_batch(batch)
-        if filtered is None:
-            fallback_used = True
-            result.extend(_keyword_filter(batch))
-        else:
-            result.extend(filtered)
-
-    label = "키워드폴백" if fallback_used else "AI"
-    print(f"[nara {label}필터] {len(bids)}건 → {len(result)}건")
+    for bid in bids:
+        nm = bid.get('bid_ntce_nm', '') or ''
+        if any(p in nm for p in EXCLUDE):
+            continue
+        if any(p in nm for p in INCLUDE):
+            result.append(bid)
+    print(f"[nara 키워드필터] {len(bids)}건 → {len(result)}건")
     return result
 
 
