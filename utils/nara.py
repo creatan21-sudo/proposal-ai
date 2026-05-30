@@ -340,10 +340,9 @@ def _run_scan():
                     merged_bids.append(bid)
 
         raw_count = len(merged_bids)
-        # Claude AI 2차 필터링
         if merged_bids:
-            merged_bids = filter_bids_with_ai(merged_bids)
-        print(f"[nara AI필터] {keyword!r}: {raw_count}건 → {len(merged_bids)}건")
+            merged_bids = filter_bids_with_ai(merged_bids, source='keyword')
+        print(f"[nara 키워드스캔] {keyword!r}: {raw_count}건 → {len(merged_bids)}건")
         time.sleep(1)  # 키워드당 API 호출 간격
 
         for bid in merged_bids:
@@ -468,11 +467,20 @@ def _ai_filter_batch(bids: list) -> list | None:
         return None
 
 
-def filter_bids_with_ai(bids: list) -> list:
-    """Claude API로 업무 범위 판단 필터링. 배치 30건씩 처리, API 실패 시 키워드 폴백."""
+def filter_bids_with_ai(bids: list, source: str = 'keyword') -> list:
+    """공고 필터링.
+
+    source='keyword'  : 키워드 검색으로 이미 관련 공고만 가져왔으므로 필터 스킵.
+    source='collect_all': 전체수집 경로 — Claude AI 업무범위 판단 적용, 실패 시 키워드 폴백.
+    """
     if not bids:
         return []
 
+    if source == 'keyword':
+        print(f"[nara 키워드필터] {len(bids)}건 → {len(bids)}건 (키워드 스캔, 필터 스킵)")
+        return bids
+
+    # source == 'collect_all': AI 업무범위 판단
     result = []
     fallback_used = False
     for start in range(0, len(bids), _FILTER_BATCH):
@@ -614,7 +622,7 @@ def collect_all_bids(target_date: str = None) -> int:
             if i.get("bidNtceNo") and not is_nara_bid_seen(i.get("bidNtceNo"))
         ]
         if new_items:
-            filtered = filter_bids_with_ai(new_items)
+            filtered = filter_bids_with_ai(new_items, source='collect_all')
             for bid in filtered:
                 save_nara_bid(bid, matched_keyword="전체수집")
                 new_count += 1
