@@ -269,14 +269,16 @@
         {% set ns = namespace(found=false) %}
         {% for key, label in nq_labels %}{% if narrative_qa.get(key) %}{% set ns.found = true %}{% endif %}{% endfor %}
         {% if ns.found %}
+          <div id="narrative-paras">
           {% for key, label in nq_labels %}
             {% if narrative_qa.get(key) %}
-            <div style="margin-bottom:16px;">
-              <div style="font-size:12px;font-weight:600;color:#6b7280;margin-bottom:4px;">{{ loop.index }}. {{ label }}</div>
+            <div class="narrative-para" data-key="{{ key }}" style="margin-bottom:20px;">
+              <div class="narrative-subtitle" style="font-weight:700;font-size:13px;color:#111827;margin-bottom:4px;"></div>
               <div class="narrative-ro" style="min-height:0;">{{ narrative_qa[key] }}</div>
             </div>
             {% endif %}
           {% endfor %}
+          </div>
         {% else %}
           <div class="narrative-ro" style="color:#9ca3af;">아직 작성된 내러티브가 없습니다.</div>
         {% endif %}
@@ -539,6 +541,29 @@ async function delSchedule(id, tr){
   if(d.ok){ tr.remove(); showToast('삭제되었습니다'); }
   else showToast(d.error||'삭제 실패',false);
 }
+
+/* ── 내러티브 소제목 ── */
+(async function loadNarrativeSubtitles(){
+  const paras = document.querySelectorAll('#narrative-paras .narrative-para');
+  if(!paras.length) return;
+  const answers = Array.from(paras).map(p => p.querySelector('.narrative-ro')?.textContent?.trim() || '');
+  try {
+    const r = await fetch('/narrative/summarize', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({answers})
+    });
+    const d = await r.json();
+    if(d.ok && d.subtitles){
+      paras.forEach((p, i) => {
+        const sub = d.subtitles[i];
+        if(sub){
+          p.querySelector('.narrative-subtitle').textContent = sub;
+        }
+      });
+    }
+  } catch(e) { console.warn('소제목 로드 실패:', e); }
+})();
 
 /* ── 댓글 ── */
 async function addComment(){

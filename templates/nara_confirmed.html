@@ -44,34 +44,28 @@
   <table class="bid-table">
     <thead>
       <tr>
-        <th style="width:26%">공고명</th>
-        <th style="width:13%">발주처</th>
-        <th style="width:9%">추정가격</th>
-        <th style="width:9%">마감일</th>
+        <th style="width:28%">공고명</th>
+        <th style="width:14%">발주처</th>
+        <th style="width:10%">추정가격</th>
+        <th style="width:10%">마감일</th>
         <th style="width:8%">확정자</th>
         <th style="width:10%">담당자</th>
-        <th style="width:7%">확정일</th>
-        <th style="width:8%">상세</th>
-        <th style="width:10%">결과 등록</th>
+        <th style="width:8%">확정일</th>
+        <th style="width:12%">결과 등록</th>
       </tr>
     </thead>
     <tbody>
       {% if confirmed %}
         {% for c in confirmed %}
-        <tr>
-          <td class="bid-nm">
-            <a href="{{ c.ntce_url or ('https://www.g2b.go.kr/index.jsp?bidNtceNo=' + (c.bid_ntce_no or '')) }}" target="_blank">
-              {{ c.bid_ntce_nm or '-' }}
-            </a>
-          </td>
+        <tr style="cursor:pointer;" onclick="location.href='/nara/confirmed/{{ c.id }}'">
+          <td class="bid-nm">{{ c.bid_ntce_nm or '-' }}</td>
           <td>{{ c.ntce_instt_nm or '-' }}</td>
           <td class="bid-prce">{% if c.presmpt_prce and c.presmpt_prce.isdigit() %}{{ '{:,}'.format(c.presmpt_prce|int) }}원{% else %}-{% endif %}</td>
           <td class="bid-date">{{ (c.bid_clse_dt or '-')[:10] }}</td>
           <td style="font-size:12px;">{{ c.confirmed_by or '-' }}</td>
           <td>{% if c.assignee %}<span class="assignee-badge">{{ c.assignee }}</span>{% else %}-{% endif %}</td>
           <td class="bid-date">{{ (c.created_at or '-')[:10] }}</td>
-          <td><a href="/nara/confirmed/{{ c.id }}" class="btn" style="background:#e0e7ff;color:#4f46e5;">상세보기</a></td>
-          <td>
+          <td onclick="event.stopPropagation()">
             <div class="result-btns">
               <button class="btn btn-win" onclick="openResultModal({{ c.id }}, '수주', '{{ c.bid_ntce_nm | replace("'","\\'")|e }}')">수주</button>
               <button class="btn btn-lose" onclick="openResultModal({{ c.id }}, '낙주', '{{ c.bid_ntce_nm | replace("'","\\'")|e }}')">낙주</button>

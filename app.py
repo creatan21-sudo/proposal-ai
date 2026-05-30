@@ -4157,6 +4157,36 @@ def nara_confirmed_bid_info_save(confirmed_id):
     return jsonify({"ok": True})
 
 
+@app.route("/narrative/summarize", methods=["POST"])
+@login_required
+def narrative_summarize():
+    data = request.get_json() or {}
+    answers = data.get("answers", [])
+
+    if not answers:
+        return jsonify({"ok": False})
+
+    import anthropic
+    client = anthropic.Anthropic()
+
+    subtitles = []
+    for answer in answers:
+        if not answer.strip():
+            subtitles.append("")
+            continue
+        response = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=50,
+            messages=[{
+                "role": "user",
+                "content": f"다음 내용의 핵심을 10자 이내 명사형 소제목으로 뽑아줘. 소제목만 출력:\n\n{answer}"
+            }]
+        )
+        subtitles.append(response.content[0].text.strip())
+
+    return jsonify({"ok": True, "subtitles": subtitles})
+
+
 @app.route("/nara/results")
 @login_required
 def nara_results_page():
