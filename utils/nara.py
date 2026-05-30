@@ -384,37 +384,108 @@ def manual_scan():
 
 _COMPANY_PROFILE = """
 인터즈(주)는 영상 콘텐츠 제작 전문 회사입니다.
-주요 사업 영역:
-- 홍보영상, 다큐멘터리, 교육영상 제작
-- 유튜브/SNS 콘텐츠 기획 및 제작
+
+[업무 범위 — 해당]
+- 홍보영상, 다큐멘터리, 교육영상, 기업영상 제작
+- 유튜브/SNS 콘텐츠 기획 및 제작·운영
 - 정부/공공기관 홍보 프로그램 기획·제작
 - 방송 콘텐츠 제작
 - 디지털 마케팅 및 미디어 운영
+- 행사 영상 촬영·편집·중계
+- 홍보물(웹툰·카드뉴스·모션그래픽) 제작
+
+[업무 범위 외 — 해당 안 됨]
+- 건설·토목·시설 공사
+- 물품 구입·납품·설치
+- 청소·경비·급식 등 시설관리 용역
+- IT 시스템 개발·구축 위주 사업
+- 컨설팅·연구용역(영상 제작 없는 순수 조사·분석)
 """
 
-def filter_bids_with_ai(bids: list) -> list:
-    """키워드 매칭으로 관련 공고 필터링 (Claude API 미사용)."""
-    if not bids:
-        return []
+_FILTER_BATCH = 30  # Claude 1회 호출당 처리 공고 수
 
-    if bids:
-        print(f"[nara 키워드필터 디버그] 첫 번째 공고명: '{bids[0].get('bid_ntce_nm', '')}'")
-        print(f"[nara 키워드필터 디버그] 키: {list(bids[0].keys())}")
 
+def _keyword_filter(bids: list) -> list:
+    """Claude API 실패 시 폴백용 키워드 필터."""
     INCLUDE = ['홍보', '영상', '콘텐츠', '제작', '방송', '미디어', 'SNS', '유튜브',
                '기획', '캠페인', '광고', '행사', '촬영', '편집', '홍보물', '프로그램']
     EXCLUDE = ['공사', '토목', '건설', '청소', '경비', '급식', '납품', '구입']
-
     result = []
     for bid in bids:
-        nm          = bid.get('bid_ntce_nm', '') or ''
+        nm = bid.get('bid_ntce_nm', '') or ''
         has_include = any(k in nm for k in INCLUDE)
-        # 포함 키워드가 하나도 없고 제외 키워드만 있으면 제외
         has_exclude = (not has_include) and any(k in nm for k in EXCLUDE)
         if has_include and not has_exclude:
             result.append(bid)
+    return result
 
-    print(f"[nara 키워드필터] {len(bids)}건 → {len(result)}건")
+
+def _ai_filter_batch(bids: list) -> list | None:
+    """Claude Haiku로 배치 단위 업무 범위 판단.
+
+    Returns:
+        통과한 공고 리스트. API 오류 시 None 반환(폴백 신호).
+    """
+    try:
+        import anthropic
+        client = anthropic.Anthropic()
+    except Exception as e:
+        print(f"  [AI필터] anthropic 초기화 실패: {e}")
+        return None
+
+    lines = []
+    for i, bid in enumerate(bids):
+        nm    = bid.get('bid_ntce_nm', '') or ''
+        instt = bid.get('ntce_instt_nm', '') or ''
+        lines.append(f"{i + 1}. [{instt}] {nm}")
+
+    prompt = (
+        "아래 나라장터 입찰 공고 목록에서 인터즈(주)의 업무 범위에 해당하는 공고 번호를 골라주세요.\n\n"
+        f"[인터즈(주) 업무 범위]\n{_COMPANY_PROFILE}\n\n"
+        f"[공고 목록]\n{chr(10).join(lines)}\n\n"
+        "[응답 규칙]\n"
+        "- 업무 범위에 해당하는 공고의 번호만 JSON 배열로 출력\n"
+        "- 해당 없으면 빈 배열 []\n"
+        "- JSON 배열 외 다른 텍스트 출력 금지\n"
+        "예시: [1, 3, 7]"
+    )
+
+    try:
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=300,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        text = resp.content[0].text.strip()
+        m = re.search(r'\[[\d,\s]*\]', text)
+        if not m:
+            print(f"  [AI필터] JSON 파싱 실패 (응답: {text[:80]})")
+            return None
+        indices = json.loads(m.group())
+        return [bids[i - 1] for i in indices if 1 <= i <= len(bids)]
+    except Exception as e:
+        print(f"  [AI필터] Claude 호출 실패: {e}")
+        return None
+
+
+def filter_bids_with_ai(bids: list) -> list:
+    """Claude API로 업무 범위 판단 필터링. 배치 30건씩 처리, API 실패 시 키워드 폴백."""
+    if not bids:
+        return []
+
+    result = []
+    fallback_used = False
+    for start in range(0, len(bids), _FILTER_BATCH):
+        batch = bids[start:start + _FILTER_BATCH]
+        filtered = _ai_filter_batch(batch)
+        if filtered is None:
+            fallback_used = True
+            result.extend(_keyword_filter(batch))
+        else:
+            result.extend(filtered)
+
+    label = "키워드폴백" if fallback_used else "AI"
+    print(f"[nara {label}필터] {len(bids)}건 → {len(result)}건")
     return result
 
 
