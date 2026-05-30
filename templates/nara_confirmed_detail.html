@@ -35,11 +35,11 @@
 @media(max-width:760px){.two-col{grid-template-columns:1fr}}
 /* 일정표 */
 .sch-table{width:100%;border-collapse:collapse;font-size:13px;}
-.sch-table th{background:#f3f4f6;padding:8px 10px;text-align:left;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb;}
-.sch-table td{padding:7px 8px;border-bottom:1px solid #f3f4f6;vertical-align:middle;}
+.sch-table th{background:#f3f4f6;padding:10px 16px;text-align:left;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb;}
+.sch-table td{padding:10px 12px;border-bottom:1px solid #f3f4f6;vertical-align:middle;}
 .sch-table tr:hover td{background:#fafafa}
-.sch-input{width:100%;box-sizing:border-box;padding:5px 7px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;}
-.sch-select{padding:5px 7px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;background:#fff;width:100%;}
+.sch-input{width:100%;box-sizing:border-box;padding:6px 9px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;}
+.sch-select{padding:6px 9px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;background:#fff;width:100%;}
 .overdue td{background:#fff5f5 !important;}
 .overdue .sch-input,.overdue .sch-select{border-color:#fca5a5;}
 /* 댓글 */
@@ -364,68 +364,10 @@
     {% if narrative and narrative.updated_by %}
     <div class="updated-hint">최종 수정: {{ narrative.updated_by }} · {{ (narrative.updated_at or '')[:16] }}</div>
     {% endif %}
-  </div>
 
-  <!-- ④ 일정표 + 댓글 2컬럼 -->
-  <div class="two-col">
-
-    <!-- 진행 일정표 -->
-    <div class="card">
-      <div class="section-title">📅 진행 일정표</div>
-      <table class="sch-table">
-        <thead>
-          <tr>
-            <th style="width:30%">업무명</th>
-            <th style="width:22%">담당자</th>
-            <th style="width:20%">마감일</th>
-            <th style="width:16%">상태</th>
-            {% if can_edit %}<th style="width:12%"></th>{% endif %}
-          </tr>
-        </thead>
-        <tbody id="sch-tbody">
-          {% set today_str = now[:10] if now is defined else '' %}
-          {% for s in schedule %}
-          {% set overdue = s.due_date and s.due_date < today_str and s.status not in ['완료','보류'] %}
-          <tr data-id="{{ s.id }}"{% if overdue %} class="overdue"{% endif %}>
-            <td>
-              <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
-                {% if '제안서 제출' in s.task_name %}
-                  {% if '(직)' in s.task_name %}<span class="badge-sch direct">직</span>{% elif '(온)' in s.task_name %}<span class="badge-sch online">온</span>{% endif %}
-                {% endif %}
-                <input class="sch-input" value="{{ s.task_name | e }}" style="flex:1;min-width:60px;" onchange="patchSchedule({{ s.id }}, this.closest('tr'))">
-                {% if 'PT 발표 @' in s.task_name %}<small class="pt-loc">@ {{ s.task_name.split('@')[1].strip() }}</small>{% endif %}
-              </div>
-            </td>
-            <td>
-              <select class="sch-select" onchange="patchSchedule({{ s.id }}, this.closest('tr'))">
-                <option value="">-</option>
-                {% for u in users %}<option value="{{ u.username }}"{% if u.username == s.assignee %} selected{% endif %}>{{ u.username }}</option>{% endfor %}
-              </select>
-            </td>
-            <td><input type="date" class="sch-input" value="{{ s.due_date }}" onchange="patchSchedule({{ s.id }}, this.closest('tr'))"></td>
-            <td>
-              <select class="sch-select" onchange="patchSchedule({{ s.id }}, this.closest('tr'))">
-                {% for st in ['예정','진행중','완료','보류'] %}<option{% if st == s.status %} selected{% endif %}>{{ st }}</option>{% endfor %}
-              </select>
-            </td>
-            {% if can_edit %}<td><button class="btn btn-danger btn-sm" onclick="delSchedule({{ s.id }}, this.closest('tr'))">삭제</button></td>{% endif %}
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      {% if not schedule %}
-      <div id="sch-empty" style="text-align:center;color:#9ca3af;font-size:13px;padding:16px 0;">등록된 일정이 없습니다</div>
-      {% endif %}
-      {% if can_edit %}
-      <div style="margin-top:12px;text-align:right;">
-        <button class="btn btn-primary btn-sm" onclick="openSchModal()">+ 일정 추가</button>
-      </div>
-      {% endif %}
-    </div>
-
-    <!-- 댓글 -->
-    <div class="card">
-      <div class="section-title">💬 의견</div>
+    <!-- 코멘트 -->
+    <div style="margin-top:24px;border-top:1px solid #e5e7eb;padding-top:18px;">
+      <div style="font-size:14px;font-weight:700;color:#374151;margin-bottom:14px;">💬 코멘트</div>
       <div class="comment-list" id="comment-list">
         {% if comments %}
           {% for cm in comments %}
@@ -436,16 +378,69 @@
           </div>
           {% endfor %}
         {% else %}
-          <div id="comment-empty" style="text-align:center;color:#9ca3af;font-size:13px;padding:20px 0;">아직 의견이 없습니다</div>
+          <div id="comment-empty" style="text-align:center;color:#9ca3af;font-size:13px;padding:20px 0;">아직 코멘트가 없습니다</div>
         {% endif %}
       </div>
       <textarea id="comment-ta" class="comment-ta" rows="3"
-                placeholder="의견을 입력하세요..."></textarea>
+                placeholder="코멘트를 입력하세요..."></textarea>
       <div class="save-row" style="margin-top:8px;">
         <button class="btn btn-primary" onclick="addComment()">등록</button>
       </div>
     </div>
+  </div>
 
+  <!-- ④ 진행 일정표 (전체 폭) -->
+  <div class="card">
+    <div class="section-title">📅 진행 일정표</div>
+    <table class="sch-table">
+      <thead>
+        <tr>
+          <th style="width:38%">업무명</th>
+          <th style="width:20%">담당자</th>
+          <th style="width:18%">마감일</th>
+          <th style="width:14%">상태</th>
+          {% if can_edit %}<th style="width:10%"></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody id="sch-tbody">
+        {% set today_str = now[:10] if now is defined else '' %}
+        {% for s in schedule %}
+        {% set overdue = s.due_date and s.due_date < today_str and s.status not in ['완료','보류'] %}
+        <tr data-id="{{ s.id }}"{% if overdue %} class="overdue"{% endif %}>
+          <td>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+              {% if '제안서 제출' in s.task_name %}
+                {% if '(직)' in s.task_name %}<span class="badge-sch direct">직</span>{% elif '(온)' in s.task_name %}<span class="badge-sch online">온</span>{% endif %}
+              {% endif %}
+              <input class="sch-input" value="{{ s.task_name | e }}" style="flex:1;min-width:80px;" onchange="patchSchedule({{ s.id }}, this.closest('tr'))">
+              {% if 'PT 발표 @' in s.task_name %}<small class="pt-loc">@ {{ s.task_name.split('@')[1].strip() }}</small>{% endif %}
+            </div>
+          </td>
+          <td>
+            <select class="sch-select" onchange="patchSchedule({{ s.id }}, this.closest('tr'))">
+              <option value="">-</option>
+              {% for u in users %}<option value="{{ u.username }}"{% if u.username == s.assignee %} selected{% endif %}>{{ u.username }}</option>{% endfor %}
+            </select>
+          </td>
+          <td><input type="date" class="sch-input" value="{{ s.due_date }}" onchange="patchSchedule({{ s.id }}, this.closest('tr'))"></td>
+          <td>
+            <select class="sch-select" onchange="patchSchedule({{ s.id }}, this.closest('tr'))">
+              {% for st in ['예정','진행중','완료','보류'] %}<option{% if st == s.status %} selected{% endif %}>{{ st }}</option>{% endfor %}
+            </select>
+          </td>
+          {% if can_edit %}<td><button class="btn btn-danger btn-sm" onclick="delSchedule({{ s.id }}, this.closest('tr'))">삭제</button></td>{% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if not schedule %}
+    <div id="sch-empty" style="text-align:center;color:#9ca3af;font-size:13px;padding:20px 0;">등록된 일정이 없습니다</div>
+    {% endif %}
+    {% if can_edit %}
+    <div style="margin-top:14px;text-align:right;">
+      <button class="btn btn-primary btn-sm" onclick="openSchModal()">+ 일정 추가</button>
+    </div>
+    {% endif %}
   </div>
 </div>
 
