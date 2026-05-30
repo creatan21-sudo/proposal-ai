@@ -55,6 +55,9 @@
 .modal-textarea{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:vertical;font-family:inherit;outline:none;}
 .modal-textarea:focus{border-color:#4f46e5;}
 .modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
+.cat-btn{padding:5px 13px;font-size:12px;font-weight:600;border:1px solid #d1d5db;border-radius:20px;background:#fff;color:#6b7280;cursor:pointer;transition:all .15s;}
+.cat-btn:hover{background:#f3f4f6;border-color:#9ca3af;}
+.cat-btn.active{background:#4f46e5;color:#fff;border-color:#4f46e5;}
 </style>
 {% endblock %}
 {% block content %}
@@ -96,7 +99,7 @@
     </div>
   </div>
 
-  <div class="kw-section">
+  <div class="kw-section" style="display:none">
     <h3>🔍 키워드 관리 <span id="kw-counter" style="font-size:13px;font-weight:400;color:#6b7280;margin-left:6px;">{{ keywords|length }} / 10</span></h3>
     <div class="kw-input-row">
       <input type="text" id="kw-input" placeholder="예: 영상제작, 홍보영상, 다큐멘터리" maxlength="50"
@@ -150,6 +153,19 @@
       <input type="date" id="clse-until" oninput="applySearch()"
              style="padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:13px;">
     </span>
+  </div>
+
+  <!-- 카테고리 필터 버튼 -->
+  <div id="cat-filter-row" style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
+    <button class="cat-btn active" data-cat="" onclick="setCatFilter(this, '')">전체</button>
+    <button class="cat-btn" data-cat="영상제작" onclick="setCatFilter(this, '영상제작')">영상제작</button>
+    <button class="cat-btn" data-cat="홍보영상" onclick="setCatFilter(this, '홍보영상')">홍보영상</button>
+    <button class="cat-btn" data-cat="방송" onclick="setCatFilter(this, '방송')">방송</button>
+    <button class="cat-btn" data-cat="SNS" onclick="setCatFilter(this, 'SNS')">SNS</button>
+    <button class="cat-btn" data-cat="유튜브" onclick="setCatFilter(this, '유튜브')">유튜브</button>
+    <button class="cat-btn" data-cat="행사" onclick="setCatFilter(this, '행사')">행사·기념식</button>
+    <button class="cat-btn" data-cat="홍보" onclick="setCatFilter(this, '홍보')">홍보·캠페인</button>
+    <button class="cat-btn" data-cat="교육영상" onclick="setCatFilter(this, '교육영상')">교육영상</button>
   </div>
 
   <!-- 검색창 -->
@@ -467,6 +483,13 @@ function deleteKeyword(id,btn){
 }
 function manualScan(){const btn=document.getElementById('scan-btn');btn.textContent='⏳ 스캔 중...';btn.classList.add('loading');fetch('/nara/scan',{method:'POST'}).then(r=>r.json()).then(d=>{btn.textContent='⚡ 지금 스캔';btn.classList.remove('loading');showToast(d.message||'스캔 완료');setTimeout(()=>location.reload(),2000)}).catch(()=>{btn.textContent='⚡ 지금 스캔';btn.classList.remove('loading');showToast('스캔 오류',false)})}
 function _esc(s){return(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+let _activeCat = '';
+function setCatFilter(btn, cat){
+  _activeCat = cat;
+  document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  applySearch();
+}
 function applySearch(){
   const nm          = (document.getElementById('search-nm')?.value||'').toLowerCase();
   const instt       = (document.getElementById('search-instt')?.value||'').toLowerCase();
@@ -485,6 +508,7 @@ function applySearch(){
     const match = (!nm || trNm.includes(nm))
                && (!instt || trInstt.includes(instt))
                && (!kw || trKw === kw)
+               && (!_activeCat || trNm.includes(_activeCat.toLowerCase()))
                && (!hideExpired || !expired)
                && withinUntil
                ;
@@ -498,6 +522,10 @@ function clearSearch(){
   document.getElementById('search-instt').value='';
   document.getElementById('kw-filter').value='';
   document.getElementById('clse-until').value='';
+  _activeCat = '';
+  document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('active'));
+  const allBtn = document.querySelector('.cat-btn[data-cat=""]');
+  if(allBtn) allBtn.classList.add('active');
   applySearch();
 }
 function filterBids(){ applySearch(); }

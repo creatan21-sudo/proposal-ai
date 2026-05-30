@@ -4225,8 +4225,8 @@ def nara_add_keyword():
     try:
         with get_connection() as conn:
             count = conn.execute("SELECT COUNT(*) FROM nara_keywords").fetchone()[0]
-            if count >= 10:
-                return jsonify({"ok": False, "error": "키워드는 최대 10개까지 등록 가능합니다"})
+            if count >= 30:
+                return jsonify({"ok": False, "error": "키워드는 최대 30개까지 등록 가능합니다"})
             cur    = conn.execute("INSERT INTO nara_keywords (keyword) VALUES (?)", (keyword,))
             new_id = cur.lastrowid
         return jsonify({"ok": True, "id": new_id, "keyword": keyword})

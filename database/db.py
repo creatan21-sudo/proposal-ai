@@ -446,6 +446,17 @@ def init_db() -> None:
                 sent_at      TEXT DEFAULT (datetime('now','localtime'))
             );
         """)
+        # ── 기본 키워드 삽입 (최초 실행 시 또는 누락 시) ──
+        _DEFAULT_KEYWORDS = [
+            '홍보영상', '영상제작', '방송프로그램', '방송제작', '유튜브', 'SNS',
+            '채널운영', '캠페인영상', '영상콘텐츠', '홍보콘텐츠', '미디어콘텐츠',
+            '정책홍보', '홍보물제작', '영상물제작', '기념영상', '촬영편집',
+            '다큐멘터리', '뉴미디어', '숏폼', '행사기획', '기념식', '이벤트기획',
+            '행사운영', '홍보운영', '홍보기획', '방송콘텐츠', 'AI영상',
+            '영상광고', '온라인홍보', '미디어운영', '교육영상',
+        ]
+        for kw in _DEFAULT_KEYWORDS:
+            conn.execute("INSERT OR IGNORE INTO nara_keywords (keyword) VALUES (?)", (kw,))
         # ── 마이그레이션: 기존 DB에 누락된 컬럼 추가 ──
         for migration in [
             "ALTER TABLE research_results ADD COLUMN result_json TEXT DEFAULT '{}'",
