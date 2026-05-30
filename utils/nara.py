@@ -467,18 +467,55 @@ def _ai_filter_batch(bids: list) -> list | None:
         return None
 
 
+_CORE_INCLUDE = [
+    '영상제작', '영상 제작', '영상물', '홍보영상', '홍보 영상',
+    '캠페인영상', '캠페인 영상', 'AI영상', 'AI 영상',
+    '동영상제작', '동영상 제작', '영상콘텐츠', '영상 콘텐츠',
+    '촬영', '편집',
+    '방송제작', '방송 제작', '방송프로그램', '방송 프로그램',
+    '다큐멘터리', '다큐',
+    '콘텐츠제작', '콘텐츠 제작', '콘텐츠기획', '콘텐츠 기획',
+    '미디어콘텐츠', '미디어 콘텐츠', '뉴미디어',
+    '유튜브', 'SNS', '채널운영', '채널 운영',
+    '숏폼', '릴스', '인스타그램',
+    '행사기획', '행사 기획', '기념식', '이벤트기획', '이벤트 기획',
+    '행사운영', '행사 운영',
+    '홍보물제작', '홍보물 제작',
+    '정책홍보영상', '홍보콘텐츠', '홍보 콘텐츠',
+]
+
+_KW_EXCLUDE = [
+    '공사', '토목', '건설', '하수', '상수도', '도로', '교량',
+    '청소', '경비', '급식', '납품', '구입',
+    '소프트웨어개발', '시스템구축', '시스템 구축',
+]
+
+_AMBIGUOUS_EXCLUDE = [
+    '홍보대행', '홍보 대행', '통합홍보', '통합 홍보',
+    '홍보컨설팅', '홍보 컨설팅', '광고대행', '광고 대행',
+]
+
+
 def filter_bids_with_ai(bids: list, source: str = 'keyword') -> list:
     """공고 필터링.
 
-    source='keyword'  : 키워드 검색으로 이미 관련 공고만 가져왔으므로 필터 스킵.
-    source='collect_all': 전체수집 경로 — Claude AI 업무범위 판단 적용, 실패 시 키워드 폴백.
+    source='keyword'  : 핵심 패턴 기반 키워드 필터 적용.
+    source='collect_all': Claude AI 업무범위 판단 적용, 실패 시 키워드 폴백.
     """
     if not bids:
         return []
 
     if source == 'keyword':
-        print(f"[nara 키워드필터] {len(bids)}건 → {len(bids)}건 (키워드 스캔, 필터 스킵)")
-        return bids
+        result = []
+        for bid in bids:
+            nm = bid.get('bid_ntce_nm', '') or ''
+            has_core      = any(p in nm for p in _CORE_INCLUDE)
+            has_exclude   = any(p in nm for p in _KW_EXCLUDE)
+            has_ambiguous = any(p in nm for p in _AMBIGUOUS_EXCLUDE)
+            if has_core and not has_exclude and not has_ambiguous:
+                result.append(bid)
+        print(f"[nara 키워드필터] {len(bids)}건 → {len(result)}건")
+        return result
 
     # source == 'collect_all': AI 업무범위 판단
     result = []
