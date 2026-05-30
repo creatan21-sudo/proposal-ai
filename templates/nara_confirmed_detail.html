@@ -299,13 +299,6 @@
 
   <!-- ③ 전략 내러티브 -->
   <div class="card">
-    <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
-      <span>📝 전략 내러티브</span>
-      {% if can_edit_narrative %}
-      <button class="btn btn-ghost btn-sm" id="narrative-edit-btn" onclick="toggleNarrativeEdit()">✏️ 내러티브 작성</button>
-      {% endif %}
-    </div>
-
     {% set nq_labels = [
       ('q1','우리 회사가 본 과업을 하는데 내세울 어떤 경쟁력이 있을까요?'),
       ('q2','본 과업은 기존에 어떤 문제나 위기를 갖고 있나요?'),
@@ -315,8 +308,47 @@
       ('q6','운영이나 관리 부문에 내세울만한 특별한 장점은 어떤 것인가요?'),
       ('q7','추가로 기재할 중요한 내용이 있다면 무엇인가요?'),
     ] %}
+    {% set narrative_empty = (not narrative or not narrative.content or narrative.content == '{}') and not narrative_qa %}
 
-    <!-- 보기 모드 -->
+    <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
+      <span>📝 전략 내러티브</span>
+      {% if can_edit_narrative and not narrative_empty %}
+      <button class="btn btn-ghost btn-sm" id="narrative-edit-btn" onclick="toggleNarrativeEdit()">✏️ 내러티브 작성</button>
+      {% endif %}
+    </div>
+
+    {% if narrative_empty %}
+      {% if can_edit_narrative %}
+      <!-- 빈 상태 + 편집 권한: 바로 작성 폼 표시 -->
+      <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 16px;margin-bottom:16px;font-size:13px;color:#92400e;">
+        📋 아직 작성된 내러티브가 없습니다. 지금 작성해주세요.
+      </div>
+      <div id="narrative-view" style="display:none;"></div>
+      <div id="narrative-edit" style="display:block;">
+        {% for key, label in nq_labels %}
+        <div style="margin-bottom:16px;">
+          <div class="field-label">{{ loop.index }}. {{ label }}</div>
+          <textarea id="nq-{{ key }}" class="narrative-ta" rows="3"
+                    placeholder="답변을 입력하세요..."
+                    oninput="limitLines(this)"></textarea>
+          <div style="font-size:11px;color:#9ca3af;margin-top:3px;">5줄 내외 권장 · 10줄 이상 입력 불가</div>
+        </div>
+        {% endfor %}
+        <div class="save-row">
+          <button class="btn btn-primary" onclick="saveNarrative()">💾 저장</button>
+        </div>
+      </div>
+      {% else %}
+      <!-- 빈 상태 + 읽기 권한: 안내 메시지 -->
+      <div id="narrative-view">
+        <div style="background:#f9fafb;border-radius:10px;padding:40px 20px;text-align:center;color:#6b7280;">
+          <div style="font-size:28px;margin-bottom:10px;">📋</div>
+          <div style="font-size:14px;font-weight:600;">담당자가 내러티브 미작성 상태입니다.</div>
+        </div>
+      </div>
+      {% endif %}
+    {% else %}
+    <!-- 내러티브 있음: 보기/편집 토글 -->
     <div id="narrative-view">
       {% if narrative_qa %}
         {% set ns = namespace(found=false) %}
@@ -337,12 +369,9 @@
         {% endif %}
       {% elif narrative and narrative.content %}
         <div class="narrative-ro">{{ narrative.content }}</div>
-      {% else %}
-        <div class="narrative-ro" style="color:#9ca3af;">아직 작성된 내러티브가 없습니다.</div>
       {% endif %}
     </div>
 
-    <!-- 편집 모드 -->
     {% if can_edit_narrative %}
     <div id="narrative-edit" style="display:none;">
       {% for key, label in nq_labels %}
@@ -363,6 +392,7 @@
 
     {% if narrative and narrative.updated_by %}
     <div class="updated-hint">최종 수정: {{ narrative.updated_by }} · {{ (narrative.updated_at or '')[:16] }}</div>
+    {% endif %}
     {% endif %}
 
     <!-- 코멘트 -->
