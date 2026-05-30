@@ -63,6 +63,20 @@
 /* toast */
 .toast{position:fixed;bottom:28px;right:28px;background:#1f2937;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;z-index:999;pointer-events:none}
 .toast.show{opacity:1}
+/* 일정 뱃지 */
+.badge-sch{display:inline-block;border-radius:4px;padding:1px 6px;font-size:11px;font-weight:700;white-space:nowrap;}
+.badge-sch.direct{background:#dbeafe;color:#1d4ed8;}
+.badge-sch.online{background:#dcfce7;color:#15803d;}
+.pt-loc{color:#9ca3af;font-size:11px;white-space:nowrap;}
+/* 일정 추가 모달 */
+.sch-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;}
+.sch-modal-overlay.open{display:flex;}
+.sch-modal-box{background:#fff;border-radius:14px;padding:28px;width:420px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.25);}
+.sch-modal-title{font-weight:700;font-size:16px;margin-bottom:14px;}
+.sch-type-list{display:flex;flex-direction:column;gap:10px;margin-bottom:16px;}
+.sch-type-list label{display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;padding:6px 8px;border-radius:6px;border:1px solid transparent;}
+.sch-type-list label:hover{background:#f3f4f6;}
+.sch-type-list label:has(input:checked){background:#eff6ff;border-color:#bfdbfe;}
 </style>
 {% endblock %}
 {% block content %}
@@ -194,6 +208,36 @@
         </div>
       </div>
       <div>
+        <div class="field-label">제안서 제출</div>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;">
+            <input type="checkbox" id="bi-proposal-submit-chk"
+                   {% if bi.proposal_submit_date %}checked{% endif %}
+                   onchange="toggleProposalSubmitFields(this.checked)">
+            제안서 제출 일정 등록
+          </label>
+        </div>
+        <div id="proposal-submit-fields" style="display:{% if bi.proposal_submit_date %}grid{% else %}none{% endif %};grid-template-columns:1fr 1fr;gap:8px;">
+          <div>
+            <div class="field-label">제출 일시</div>
+            <input type="datetime-local" id="bi-proposal-submit-date" class="field-input"
+                   value="{{ bi.proposal_submit_date or '' }}">
+          </div>
+          <div>
+            <div class="field-label">제출 방법</div>
+            <div class="radio-group" style="margin-top:8px;">
+              {% for m in ['직접','온라인'] %}
+              <label>
+                <input type="radio" name="bi-proposal-submit-method" value="{{ m }}"
+                       {% if (bi.proposal_submit_method or '직접') == m %}checked{% endif %}>
+                {{ m }}
+              </label>
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
         <div class="field-label">비고</div>
         <textarea id="bi-notes" class="field-input" rows="4"
                   style="resize:vertical;">{{ bi.notes or '' }}</textarea>
@@ -236,6 +280,15 @@
         <div class="field-readonly">
           일시: {{ bi.price_bid_date }}
           {% if bi.price_bid_method %} · {{ bi.price_bid_method }}{% endif %}
+        </div>
+      </div>
+      {% endif %}
+      {% if bi.proposal_submit_date %}
+      <div style="grid-column:1/-1;">
+        <div class="field-label">제안서 제출</div>
+        <div class="field-readonly">
+          일시: {{ bi.proposal_submit_date }}
+          {% if bi.proposal_submit_method %} · {{ bi.proposal_submit_method }}{% endif %}
         </div>
       </div>
       {% endif %}
@@ -334,7 +387,15 @@
           {% for s in schedule %}
           {% set overdue = s.due_date and s.due_date < today_str and s.status not in ['완료','보류'] %}
           <tr data-id="{{ s.id }}"{% if overdue %} class="overdue"{% endif %}>
-            <td><input class="sch-input" value="{{ s.task_name | e }}" onchange="patchSchedule({{ s.id }}, this.closest('tr'))"></td>
+            <td>
+              <div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
+                {% if '제안서 제출' in s.task_name %}
+                  {% if '(직)' in s.task_name %}<span class="badge-sch direct">직</span>{% elif '(온)' in s.task_name %}<span class="badge-sch online">온</span>{% endif %}
+                {% endif %}
+                <input class="sch-input" value="{{ s.task_name | e }}" style="flex:1;min-width:60px;" onchange="patchSchedule({{ s.id }}, this.closest('tr'))">
+                {% if 'PT 발표 @' in s.task_name %}<small class="pt-loc">@ {{ s.task_name.split('@')[1].strip() }}</small>{% endif %}
+              </div>
+            </td>
             <td>
               <select class="sch-select" onchange="patchSchedule({{ s.id }}, this.closest('tr'))">
                 <option value="">-</option>
@@ -356,17 +417,8 @@
       <div id="sch-empty" style="text-align:center;color:#9ca3af;font-size:13px;padding:16px 0;">등록된 일정이 없습니다</div>
       {% endif %}
       {% if can_edit %}
-      <div style="margin-top:12px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
-        <input id="new-task" class="sch-input" style="flex:2;min-width:100px" placeholder="업무명">
-        <select id="new-assignee" class="sch-select" style="flex:1;min-width:80px">
-          <option value="">담당자</option>
-          {% for u in users %}<option value="{{ u.username }}">{{ u.username }}</option>{% endfor %}
-        </select>
-        <input type="date" id="new-due" class="sch-input" style="flex:1;min-width:110px">
-        <select id="new-status" class="sch-select" style="flex:1;min-width:70px">
-          {% for st in ['예정','진행중','완료','보류'] %}<option>{{ st }}</option>{% endfor %}
-        </select>
-        <button class="btn btn-primary btn-sm" style="white-space:nowrap" onclick="addSchedule()">+ 추가</button>
+      <div style="margin-top:12px;text-align:right;">
+        <button class="btn btn-primary btn-sm" onclick="openSchModal()">+ 일정 추가</button>
       </div>
       {% endif %}
     </div>
@@ -397,6 +449,70 @@
   </div>
 </div>
 
+<!-- 일정 추가 모달 -->
+<div class="sch-modal-overlay" id="sch-modal" onclick="if(event.target===this)closeSchModal()">
+  <div class="sch-modal-box">
+    <div class="sch-modal-title">일정 선택</div>
+    <div class="sch-type-list">
+      <label><input type="radio" name="sch-type" value="deadline" checked onchange="onSchTypeChange(this.value)"> 입찰 마감</label>
+      <label><input type="radio" name="sch-type" value="proposal" onchange="onSchTypeChange(this.value)"> 제안서 제출</label>
+      <label><input type="radio" name="sch-type" value="pricebid" onchange="onSchTypeChange(this.value)"> 가격투찰</label>
+      <label><input type="radio" name="sch-type" value="pt" onchange="onSchTypeChange(this.value)"> PT 발표</label>
+      <label><input type="radio" name="sch-type" value="custom" onchange="onSchTypeChange(this.value)"> 직접 기입</label>
+    </div>
+    <!-- 동적 필드 -->
+    <div id="sch-f-deadline">
+      <div class="field-label">날짜/시간</div>
+      <input type="datetime-local" id="sch-deadline-dt" class="field-input">
+    </div>
+    <div id="sch-f-proposal" style="display:none;">
+      <div class="field-label">날짜/시간</div>
+      <input type="datetime-local" id="sch-proposal-dt" class="field-input" style="margin-bottom:8px;">
+      <div class="field-label">제출 방법</div>
+      <div class="radio-group">
+        <label><input type="radio" name="sch-proposal-method" value="직접" checked> 직접</label>
+        <label><input type="radio" name="sch-proposal-method" value="온라인"> 온라인</label>
+      </div>
+    </div>
+    <div id="sch-f-pricebid" style="display:none;">
+      <div class="field-label">날짜/시간</div>
+      <input type="datetime-local" id="sch-pricebid-dt" class="field-input">
+    </div>
+    <div id="sch-f-pt" style="display:none;">
+      <div class="field-label">날짜/시간</div>
+      <input type="datetime-local" id="sch-pt-dt" class="field-input" style="margin-bottom:8px;">
+      <div class="field-label">장소</div>
+      <input type="text" id="sch-pt-loc" class="field-input" placeholder="장소 입력">
+    </div>
+    <div id="sch-f-custom" style="display:none;">
+      <div class="field-label">업무명</div>
+      <input type="text" id="sch-custom-name" class="field-input" placeholder="업무명 입력" style="margin-bottom:8px;">
+      <div class="field-label">날짜/시간</div>
+      <input type="datetime-local" id="sch-custom-dt" class="field-input">
+    </div>
+    <!-- 공통: 담당자, 상태 -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px;">
+      <div>
+        <div class="field-label">담당자</div>
+        <select id="sch-modal-assignee" class="sch-select" style="width:100%;">
+          <option value="">-</option>
+          {% for u in users %}<option value="{{ u.username }}">{{ u.username }}</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <div class="field-label">상태</div>
+        <select id="sch-modal-status" class="sch-select" style="width:100%;">
+          {% for st in ['예정','진행중','완료','보류'] %}<option>{{ st }}</option>{% endfor %}
+        </select>
+      </div>
+    </div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:18px;">
+      <button onclick="closeSchModal()" style="padding:8px 18px;background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:7px;cursor:pointer;font-size:13px;">취소</button>
+      <button onclick="submitSchModal()" style="padding:8px 20px;background:#4f46e5;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">추가</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 <script>
 const CID    = {{ c.id }};
@@ -421,6 +537,10 @@ function togglePriceBidFields(show){
   const el = document.getElementById('price-bid-fields');
   if(el) el.style.display = show ? 'grid' : 'none';
 }
+function toggleProposalSubmitFields(show){
+  const el = document.getElementById('proposal-submit-fields');
+  if(el) el.style.display = show ? 'grid' : 'none';
+}
 async function saveBidInfo(){
   const method      = document.querySelector('input[name="bi-method"]:checked')?.value || '';
   const docs        = {};
@@ -430,6 +550,8 @@ async function saveBidInfo(){
   const ptChk       = document.getElementById('bi-doc-pt')?.checked;
   const pbChk       = document.getElementById('bi-price-bid-chk')?.checked;
   const pbMethod    = document.querySelector('input[name="bi-price-bid-method"]:checked')?.value || '';
+  const psChk       = document.getElementById('bi-proposal-submit-chk')?.checked;
+  const psMethod    = document.querySelector('input[name="bi-proposal-submit-method"]:checked')?.value || '';
   const payload     = {
     submit_deadline: document.getElementById('bi-deadline').value,
     submit_method: method,
@@ -442,6 +564,8 @@ async function saveBidInfo(){
     pt_location:     ptChk ? (document.getElementById('bi-pt-location')?.value.trim() || '') : '',
     price_bid_date:  pbChk ? (document.getElementById('bi-price-bid-date')?.value || '') : '',
     price_bid_method: pbChk ? pbMethod : '',
+    proposal_submit_date:   psChk ? (document.getElementById('bi-proposal-submit-date')?.value || '') : '',
+    proposal_submit_method: psChk ? psMethod : '',
   };
   const r = await fetch(`/nara/confirmed/${CID}/bid_info`,{
     method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
@@ -487,24 +611,74 @@ async function saveNarrative(){
 function _rowOverdue(dueDateVal, statusVal){
   return dueDateVal && dueDateVal < TODAY && statusVal !== '완료' && statusVal !== '보류';
 }
+
 function _buildRowHtml(id, task_name, assignee, due_date, status){
   const uOpts = ['<option value="">-</option>'].concat(USERS.map(u=>`<option value="${_esc(u.username)}"${u.username===assignee?' selected':''}>${_esc(u.username)}</option>`)).join('');
   const sOpts = ['예정','진행중','완료','보류'].map(s=>`<option${s===status?' selected':''}>${s}</option>`).join('');
   const delBtn = CAN_EDIT ? `<td><button class="btn btn-danger btn-sm" onclick="delSchedule(${id},this.closest('tr'))">삭제</button></td>` : '';
+  let badge = '';
+  if(task_name.includes('제안서 제출')){
+    if(task_name.includes('(직)')) badge = '<span class="badge-sch direct">직</span>';
+    else if(task_name.includes('(온)')) badge = '<span class="badge-sch online">온</span>';
+  }
+  let locHtml = '';
+  if(task_name.includes('PT 발표 @')){
+    const parts = task_name.split('@');
+    if(parts[1]) locHtml = `<small class="pt-loc">@ ${_esc(parts[1].trim())}</small>`;
+  }
+  const taskCell = `<td><div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">${badge}<input class="sch-input" value="${_esc(task_name)}" style="flex:1;min-width:60px;" onchange="patchSchedule(${id},this.closest('tr'))">${locHtml}</div></td>`;
   return `
-    <td><input class="sch-input" value="${_esc(task_name)}" onchange="patchSchedule(${id},this.closest('tr'))"></td>
+    ${taskCell}
     <td><select class="sch-select" onchange="patchSchedule(${id},this.closest('tr'))">${uOpts}</select></td>
     <td><input type="date" class="sch-input" value="${due_date}" onchange="patchSchedule(${id},this.closest('tr'))"></td>
     <td><select class="sch-select" onchange="patchSchedule(${id},this.closest('tr'))">${sOpts}</select></td>
     ${delBtn}`;
 }
-async function addSchedule(){
-  const task_name = document.getElementById('new-task').value.trim();
-  if(!task_name){ showToast('업무명을 입력하세요',false); return; }
-  const assignee  = document.getElementById('new-assignee').value;
-  const due_date  = document.getElementById('new-due').value;
-  const status    = document.getElementById('new-status').value;
-  const sort_order= document.querySelectorAll('#sch-tbody tr').length;
+/* ── 일정 추가 모달 ── */
+function openSchModal(){
+  document.getElementById('sch-modal').classList.add('open');
+}
+function closeSchModal(){
+  document.getElementById('sch-modal').classList.remove('open');
+}
+function onSchTypeChange(val){
+  ['deadline','proposal','pricebid','pt','custom'].forEach(f=>{
+    const el = document.getElementById(`sch-f-${f}`);
+    if(el) el.style.display = (f===val)?'block':'none';
+  });
+}
+async function submitSchModal(){
+  const type = document.querySelector('input[name="sch-type"]:checked')?.value;
+  let task_name='', due_datetime='';
+  switch(type){
+    case 'deadline':
+      task_name='입찰 마감';
+      due_datetime=document.getElementById('sch-deadline-dt').value;
+      break;
+    case 'proposal':{
+      const m=document.querySelector('input[name="sch-proposal-method"]:checked')?.value||'직접';
+      task_name=`제안서 제출 (${m==='직접'?'직':'온'})`;
+      due_datetime=document.getElementById('sch-proposal-dt').value;
+      break;}
+    case 'pricebid':
+      task_name='가격투찰';
+      due_datetime=document.getElementById('sch-pricebid-dt').value;
+      break;
+    case 'pt':{
+      const loc=document.getElementById('sch-pt-loc').value.trim();
+      task_name=loc?`PT 발표 @ ${loc}`:'PT 발표';
+      due_datetime=document.getElementById('sch-pt-dt').value;
+      break;}
+    case 'custom':
+      task_name=document.getElementById('sch-custom-name').value.trim();
+      due_datetime=document.getElementById('sch-custom-dt').value;
+      if(!task_name){ showToast('업무명을 입력하세요',false); return; }
+      break;
+  }
+  const due_date = due_datetime?due_datetime.slice(0,10):'';
+  const assignee = document.getElementById('sch-modal-assignee').value;
+  const status   = document.getElementById('sch-modal-status').value;
+  const sort_order = document.querySelectorAll('#sch-tbody tr').length;
   const r = await fetch(`/nara/confirmed/${CID}/schedule`,{
     method:'POST', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({task_name,assignee,due_date,status,sort_order})
@@ -514,12 +688,11 @@ async function addSchedule(){
   const empty = document.getElementById('sch-empty');
   if(empty) empty.remove();
   const tr = document.createElement('tr');
-  tr.dataset.id = d.id;
-  if(_rowOverdue(due_date, status)) tr.className='overdue';
-  tr.innerHTML = _buildRowHtml(d.id, task_name, assignee, due_date, status);
+  tr.dataset.id=d.id;
+  if(_rowOverdue(due_date,status)) tr.className='overdue';
+  tr.innerHTML=_buildRowHtml(d.id,task_name,assignee,due_date,status);
   document.getElementById('sch-tbody').appendChild(tr);
-  document.getElementById('new-task').value='';
-  document.getElementById('new-due').value='';
+  closeSchModal();
   showToast('일정이 추가되었습니다');
 }
 async function patchSchedule(id, tr){

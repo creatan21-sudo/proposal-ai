@@ -3984,24 +3984,42 @@ def nara_confirmed_detail(confirmed_id):
         )
         schedule = list_confirmed_schedule(confirmed_id)
     bid_info   = get_confirmed_bid_info(confirmed_id)
+    # 제안서 제출 일시가 있고 일정에 없으면 자동 추가
+    if bid_info and bid_info.get("proposal_submit_date"):
+        existing_tasks = [s["task_name"] for s in schedule]
+        if not any("제안서 제출" in t for t in existing_tasks):
+            ps_method = bid_info.get("proposal_submit_method") or "직접"
+            ps_short  = "직" if ps_method == "직접" else "온"
+            ps_due    = (bid_info.get("proposal_submit_date") or "")[:10]
+            add_confirmed_schedule(
+                confirmed_id=confirmed_id,
+                task_name=f"제안서 제출 ({ps_short})",
+                assignee=c.get("assignee") or "",
+                due_date=ps_due,
+                status="예정",
+                sort_order=1,
+            )
+            schedule = list_confirmed_schedule(confirmed_id)
     # PT 일시가 있고 일정에 "PT 발표"가 없으면 자동 추가
     if bid_info and bid_info.get("pt_date") and bid_info.get("doc_pt"):
         existing_tasks = [s["task_name"] for s in schedule]
-        if "PT 발표" not in existing_tasks:
-            pt_due = (bid_info.get("pt_date") or "")[:10]
+        if not any("PT 발표" in t for t in existing_tasks):
+            pt_due      = (bid_info.get("pt_date") or "")[:10]
+            pt_location = (bid_info.get("pt_location") or "").strip()
+            pt_name     = f"PT 발표 @ {pt_location}" if pt_location else "PT 발표"
             add_confirmed_schedule(
                 confirmed_id=confirmed_id,
-                task_name="PT 발표",
+                task_name=pt_name,
                 assignee=c.get("assignee") or "",
                 due_date=pt_due,
                 status="예정",
-                sort_order=1,
+                sort_order=2,
             )
             schedule = list_confirmed_schedule(confirmed_id)
     # 가격투찰 일시가 있고 일정에 "가격투찰"이 없으면 자동 추가
     if bid_info and bid_info.get("price_bid_date"):
         existing_tasks = [s["task_name"] for s in schedule]
-        if "가격투찰" not in existing_tasks:
+        if not any("가격투찰" in t for t in existing_tasks):
             pb_due = (bid_info.get("price_bid_date") or "")[:10]
             add_confirmed_schedule(
                 confirmed_id=confirmed_id,
@@ -4009,7 +4027,7 @@ def nara_confirmed_detail(confirmed_id):
                 assignee=c.get("assignee") or "",
                 due_date=pb_due,
                 status="예정",
-                sort_order=2,
+                sort_order=3,
             )
             schedule = list_confirmed_schedule(confirmed_id)
     from database.db import get_connection

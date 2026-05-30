@@ -486,6 +486,8 @@ def init_db() -> None:
             "ALTER TABLE confirmed_bid_info ADD COLUMN pt_location      TEXT DEFAULT ''",
             "ALTER TABLE confirmed_bid_info ADD COLUMN price_bid_date   TEXT DEFAULT ''",
             "ALTER TABLE confirmed_bid_info ADD COLUMN price_bid_method TEXT DEFAULT ''",
+            "ALTER TABLE confirmed_bid_info ADD COLUMN proposal_submit_date   TEXT DEFAULT ''",
+            "ALTER TABLE confirmed_bid_info ADD COLUMN proposal_submit_method TEXT DEFAULT ''",
             # nara_candidates 중복 제거 + UNIQUE INDEX
             "DELETE FROM nara_candidates WHERE id NOT IN (SELECT MIN(id) FROM nara_candidates GROUP BY bid_ntce_no)",
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_nara_candidates_no ON nara_candidates(bid_ntce_no)",
@@ -2470,8 +2472,9 @@ def save_confirmed_bid_info(confirmed_id: int, data: dict, updated_by: str) -> N
                 doc_summary, doc_sample_video, doc_other, notes,
                 doc_pt, pt_date, pt_duration, pt_location,
                 price_bid_date, price_bid_method,
+                proposal_submit_date, proposal_submit_method,
                 updated_by, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,datetime('now','localtime'))
                ON CONFLICT(confirmed_id) DO UPDATE SET
                  submit_deadline=excluded.submit_deadline,
                  submit_method=excluded.submit_method,
@@ -2488,6 +2491,8 @@ def save_confirmed_bid_info(confirmed_id: int, data: dict, updated_by: str) -> N
                  pt_location=excluded.pt_location,
                  price_bid_date=excluded.price_bid_date,
                  price_bid_method=excluded.price_bid_method,
+                 proposal_submit_date=excluded.proposal_submit_date,
+                 proposal_submit_method=excluded.proposal_submit_method,
                  updated_by=excluded.updated_by,
                  updated_at=excluded.updated_at""",
             (confirmed_id,
@@ -2506,6 +2511,8 @@ def save_confirmed_bid_info(confirmed_id: int, data: dict, updated_by: str) -> N
              data.get("pt_location", ""),
              data.get("price_bid_date", ""),
              data.get("price_bid_method", ""),
+             data.get("proposal_submit_date", ""),
+             data.get("proposal_submit_method", ""),
              updated_by),
         )
 
