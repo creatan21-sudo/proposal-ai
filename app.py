@@ -4498,6 +4498,71 @@ def run_rfp_research(confirmed_id: int, file_paths: list, app_context) -> None:
                 except Exception as e:
                     rfp_analysis = f"분석 오류: {e}"
 
+            # ② 날짜 추출 → confirmed_bid_info + confirmed_schedule 자동 등재
+            if rfp_text.strip():
+                try:
+                    import re as _re2
+                    date_prompt = f"""다음 RFP 텍스트에서 아래 정보를 JSON으로 추출해줘.
+없으면 null로.
+
+{{
+  "submit_deadline": "YYYY-MM-DD HH:MM",
+  "submit_method": "온라인 또는 오프라인",
+  "pt_date": "YYYY-MM-DD HH:MM",
+  "pt_location": "장소명",
+  "price_bid_date": "YYYY-MM-DD HH:MM"
+}}
+
+RFP 텍스트:
+{rfp_text[:6000]}"""
+                    import anthropic as _ant_d
+                    _cd = _ant_d.Anthropic()
+                    date_resp = _cd.messages.create(
+                        model="claude-haiku-4-5-20251001",
+                        max_tokens=400,
+                        messages=[{"role": "user", "content": date_prompt}],
+                    )
+                    date_text = date_resp.content[0].text.strip()
+                    _dm = _re2.search(r'\{[\s\S]*\}', date_text)
+                    extracted = json.loads(_dm.group()) if _dm else {}
+
+                    # confirmed_bid_info 업데이트 (기존 값 보존, 빈 칸만 채우기)
+                    existing_info = get_confirmed_bid_info(confirmed_id) or {}
+                    merged_info = dict(existing_info)
+                    for _key in ("submit_deadline", "submit_method", "pt_date", "pt_location", "price_bid_date"):
+                        _val = extracted.get(_key)
+                        if _val and not merged_info.get(_key):
+                            merged_info[_key] = _val
+                    save_confirmed_bid_info(confirmed_id, merged_info, updated_by='자동추출')
+
+                    # confirmed_schedule 자동 등재 (task_name 중복 체크)
+                    existing_sched = {s["task_name"]: s for s in list_confirmed_schedule(confirmed_id)}
+                    bid_clse_dt = c.get("bid_clse_dt", "") or ""
+
+                    def _upsert_schedule(task_name, due_date, assignee, sort_order):
+                        if not due_date:
+                            return
+                        if task_name in existing_sched:
+                            row = existing_sched[task_name]
+                            update_confirmed_schedule(
+                                row["id"], task_name,
+                                row.get("assignee") or assignee,
+                                due_date, row.get("status", "예정"),
+                            )
+                        else:
+                            add_confirmed_schedule(confirmed_id, task_name, assignee, due_date, "예정", sort_order)
+
+                    _upsert_schedule("입찰 마감",   bid_clse_dt, "", 1)
+                    _upsert_schedule("제안서 제출", merged_info.get("submit_deadline") or "",
+                                     merged_info.get("submit_method") or "", 2)
+                    _upsert_schedule("PT 발표",    merged_info.get("pt_date") or "",
+                                     merged_info.get("pt_location") or "", 3)
+                    _upsert_schedule("가격투찰",   merged_info.get("price_bid_date") or "", "", 4)
+
+                    print(f"[RFP분석] 일정 자동 등재 완료: {confirmed_id}")
+                except Exception as _de:
+                    print(f"  [workspace] 날짜 추출 오류: {_de}")
+
             # ③ Perplexity + Claude 리서치
             research_result = ""
             try:
