@@ -5,6 +5,19 @@
 .notif-wrap{max-width:720px;margin:0 auto;padding:24px 16px}
 .notif-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;}
 .notif-title{font-size:20px;font-weight:700;}
+/* 긴급 알림 카드 (2배 크기) */
+.notif-urgent{background:#fff0f0;border:2px solid #f87171;border-radius:14px;padding:28px;margin-bottom:24px;box-shadow:0 4px 16px rgba(239,68,68,.1);}
+.notif-urgent-badge{font-size:11px;font-weight:700;color:#dc2626;letter-spacing:.5px;margin-bottom:10px;}
+.notif-urgent-title{font-size:18px;font-weight:700;color:#111827;margin-bottom:10px;line-height:1.4;}
+.notif-urgent-msg{font-size:14px;color:#374151;line-height:1.7;margin-bottom:14px;white-space:pre-wrap;}
+.notif-urgent-time{font-size:12px;color:#9ca3af;margin-bottom:18px;}
+.notif-urgent-btns{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
+.btn-register{background:#059669;color:#fff;padding:10px 20px;border-radius:8px;font-size:14px;font-weight:700;text-decoration:none;border:none;cursor:pointer;display:inline-block;}
+.btn-register:hover{background:#047857;}
+.btn-confirm{background:#f3f4f6;color:#374151;border:1px solid #d1d5db;padding:10px 20px;border-radius:8px;font-size:14px;cursor:pointer;font-weight:600;}
+.btn-confirm:hover{background:#e5e7eb;}
+/* 일반 알림 카드 */
+.notif-section-label{font-size:11px;font-weight:700;color:#9ca3af;letter-spacing:.5px;margin-bottom:10px;margin-top:4px;}
 .notif-card{background:#fff;border:1px solid #e5e7eb;border-radius:10px;padding:14px 18px;margin-bottom:10px;cursor:pointer;transition:box-shadow .15s;}
 .notif-card:hover{box-shadow:0 2px 8px rgba(0,0,0,.08);}
 .notif-card.unread{background:#eff6ff;border-color:#bfdbfe;}
@@ -32,20 +45,56 @@
       <button class="btn btn-ghost" onclick="readAll()">전체 읽음</button>
     </div>
   </div>
+
+  {# 가장 최근 미읽은 알림을 찾기 #}
+  {% set ns = namespace(urgent=None) %}
+  {% for n in notifications %}
+    {% if not n.is_read and ns.urgent is none %}{% set ns.urgent = n %}{% endif %}
+  {% endfor %}
+
+  {% if ns.urgent %}
+  <div class="notif-urgent">
+    <div class="notif-urgent-badge">🔔 새 알림</div>
+    <div class="notif-urgent-title">{{ ns.urgent.title }}</div>
+    {% if ns.urgent.message %}
+    <div class="notif-urgent-msg">{{ ns.urgent.message }}</div>
+    {% endif %}
+    <div class="notif-urgent-time">{{ (ns.urgent.created_at or '')[:16] }}</div>
+    <div class="notif-urgent-btns">
+      {% if ns.urgent.link and ns.urgent.link not in ('', 'None') %}
+        {% if 'workspace' in ns.urgent.link %}
+        <a href="{{ ns.urgent.link }}" onclick="event.preventDefault(); markReadAndGo({{ ns.urgent.id }}, '{{ ns.urgent.link | e }}')" class="btn-register">지금 등록 →</a>
+        {% else %}
+        <a href="{{ ns.urgent.link }}" onclick="event.preventDefault(); markReadAndGo({{ ns.urgent.id }}, '{{ ns.urgent.link | e }}')" class="btn-register">바로가기 →</a>
+        {% endif %}
+      {% endif %}
+      <button class="btn-confirm" onclick="readAndReload({{ ns.urgent.id }})">확인</button>
+    </div>
+  </div>
+  {% endif %}
+
+  {# 나머지 알림 (긴급 카드에서 표시한 것 제외) #}
+  {% set rest = namespace(shown=false) %}
   {% if notifications %}
     {% for n in notifications %}
-    <div class="notif-card {% if not n.is_read %}unread{% endif %}"
-         onclick="readAndGo({{ n.id }}, '{{ n.link | e }}')">
-      <div class="notif-card-title">{{ n.title }}</div>
-      {% if n.message %}
-      <div class="notif-card-msg">{{ n.message }}</div>
+      {% if ns.urgent is none or n.id != ns.urgent.id %}
+        {% if not rest.shown %}
+          {% if ns.urgent is not none %}<div class="notif-section-label">이전 알림</div>{% endif %}
+          {% set rest.shown = true %}
+        {% endif %}
+        <div class="notif-card {% if not n.is_read %}unread{% endif %}"
+             onclick="readAndGo({{ n.id }}, '{{ n.link | e }}')">
+          <div class="notif-card-title">{{ n.title }}</div>
+          {% if n.message %}<div class="notif-card-msg">{{ n.message }}</div>{% endif %}
+          <div class="notif-card-time">{{ (n.created_at or '')[:16] }}
+            {% if n.is_read %}<span style="color:#10b981;margin-left:8px;">✓ 읽음</span>{% endif %}
+          </div>
+        </div>
       {% endif %}
-      <div class="notif-card-time">{{ (n.created_at or '')[:16] }}
-        {% if n.is_read %}<span style="color:#10b981;margin-left:8px;">✓ 읽음</span>{% endif %}
-      </div>
-    </div>
     {% endfor %}
-  {% else %}
+  {% endif %}
+
+  {% if not notifications %}
     <div class="notif-empty">알림이 없습니다</div>
   {% endif %}
 </div>
@@ -57,10 +106,18 @@ async function readAndGo(id, link){
   if(link && link !== 'None' && link !== '') location.href=link;
   else location.reload();
 }
+async function markReadAndGo(id, link){
+  await fetch(`/notifications/${id}/read`,{method:'POST'});
+  location.href=link;
+}
+async function readAndReload(id){
+  await fetch(`/notifications/${id}/read`,{method:'POST'});
+  location.reload();
+}
 async function readAll(){
   await fetch('/notifications/read_all',{method:'POST'});
   showToast('전체 읽음 처리됐습니다');
-  setTimeout(()=>location.reload(), 800);
+  setTimeout(()=>location.reload(),800);
 }
 </script>
 {% endblock %}

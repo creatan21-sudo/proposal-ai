@@ -20,7 +20,7 @@
 {% set path = request.path %}
   <header>
     <div class="header-inner">
-      <a href="/" class="logo">Prointerz</a>
+      <a href="/nara" class="logo">Prointerz</a>
       <nav>
         <a href="/nara" class="{{ 'nav-active' if path.startswith('/nara') else '' }}">입찰</a>
         <a href="/schedule" class="{{ 'nav-active' if path == '/schedule' else '' }}">일정</a>
@@ -108,8 +108,15 @@
               (ns.notifications||[]).slice(0,3).forEach(n=>{
                 const div=document.createElement('div');
                 div.style.cssText='background:#eff6ff;border-radius:8px;padding:8px 10px;font-size:13px;';
+                let btnHtml='';
+                if(n.link && n.link.indexOf('workspace')!==-1){
+                  btnHtml='<div style="margin-top:8px;">'
+                    +'<a href="'+n.link+'" style="display:inline-block;padding:5px 12px;background:#059669;color:#fff;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none;" onclick="document.getElementById(\'notif-popup\').style.display=\'none\'">지금 등록 →</a>'
+                    +'</div>';
+                }
                 div.innerHTML='<div style="font-weight:600;color:#1e40af;">'+_hesc(n.title)+'</div>'
-                  +'<div style="color:#374151;margin-top:2px;font-size:12px;">'+_hesc(n.message)+'</div>';
+                  +'<div style="color:#374151;margin-top:2px;font-size:12px;">'+_hesc(n.message)+'</div>'
+                  +btnHtml;
                 list.appendChild(div);
               });
               document.getElementById('notif-popup').style.display='block';
