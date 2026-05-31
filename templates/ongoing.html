@@ -1,0 +1,124 @@
+{% extends "base.html" %}
+{% block title %}진행중 — Prointerz{% endblock %}
+{% block head %}
+<style>
+.og-wrap{max-width:900px;margin:0 auto;padding:24px 16px}
+.og-section-title{font-size:15px;font-weight:700;color:#374151;margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+.og-section-title .cnt{background:#f3f4f6;color:#6b7280;border-radius:99px;padding:2px 10px;font-size:12px;font-weight:600;}
+.og-section-title .cnt.has-work{background:#fee2e2;color:#dc2626;}
+
+/* 미완료 카드 */
+.og-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 20px;margin-bottom:10px;cursor:pointer;transition:box-shadow .15s,border-color .15s;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.og-card:hover{box-shadow:0 2px 12px rgba(0,0,0,.08);border-color:#c7d2fe;}
+.og-card-left{flex:1;min-width:0;}
+.og-card-name{font-size:14px;font-weight:700;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px;}
+.og-card-meta{font-size:12px;color:#6b7280;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.og-card-meta .org{color:#374151;font-weight:500;}
+.og-card-meta .due{}
+.og-card-meta .due.urgent{color:#dc2626;font-weight:700;}
+.og-card-meta .assignee{background:#ede9fe;color:#5b21b6;border-radius:99px;padding:1px 8px;font-size:11px;font-weight:600;}
+.og-card-icons{display:flex;gap:6px;flex-shrink:0;}
+.og-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;background:#f9fafb;border:1px solid #e5e7eb;font-size:16px;cursor:pointer;text-decoration:none;transition:background .12s,border-color .12s;position:relative;}
+.og-icon-btn:hover{background:#eff6ff;border-color:#bfdbfe;}
+.og-icon-btn .tip{display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;white-space:nowrap;font-size:11px;padding:4px 8px;border-radius:6px;pointer-events:none;z-index:10;}
+.og-icon-btn:hover .tip{display:block;}
+
+/* 완료 섹션 */
+.og-divider{border:none;border-top:2px solid #e5e7eb;margin:28px 0 22px;}
+.og-complete-toggle{display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;background:none;border:none;padding:0;font-family:inherit;}
+.og-complete-toggle:hover .og-section-title{color:#4f46e5;}
+.og-complete-chevron{font-size:12px;color:#9ca3af;transition:transform .2s;}
+.og-complete-chevron.open{transform:rotate(180deg);}
+.og-complete-list{margin-top:12px;}
+
+/* 완료 행 */
+.og-row{display:grid;grid-template-columns:1fr auto auto auto;gap:12px;align-items:center;padding:10px 14px;border-radius:8px;border:1px solid #f3f4f6;margin-bottom:6px;background:#fafafa;cursor:pointer;transition:background .12s;}
+.og-row:hover{background:#f0fdf4;}
+.og-row-name{font-size:13px;font-weight:600;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.og-row-org{font-size:12px;color:#6b7280;white-space:nowrap;}
+.og-row-due{font-size:12px;color:#6b7280;white-space:nowrap;}
+.og-row-done{font-size:12px;color:#10b981;font-weight:700;white-space:nowrap;}
+
+.og-empty{text-align:center;padding:48px 0;color:#9ca3af;font-size:14px;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="og-wrap">
+
+  {% set now_str = now[:10] if now is defined else '' %}
+
+  <!-- 미완료 섹션 -->
+  <div class="og-section-title">
+    📋 진행중 — 할 일 있음
+    <span class="cnt{% if incomplete_tasks %} has-work{% endif %}">{{ incomplete_tasks|length }}건</span>
+  </div>
+
+  {% if incomplete_tasks %}
+    {% for t in incomplete_tasks %}
+    {% set clse = (t.bid_clse_dt or '')[:10] %}
+    <div class="og-card" onclick="location.href='/nara/confirmed/{{ t.id }}'">
+      <div class="og-card-left">
+        <div class="og-card-name" title="{{ t.bid_ntce_nm or '-' }}">{{ t.bid_ntce_nm or '-' }}</div>
+        <div class="og-card-meta">
+          <span class="org">{{ t.ntce_instt_nm or '-' }}</span>
+          {% if clse %}
+          <span class="due{% if clse <= cutoff_d3 %} urgent{% endif %}">마감 {{ clse }}</span>
+          {% endif %}
+          {% if t.assignee %}
+          <span class="assignee">{{ t.assignee }}</span>
+          {% endif %}
+        </div>
+      </div>
+      <div class="og-card-icons">
+        {% for item in t.incomplete %}
+        <a class="og-icon-btn" href="{{ item.link }}"
+           onclick="event.stopPropagation();"
+           title="{{ item.label }}">
+          {{ item.icon }}
+          <span class="tip">{{ item.label }}</span>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="og-empty">할 일이 없습니다 🎉</div>
+  {% endif %}
+
+  <hr class="og-divider">
+
+  <!-- 완료 섹션 -->
+  <button class="og-complete-toggle" onclick="toggleComplete(this)" style="margin-bottom:0;">
+    <div class="og-section-title" style="margin-bottom:0;">
+      ✅ 완료
+      <span class="cnt">{{ complete_tasks|length }}건</span>
+    </div>
+    <span class="og-complete-chevron" id="complete-chevron">▼</span>
+  </button>
+
+  <div class="og-complete-list" id="complete-list" style="display:none;">
+    {% if complete_tasks %}
+      {% for t in complete_tasks %}
+      {% set clse = (t.bid_clse_dt or '')[:10] %}
+      <div class="og-row" onclick="location.href='/nara/confirmed/{{ t.id }}'">
+        <span class="og-row-name" title="{{ t.bid_ntce_nm or '-' }}">{{ t.bid_ntce_nm or '-' }}</span>
+        <span class="og-row-org">{{ t.ntce_instt_nm or '-' }}</span>
+        <span class="og-row-due">{{ clse or '-' }}</span>
+        <span class="og-row-done">✅ 완료</span>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="og-empty" style="padding:24px 0;">완료된 과업이 없습니다</div>
+    {% endif %}
+  </div>
+</div>
+<script>
+function toggleComplete(btn){
+  const list = document.getElementById('complete-list');
+  const chev = document.getElementById('complete-chevron');
+  const open = list.style.display !== 'none';
+  list.style.display = open ? 'none' : 'block';
+  chev.classList.toggle('open', !open);
+}
+</script>
+{% endblock %}

@@ -700,7 +700,92 @@ def logout():
 @app.route("/")
 @login_required
 def index():
-    return redirect(url_for("nara_dashboard"))
+    return redirect(url_for("ongoing"))
+
+
+@app.route("/ongoing")
+@login_required
+def ongoing():
+    username = session.get("username")
+    role     = session.get("role", "user")
+    is_admin = session.get("is_admin", False)
+
+    with get_connection() as conn:
+        confirmed_list = conn.execute("""
+            SELECT cf.id,
+                   cf.confirmed_by, cf.notes, cf.assignee, cf.created_at,
+                   COALESCE(pk.bid_ntce_no, ca.bid_ntce_no) AS bid_ntce_no,
+                   COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm) AS bid_ntce_nm,
+                   COALESCE(pk.ntce_instt_nm, ca.ntce_instt_nm) AS ntce_instt_nm,
+                   COALESCE(pk.presmpt_prce, ca.presmpt_prce) AS presmpt_prce,
+                   COALESCE(pk.bid_clse_dt, ca.bid_clse_dt) AS bid_clse_dt,
+                   COALESCE(pk.ntce_url, ca.ntce_url) AS ntce_url,
+                   bi.submit_deadline, bi.submit_method,
+                   bi.pt_date, bi.price_bid_date,
+                   n.content AS narrative_content,
+                   COALESCE(rfp.cnt, 0) AS rfp_count,
+                   COALESCE(sch.cnt, 0) AS schedule_count
+            FROM nara_confirmed cf
+            LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
+            LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
+            LEFT JOIN confirmed_bid_info bi ON bi.confirmed_id = cf.id
+            LEFT JOIN confirmed_narratives n ON n.confirmed_id = cf.id
+            LEFT JOIN (SELECT confirmed_id, COUNT(*) AS cnt
+                       FROM confirmed_rfp_files GROUP BY confirmed_id) rfp
+                   ON rfp.confirmed_id = cf.id
+            LEFT JOIN (SELECT confirmed_id, COUNT(*) AS cnt
+                       FROM confirmed_schedule GROUP BY confirmed_id) sch
+                   ON sch.confirmed_id = cf.id
+            LEFT JOIN nara_results r ON r.confirmed_id = cf.id
+            WHERE r.id IS NULL
+            ORDER BY COALESCE(pk.bid_clse_dt, ca.bid_clse_dt) ASC
+        """).fetchall()
+
+    tasks = []
+    for row in confirmed_list:
+        c = dict(row)
+        is_assignee = (c.get("assignee") == username)
+        can_edit = is_admin or role == "operator" or is_assignee
+
+        incomplete = []
+        if c["rfp_count"] == 0:
+            incomplete.append({
+                "icon": "📄",
+                "label": "RFP 미등록",
+                "link": f"/nara/confirmed/{c['id']}/workspace",
+            })
+        if c["schedule_count"] <= 1:
+            incomplete.append({
+                "icon": "📅",
+                "label": "일정 미등록",
+                "link": f"/nara/confirmed/{c['id']}",
+            })
+        if not c["narrative_content"] or c["narrative_content"] in ("{}", ""):
+            incomplete.append({
+                "icon": "✍️",
+                "label": "내러티브 미작성",
+                "link": f"/nara/confirmed/{c['id']}/workspace",
+            })
+
+        c["incomplete"] = incomplete
+        c["can_edit"]   = can_edit
+        tasks.append(c)
+
+    incomplete_tasks = [t for t in tasks if t["incomplete"]]
+    complete_tasks   = [t for t in tasks if not t["incomplete"]]
+
+    from datetime import datetime as _dt, timedelta as _td
+    _now = _dt.now()
+    return render_template(
+        "ongoing.html",
+        incomplete_tasks=incomplete_tasks,
+        complete_tasks=complete_tasks,
+        username=username,
+        role=role,
+        is_admin=is_admin,
+        now=_now.strftime("%Y-%m-%d %H:%M"),
+        cutoff_d3=(_now + _td(days=3)).strftime("%Y-%m-%d"),
+    )
 
 @app.route("/proposal")
 @login_required

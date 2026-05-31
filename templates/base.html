@@ -20,8 +20,9 @@
 {% set path = request.path %}
   <header>
     <div class="header-inner">
-      <a href="/nara" class="logo">Prointerz</a>
+      <a href="/ongoing" class="logo">Prointerz</a>
       <nav>
+        <a href="/ongoing" class="{{ 'nav-active' if path == '/ongoing' else '' }}">진행중</a>
         <a href="/nara" class="{{ 'nav-active' if path.startswith('/nara') else '' }}">입찰</a>
         <a href="/schedule" class="{{ 'nav-active' if path == '/schedule' else '' }}">일정</a>
         {% if session.get('role') != 'user' %}
