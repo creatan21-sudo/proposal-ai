@@ -112,7 +112,84 @@ tr.sch-editing .sch-act-view{display:none !important;}
     {% endif %}
   </div>
 
-  <!-- ② 입찰 정보 -->
+  <!-- ② 진행 일정표 (전체 폭) -->
+  <div class="card">
+    <div class="section-title">📅 진행 일정표</div>
+    <table class="sch-table">
+      <thead>
+        <tr>
+          <th style="width:38%">업무명</th>
+          <th style="width:22%">날짜</th>
+          <th style="width:14%">상태</th>
+          <th style="width:16%">비고</th>
+          {% if can_edit %}<th style="width:10%"></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody id="sch-tbody">
+        {% set today_str = now[:10] if now is defined else '' %}
+        {% for s in schedule %}
+        {% set overdue = s.due_date and s.due_date < today_str and s.status not in ['완료','보류'] %}
+        {% set is_auto = s.task_name.startswith('입찰 마감') or s.task_name.startswith('제안서 제출') or s.task_name.startswith('PT 발표') or s.task_name.startswith('가격투찰') %}
+        <tr data-id="{{ s.id }}"{% if overdue %} class="overdue"{% endif %}>
+          <td>
+            <div class="sv" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+              {% if '제안서 제출' in s.task_name %}
+                {% if '(직)' in s.task_name %}<span class="badge-sch direct">직</span>{% elif '(온)' in s.task_name %}<span class="badge-sch online">온</span>{% endif %}
+              {% endif %}
+              <span>{{ s.task_name }}</span>
+              {% if 'PT 발표 @' in s.task_name %}<small class="pt-loc">@ {{ s.task_name.split('@')[1].strip() }}</small>{% endif %}
+            </div>
+            <div class="se"><input class="sch-input" value="{{ s.task_name | e }}" style="width:100%;"></div>
+          </td>
+          <td>
+            <div class="sv">{{ s.due_date or '-' }}</div>
+            <div class="se"><input type="datetime-local" class="sch-input" value="{{ (s.due_date or '').replace(' ', 'T') }}"></div>
+          </td>
+          <td>
+            <div class="sv">
+              {% if s.status == '예정' %}<span class="sch-st sch-st-planned">예정</span>
+              {% elif s.status == '진행중' %}<span class="sch-st sch-st-doing">진행중</span>
+              {% elif s.status == '완료' %}<span class="sch-st sch-st-done">완료</span>
+              {% elif s.status == '보류' %}<span class="sch-st sch-st-hold">보류</span>
+              {% else %}<span class="sch-st sch-st-planned">{{ s.status }}</span>{% endif %}
+            </div>
+            <div class="se">
+              <select class="sch-select">
+                {% for st in ['예정','진행중','완료','보류'] %}<option{% if st == s.status %} selected{% endif %}>{{ st }}</option>{% endfor %}
+              </select>
+            </div>
+          </td>
+          <td>
+            <div class="sv">{{ s.assignee or '-' }}</div>
+            <div class="se"><input type="text" class="sch-input" value="{{ s.assignee | e }}"></div>
+          </td>
+          {% if can_edit %}
+          <td>
+            <div class="sch-act-view" style="display:flex;gap:4px;">
+              <button class="btn btn-ghost btn-sm" onclick="startEdit(this.closest('tr'))">수정</button>
+              {% if not is_auto %}<button class="btn btn-danger btn-sm" onclick="delSchedule({{ s.id }}, this.closest('tr'))">삭제</button>{% endif %}
+            </div>
+            <div class="sch-act-edit" style="display:none;gap:4px;">
+              <button class="btn btn-primary btn-sm" onclick="saveEdit(this.closest('tr'))">저장</button>
+              <button class="btn btn-ghost btn-sm" onclick="cancelEdit(this.closest('tr'))">취소</button>
+            </div>
+          </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% if not schedule %}
+    <div id="sch-empty" style="text-align:center;color:#9ca3af;font-size:13px;padding:20px 0;">등록된 일정이 없습니다</div>
+    {% endif %}
+    {% if can_edit %}
+    <div style="margin-top:14px;text-align:right;">
+      <button class="btn btn-primary btn-sm" onclick="openSchModal()">+ 일정 추가</button>
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- ③ 입찰 정보 -->
   <div class="card">
     <div class="section-title">📋 입찰 정보</div>
     {% set bi = bid_info or {} %}
@@ -462,82 +539,6 @@ tr.sch-editing .sch-act-view{display:none !important;}
     </div>
   </div>
 
-  <!-- ④ 진행 일정표 (전체 폭) -->
-  <div class="card">
-    <div class="section-title">📅 진행 일정표</div>
-    <table class="sch-table">
-      <thead>
-        <tr>
-          <th style="width:38%">업무명</th>
-          <th style="width:22%">날짜</th>
-          <th style="width:14%">상태</th>
-          <th style="width:16%">비고</th>
-          {% if can_edit %}<th style="width:10%"></th>{% endif %}
-        </tr>
-      </thead>
-      <tbody id="sch-tbody">
-        {% set today_str = now[:10] if now is defined else '' %}
-        {% for s in schedule %}
-        {% set overdue = s.due_date and s.due_date < today_str and s.status not in ['완료','보류'] %}
-        {% set is_auto = s.task_name.startswith('입찰 마감') or s.task_name.startswith('제안서 제출') or s.task_name.startswith('PT 발표') or s.task_name.startswith('가격투찰') %}
-        <tr data-id="{{ s.id }}"{% if overdue %} class="overdue"{% endif %}>
-          <td>
-            <div class="sv" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-              {% if '제안서 제출' in s.task_name %}
-                {% if '(직)' in s.task_name %}<span class="badge-sch direct">직</span>{% elif '(온)' in s.task_name %}<span class="badge-sch online">온</span>{% endif %}
-              {% endif %}
-              <span>{{ s.task_name }}</span>
-              {% if 'PT 발표 @' in s.task_name %}<small class="pt-loc">@ {{ s.task_name.split('@')[1].strip() }}</small>{% endif %}
-            </div>
-            <div class="se"><input class="sch-input" value="{{ s.task_name | e }}" style="width:100%;"></div>
-          </td>
-          <td>
-            <div class="sv">{{ s.due_date or '-' }}</div>
-            <div class="se"><input type="datetime-local" class="sch-input" value="{{ (s.due_date or '').replace(' ', 'T') }}"></div>
-          </td>
-          <td>
-            <div class="sv">
-              {% if s.status == '예정' %}<span class="sch-st sch-st-planned">예정</span>
-              {% elif s.status == '진행중' %}<span class="sch-st sch-st-doing">진행중</span>
-              {% elif s.status == '완료' %}<span class="sch-st sch-st-done">완료</span>
-              {% elif s.status == '보류' %}<span class="sch-st sch-st-hold">보류</span>
-              {% else %}<span class="sch-st sch-st-planned">{{ s.status }}</span>{% endif %}
-            </div>
-            <div class="se">
-              <select class="sch-select">
-                {% for st in ['예정','진행중','완료','보류'] %}<option{% if st == s.status %} selected{% endif %}>{{ st }}</option>{% endfor %}
-              </select>
-            </div>
-          </td>
-          <td>
-            <div class="sv">{{ s.assignee or '-' }}</div>
-            <div class="se"><input type="text" class="sch-input" value="{{ s.assignee | e }}"></div>
-          </td>
-          {% if can_edit %}
-          <td>
-            <div class="sch-act-view" style="display:flex;gap:4px;">
-              <button class="btn btn-ghost btn-sm" onclick="startEdit(this.closest('tr'))">수정</button>
-              {% if not is_auto %}<button class="btn btn-danger btn-sm" onclick="delSchedule({{ s.id }}, this.closest('tr'))">삭제</button>{% endif %}
-            </div>
-            <div class="sch-act-edit" style="display:none;gap:4px;">
-              <button class="btn btn-primary btn-sm" onclick="saveEdit(this.closest('tr'))">저장</button>
-              <button class="btn btn-ghost btn-sm" onclick="cancelEdit(this.closest('tr'))">취소</button>
-            </div>
-          </td>
-          {% endif %}
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% if not schedule %}
-    <div id="sch-empty" style="text-align:center;color:#9ca3af;font-size:13px;padding:20px 0;">등록된 일정이 없습니다</div>
-    {% endif %}
-    {% if can_edit %}
-    <div style="margin-top:14px;text-align:right;">
-      <button class="btn btn-primary btn-sm" onclick="openSchModal()">+ 일정 추가</button>
-    </div>
-    {% endif %}
-  </div>
 </div>
 
 <!-- 일정 추가 모달 -->
