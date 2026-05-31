@@ -775,6 +775,9 @@ def ongoing():
     incomplete_tasks = [t for t in tasks if t["incomplete"]]
     complete_tasks   = [t for t in tasks if not t["incomplete"]]
 
+    if not incomplete_tasks and not complete_tasks:
+        return redirect(url_for("nara_dashboard"))
+
     from datetime import datetime as _dt, timedelta as _td
     _now = _dt.now()
     return render_template(
@@ -4599,6 +4602,8 @@ def upload_rfp(confirmed_id):
 def run_rfp_research(confirmed_id: int, file_paths: list, app_context) -> None:
     """RFP 파일 분석 + 리서치 실행 후 DB 저장. 백그라운드 스레드에서 실행."""
     with app_context:
+        rfp_analysis   = ""
+        research_result = ""
         try:
             save_confirmed_research(confirmed_id, 'running', updated_by='system')
             c = get_confirmed_by_id(confirmed_id) or {}
@@ -4764,7 +4769,10 @@ RFP 텍스트:
         except Exception as e:
             print(f"  [workspace] run_rfp_research 오류: {e}")
             try:
-                save_confirmed_research(confirmed_id, 'error', updated_by='system')
+                save_confirmed_research(confirmed_id, 'error',
+                                        rfp_analysis=rfp_analysis,
+                                        research_result=research_result,
+                                        updated_by='system')
             except Exception:
                 pass
 
@@ -4773,6 +4781,23 @@ RFP 텍스트:
 @login_required
 def research_status(confirmed_id):
     return jsonify({"ok": True, "research": get_confirmed_research(confirmed_id)})
+
+
+@app.route("/nara/confirmed/<int:confirmed_id>/research_fix", methods=["POST"])
+@login_required
+def research_fix(confirmed_id):
+    """running 상태로 고착된 리서치를 done으로 수정"""
+    research = get_confirmed_research(confirmed_id)
+    if research and research.get("status") == "running" and research.get("research_result"):
+        save_confirmed_research(
+            confirmed_id,
+            status="done",
+            rfp_analysis=research.get("rfp_analysis", ""),
+            research_result=research.get("research_result", ""),
+            updated_by=session.get("username", "system"),
+        )
+        return jsonify({"ok": True, "message": "상태 수정 완료"})
+    return jsonify({"ok": False, "error": "수정 불필요"})
 
 
 @app.route("/nara/confirmed/<int:confirmed_id>/workspace")
