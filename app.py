@@ -700,7 +700,7 @@ def logout():
 @app.route("/")
 @login_required
 def index():
-    return redirect(url_for("nara_dashboard"))
+    return redirect(url_for("nara_confirmed_page"))
 
 @app.route("/proposal")
 @login_required
@@ -3917,6 +3917,8 @@ def api_step_overrides(case_id):
 @app.route("/nara")
 @login_required
 def nara_dashboard():
+    if request.args.get("tab") == "confirmed":
+        return redirect(url_for("nara_confirmed_page"))
     page         = max(1, int(request.args.get("page", 1)))
     keyword      = request.args.get("keyword", "").strip()
     hide_expired = request.args.get("hide_expired", "0") == "1"

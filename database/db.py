@@ -2373,10 +2373,14 @@ def list_nara_confirmed(page: int = 1, per_page: int = 50) -> dict:
                       COALESCE(pk.ntce_url, ca.ntce_url) as ntce_url,
                       COALESCE(pk.matched_keyword, ca.matched_keyword) as matched_keyword,
                       COALESCE(pk.reason, ca.reason) as reason,
-                      COALESCE(pk.registered_by, ca.registered_by) as registered_by
+                      COALESCE(pk.registered_by, ca.registered_by) as registered_by,
+                      CASE WHEN rfp.cnt > 0 THEN 1 ELSE 0 END as has_rfp
                FROM nara_confirmed cf
                LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
                LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
+               LEFT JOIN (SELECT confirmed_id, COUNT(*) as cnt
+                          FROM confirmed_rfp_files GROUP BY confirmed_id) rfp
+                      ON rfp.confirmed_id = cf.id
                ORDER BY cf.created_at DESC LIMIT ? OFFSET ?""",
             (per_page, offset),
         ).fetchall()

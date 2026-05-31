@@ -2,73 +2,108 @@
 {% block title %}입찰 확정 — Prointerz{% endblock %}
 {% block head %}
 <style>
-.nara-wrap{max-width:1100px;margin:0 auto;padding:24px 16px}
+.nara-wrap{max-width:1200px;margin:0 auto;padding:24px 16px}
 .nara-title{font-size:22px;font-weight:700;margin-bottom:6px}
 .nara-subtitle{font-size:13px;color:#6b7280;margin-bottom:20px}
+/* 탭 */
+.nara-tabs{display:flex;gap:2px;margin-bottom:20px;border-bottom:2px solid #e5e7eb;}
+.nara-tab{padding:9px 18px;font-size:13px;font-weight:600;color:#6b7280;text-decoration:none;border-radius:6px 6px 0 0;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;}
+.nara-tab:hover{color:#4f46e5;background:#f5f3ff;}
+.nara-tab.active{color:#4f46e5;border-bottom-color:#4f46e5;background:#fff;}
+/* 테이블 */
 .bid-table{width:100%;border-collapse:collapse;font-size:13px}
 .bid-table th{background:#f3f4f6;padding:10px 12px;text-align:left;font-weight:600;color:#374151;border-bottom:1px solid #e5e7eb}
-.bid-table td{padding:11px 12px;border-bottom:1px solid #f3f4f6;vertical-align:top;color:#374151}
+.bid-table td{padding:10px 12px;border-bottom:1px solid #f3f4f6;vertical-align:middle;color:#374151}
 .bid-table tr:hover td{background:#fafafa}
-.bid-nm a{color:#2563eb;text-decoration:underline;font-weight:600;}
+.bid-nm{color:#2563eb;font-weight:600;cursor:pointer;}
+.bid-nm:hover{text-decoration:underline;}
 .bid-prce{font-weight:600;color:#059669;}
 .bid-date{color:#6b7280;font-size:12px;}
 .bid-empty{text-align:center;padding:48px;color:#9ca3af;font-size:14px}
-.btn{padding:7px 14px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;}
+/* 버튼 */
+.btn{display:inline-flex;align-items:center;gap:3px;padding:5px 10px;border:none;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;}
+.btn-ghost{background:#fff;color:#374151;border:1px solid #d1d5db;}
+.btn-ghost:hover{background:#f3f4f6;}
+.btn-rfp{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;}
+.btn-rfp:hover{background:#ffedd5;}
 .btn-win{background:#059669;color:#fff;}
 .btn-win:hover{background:#047857;}
 .btn-lose{background:#ef4444;color:#fff;}
 .btn-lose:hover{background:#dc2626;}
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;}
-.modal-overlay.open{display:flex;}
-.modal-box{background:#fff;border-radius:14px;padding:28px;width:420px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.25);}
-.modal-title{font-weight:700;font-size:16px;margin-bottom:12px;}
-.modal-label{font-size:12px;font-weight:600;color:#6b7280;margin-bottom:5px;}
-.modal-textarea{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:vertical;font-family:inherit;}
-.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
-.result-btns{display:flex;gap:4px;}
+.result-btns{display:flex;gap:4px;flex-wrap:wrap;}
+.action-btns{display:flex;gap:4px;flex-wrap:wrap;align-items:center;}
 .assignee-badge{display:inline-block;background:#ede9fe;color:#5b21b6;border-radius:99px;padding:2px 10px;font-size:12px;font-weight:600;}
+/* 페이지네이션 */
 .pagination{display:flex;gap:4px;justify-content:center;margin-top:20px;flex-wrap:wrap;}
 .page-btn{padding:6px 12px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;color:#374151;background:#fff;cursor:pointer;text-decoration:none;transition:all .15s;}
 .page-btn:hover{background:#f3f4f6;}
 .page-btn.active{background:#4f46e5;color:#fff;border-color:#4f46e5;font-weight:700;}
 .page-btn.disabled{color:#d1d5db;cursor:default;pointer-events:none;}
-.toast{position:fixed;bottom:28px;right:28px;background:#1f2937;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;z-index:999;pointer-events:none}
+/* 모달 */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:#fff;border-radius:14px;padding:28px;width:440px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.25);}
+.modal-title{font-weight:700;font-size:16px;margin-bottom:4px;}
+.modal-nm{font-size:13px;color:#2563eb;font-weight:600;margin-bottom:16px;line-height:1.4;}
+.modal-label{font-size:12px;font-weight:600;color:#6b7280;margin-bottom:5px;}
+.modal-textarea{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:vertical;font-family:inherit;}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
+/* 토스트 */
+.toast{position:fixed;bottom:28px;right:28px;background:#1f2937;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;z-index:9999;pointer-events:none}
 .toast.show{opacity:1}
 </style>
 {% endblock %}
 {% block content %}
 <div class="nara-wrap">
-  <div class="nara-title">📋 입찰</div>
+  <div class="nara-tabs">
+    <a href="/nara" class="nara-tab">📋 공고</a>
+    <a href="/nara/candidates" class="nara-tab">⭐ 후보</a>
+    <a href="/nara/pickups" class="nara-tab">📥 픽업</a>
+    <a href="/nara/confirmed" class="nara-tab active">✅ 확정</a>
+  </div>
+  <div class="nara-title">✅ 확정 입찰</div>
   <div class="nara-subtitle">확정된 입찰 건을 관리합니다</div>
 
   <table class="bid-table">
     <thead>
       <tr>
-        <th style="width:28%">공고명</th>
-        <th style="width:14%">발주처</th>
-        <th style="width:10%">추정가격</th>
-        <th style="width:10%">마감일</th>
-        <th style="width:8%">확정자</th>
-        <th style="width:10%">담당자</th>
-        <th style="width:8%">확정일</th>
-        <th style="width:12%">결과 등록</th>
+        <th style="width:3%">RFP</th>
+        <th style="width:26%">공고명</th>
+        <th style="width:13%">발주처</th>
+        <th style="width:9%">추정가격</th>
+        <th style="width:9%">마감일</th>
+        <th style="width:8%">담당자</th>
+        <th style="width:7%">확정일</th>
+        <th style="width:25%">작업</th>
       </tr>
     </thead>
     <tbody>
       {% if confirmed %}
         {% for c in confirmed %}
-        <tr style="cursor:pointer;" onclick="location.href='/nara/confirmed/{{ c.id }}'">
-          <td class="bid-nm">{{ c.bid_ntce_nm or '-' }}</td>
+        {% set g2b_url = 'https://www.g2b.go.kr/link/PNPE027_01/?bidPbancNo=' ~ (c.bid_ntce_no or '') ~ '&bidPbancOrd=000' %}
+        {% set nm_safe = c.bid_ntce_nm | replace("'", "\\'") | e %}
+        <tr>
+          <td style="text-align:center;font-size:16px;">
+            {% if c.has_rfp %}🟢{% else %}🔴{% endif %}
+          </td>
+          <td>
+            <span class="bid-nm" onclick="handleDetailClick({{ c.id }}, {{ 1 if c.has_rfp else 0 }}, '{{ g2b_url }}', '{{ nm_safe }}')">
+              {{ c.bid_ntce_nm or '-' }}
+            </span>
+          </td>
           <td>{{ c.ntce_instt_nm or '-' }}</td>
           <td class="bid-prce">{% if c.presmpt_prce and c.presmpt_prce.isdigit() %}{{ '{:,}'.format(c.presmpt_prce|int) }}원{% else %}-{% endif %}</td>
           <td class="bid-date">{{ (c.bid_clse_dt or '-')[:10] }}</td>
-          <td style="font-size:12px;">{{ c.confirmed_by or '-' }}</td>
-          <td>{% if c.assignee %}<span class="assignee-badge">{{ c.assignee }}</span>{% else %}-{% endif %}</td>
+          <td>{% if c.assignee %}<span class="assignee-badge">{{ c.assignee }}</span>{% else %}<span style="color:#9ca3af;font-size:12px;">-</span>{% endif %}</td>
           <td class="bid-date">{{ (c.created_at or '-')[:10] }}</td>
-          <td onclick="event.stopPropagation()">
-            <div class="result-btns">
-              <button class="btn btn-win" onclick="openResultModal({{ c.id }}, '수주', '{{ c.bid_ntce_nm | replace("'","\\'")|e }}')">수주</button>
-              <button class="btn btn-lose" onclick="openResultModal({{ c.id }}, '낙주', '{{ c.bid_ntce_nm | replace("'","\\'")|e }}')">낙주</button>
+          <td>
+            <div class="action-btns">
+              <a href="{{ g2b_url }}" target="_blank" class="btn btn-ghost" onclick="event.stopPropagation()">나라장터 →</a>
+              {% if not c.has_rfp %}
+              <button class="btn btn-rfp" onclick="event.stopPropagation(); openRfpModal({{ c.id }}, '{{ nm_safe }}', '{{ g2b_url }}')">📎 RFP 등록</button>
+              {% endif %}
+              <button class="btn btn-win" onclick="event.stopPropagation(); openResultModal({{ c.id }}, '수주', '{{ nm_safe }}')">수주</button>
+              <button class="btn btn-lose" onclick="event.stopPropagation(); openResultModal({{ c.id }}, '낙주', '{{ nm_safe }}')">낙주</button>
             </div>
           </td>
         </tr>
@@ -90,6 +125,48 @@
   {% endif %}
 </div>
 
+<!-- RFP 먼저 등록 안내 모달 -->
+<div class="modal-overlay" id="rfp-warn-modal" onclick="if(event.target===this)closeRfpWarnModal()">
+  <div class="modal-box">
+    <div class="modal-title">📋 RFP 파일을 먼저 등록하면 좋아요</div>
+    <p style="font-size:13px;color:#374151;margin:12px 0 16px;line-height:1.6;">
+      RFP 파일을 등록하면 <strong>자동 분석 및 일정 등재</strong>가 시작됩니다.<br>
+      지금 등록하시겠습니까?
+    </p>
+    <div class="modal-btns">
+      <button id="rfp-warn-later-btn" onclick="" style="padding:8px 18px;background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:7px;cursor:pointer;font-size:13px;">나중에 (상세보기로 이동)</button>
+      <button id="rfp-warn-now-btn" onclick="" style="padding:8px 20px;background:#059669;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">지금 등록</button>
+    </div>
+  </div>
+</div>
+
+<!-- RFP 파일 등록 모달 -->
+<div class="modal-overlay" id="rfp-upload-modal" onclick="if(event.target===this)closeRfpModal()">
+  <div class="modal-box">
+    <div class="modal-title">📎 RFP 파일 등록</div>
+    <div class="modal-nm" id="rfp-modal-nm"></div>
+    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 14px;font-size:13px;color:#92400e;margin-bottom:16px;line-height:1.6;">
+      1. 나라장터 원문에서 첨부파일을 다운로드해주세요<br>
+      2. 아래에서 파일을 업로드하면 자동 분석이 시작됩니다
+      <div style="margin-top:8px;">
+        <a id="rfp-modal-g2b-link" href="#" target="_blank"
+           style="font-size:12px;font-weight:600;color:#2563eb;text-decoration:underline;">
+          나라장터 원문 바로가기 →
+        </a>
+      </div>
+    </div>
+    <div class="modal-label">파일 선택 (PDF / HWP / HWPX / DOCX)</div>
+    <input type="file" id="rfp-file-input" multiple
+           accept=".pdf,.hwp,.hwpx,.docx,.txt"
+           style="display:block;width:100%;box-sizing:border-box;padding:8px;border:1px solid #d1d5db;border-radius:7px;font-size:13px;margin-bottom:6px;">
+    <div style="font-size:11px;color:#9ca3af;margin-bottom:16px;">여러 파일 동시 업로드 가능</div>
+    <div class="modal-btns">
+      <button onclick="closeRfpModal()" style="padding:8px 18px;background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:7px;cursor:pointer;font-size:13px;">취소</button>
+      <button id="rfp-upload-btn" onclick="submitRfpUpload()" style="padding:8px 20px;background:#059669;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">등록</button>
+    </div>
+  </div>
+</div>
+
 <!-- 결과 등록 모달 -->
 <div class="modal-overlay" id="result-modal" onclick="if(event.target===this)closeResultModal()">
   <div class="modal-box">
@@ -106,7 +183,69 @@
 
 <div class="toast" id="toast"></div>
 <script>
-function showToast(msg,ok=true){const t=document.getElementById('toast');t.textContent=msg;t.style.background=ok?'#1f2937':'#b91c1c';t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800)}
+function showToast(msg,ok=true){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.style.background=ok?'#1f2937':'#b91c1c';
+  t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800);
+}
+
+/* ── 상세보기 클릭 처리 ── */
+function handleDetailClick(id, hasRfp, g2bUrl, nm){
+  if(hasRfp){
+    location.href = '/nara/confirmed/' + id;
+    return;
+  }
+  // RFP 미등록 → 안내 모달
+  const laterBtn = document.getElementById('rfp-warn-later-btn');
+  const nowBtn   = document.getElementById('rfp-warn-now-btn');
+  laterBtn.onclick = () => { closeRfpWarnModal(); location.href = '/nara/confirmed/' + id; };
+  nowBtn.onclick   = () => { closeRfpWarnModal(); openRfpModal(id, nm, g2bUrl); };
+  document.getElementById('rfp-warn-modal').classList.add('open');
+}
+function closeRfpWarnModal(){ document.getElementById('rfp-warn-modal').classList.remove('open'); }
+
+/* ── RFP 업로드 모달 ── */
+let _rfpConfirmedId = null;
+function openRfpModal(id, nm, g2bUrl){
+  _rfpConfirmedId = id;
+  document.getElementById('rfp-modal-nm').textContent = nm;
+  document.getElementById('rfp-modal-g2b-link').href = g2bUrl;
+  document.getElementById('rfp-file-input').value = '';
+  document.getElementById('rfp-warn-modal').classList.remove('open');
+  document.getElementById('rfp-upload-modal').classList.add('open');
+}
+function closeRfpModal(){ document.getElementById('rfp-upload-modal').classList.remove('open'); _rfpConfirmedId = null; }
+
+async function submitRfpUpload(){
+  if(!_rfpConfirmedId) return;
+  const input = document.getElementById('rfp-file-input');
+  if(!input.files.length){ showToast('파일을 선택해주세요', false); return; }
+  const fd = new FormData();
+  Array.from(input.files).forEach(f => fd.append('files', f));
+  const btn = document.getElementById('rfp-upload-btn');
+  btn.disabled = true; btn.textContent = '등록 중...';
+  try{
+    const r = await fetch(`/nara/confirmed/${_rfpConfirmedId}/upload_rfp`, {method:'POST', body:fd});
+    const d = await r.json();
+    if(d.ok){
+      closeRfpModal();
+      showToast('등록 완료. 분석을 시작합니다 🚀');
+      // 해당 행 RFP 상태 업데이트
+      const rows = document.querySelectorAll('tr');
+      rows.forEach(tr => {
+        const btn = tr.querySelector(`[onclick*="openRfpModal(${_rfpConfirmedId},"]`);
+        if(btn){
+          const tdRfp = tr.querySelector('td:first-child');
+          if(tdRfp) tdRfp.textContent = '🟢';
+          btn.remove();
+        }
+      });
+    } else showToast(d.error||'등록 실패', false);
+  } catch(e){ showToast('오류: '+e, false); }
+  btn.disabled = false; btn.textContent = '등록';
+}
+
+/* ── 결과 등록 모달 ── */
 let _resultConfirmedId=null, _resultType=null;
 function openResultModal(id, type, nm){
   _resultConfirmedId=id; _resultType=type;
@@ -120,7 +259,7 @@ function closeResultModal(){ document.getElementById('result-modal').classList.r
 async function submitResult(){
   if(!_resultConfirmedId) return;
   const notes = document.getElementById('result-notes').value.trim();
-  const btn = document.getElementById('result-submit-btn');
+  const btn   = document.getElementById('result-submit-btn');
   btn.disabled=true; btn.textContent='등록 중...';
   try{
     const r = await fetch(`/nara/result/${_resultConfirmedId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({result:_resultType,notes})});
