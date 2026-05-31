@@ -40,10 +40,10 @@
         <a href="/schedule" class="{{ 'nav-active' if path == '/schedule' else '' }}">일정</a>
         {% if session.get('role') != 'user' %}
         <a href="/proposal" class="{{ 'nav-active' if path.startswith('/proposal') or path.startswith('/run/') else '' }}">작성</a>
-        <a href="/history" class="{{ 'nav-active' if path.startswith('/history') else '' }}">DB</a>
+        <a href="/history" class="{{ 'nav-active' if (path.startswith('/history') or path.startswith('/db')) else '' }}">DB</a>
         <a href="/learning" class="{{ 'nav-active' if path.startswith('/learning') else '' }}">입력</a>
         {% else %}
-        <a href="/history" class="{{ 'nav-active' if path.startswith('/history') else '' }}">DB</a>
+        <a href="/history" class="{{ 'nav-active' if (path.startswith('/history') or path.startswith('/db')) else '' }}">DB</a>
         {% endif %}
         {% if session.get('is_admin') %}
         <a href="/admin" class="nav-admin {{ 'nav-active' if path.startswith('/admin') else '' }}">관리자</a>

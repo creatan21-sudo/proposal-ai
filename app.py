@@ -1297,6 +1297,37 @@ def download(sid):
 
 
 # ─────────────────────────────────────────────
+# ─────────────────────────────────────────────
+# DB 페이지
+# ─────────────────────────────────────────────
+
+@app.route("/db")
+@login_required
+def db_page():
+    return redirect(url_for("history"))
+
+
+@app.route("/db/my_work")
+@login_required
+def db_my_work():
+    username = session.get("username")
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT cf.id,
+                   COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm) AS bid_ntce_nm,
+                   COALESCE(pk.ntce_instt_nm, ca.ntce_instt_nm) AS ntce_instt_nm,
+                   cf.assignee,
+                   n.updated_by, n.updated_at
+            FROM nara_confirmed cf
+            LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
+            LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
+            JOIN confirmed_narratives n ON n.confirmed_id = cf.id
+            WHERE n.updated_by = ? AND n.content != '' AND n.content != '{}'
+            ORDER BY n.updated_at DESC
+        """, (username,)).fetchall()
+    return render_template("db_my_work.html", narratives=[dict(r) for r in rows])
+
+
 # 이력 페이지
 # ─────────────────────────────────────────────
 

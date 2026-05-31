@@ -1,12 +1,20 @@
 {% extends "base.html" %}
-{% block title %}{% if is_user_role %}공유 DB{% else %}MY DB{% endif %} — Prointerz{% endblock %}
+{% block title %}DB — Prointerz{% endblock %}
 
+{% block subnav %}
+<div class="sub-nav">
+  <div class="sub-nav-inner">
+    <a href="/db/my_work">📝 내 작업</a>
+    <a href="/history" class="active">📚 공유본</a>
+  </div>
+</div>
+{% endblock %}
 {% block content %}
 {% if is_user_role %}
 {# ── user 역할: 공유받은 제안서 목록만 표시 ── #}
 <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px;">
   <div>
-    <div class="page-title">공유 DB</div>
+    <div class="page-title">DB</div>
     <p class="page-sub" style="margin:0;">공유받은 제안서 목록 (읽기 전용)</p>
   </div>
 </div>
@@ -49,7 +57,7 @@
 {# ── admin/operator: 기존 MY DB 화면 ── #}
 <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:4px;">
   <div>
-    <div class="page-title">MY DB</div>
+    <div class="page-title">DB</div>
     <p class="page-sub" style="margin:0;">
       {% if view_all %}팀 전체 제안서{% else %}내 제안서{% endif %}
       {% if show_hidden %} &middot; 숨긴 항목 표시 중{% endif %}

@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}내 작업 — DB — Prointerz{% endblock %}
+{% block head %}
+<style>
+.mw-wrap{max-width:900px;margin:0 auto;padding:24px 16px}
+.mw-table{width:100%;border-collapse:collapse;font-size:13px;}
+.mw-table th{background:#f3f4f6;padding:10px 14px;text-align:left;font-weight:600;color:#374151;border-bottom:1px solid #e5e7eb;font-size:12px;}
+.mw-table td{padding:11px 14px;border-bottom:1px solid #f3f4f6;vertical-align:middle;color:#374151;}
+.mw-table tr:hover td{background:#fafafa;}
+.mw-nm{font-weight:600;color:#111827;}
+.mw-org{color:#6b7280;font-size:12px;}
+.mw-date{color:#9ca3af;font-size:12px;white-space:nowrap;}
+.mw-actions{display:flex;gap:6px;align-items:center;flex-wrap:nowrap;}
+.btn{display:inline-flex;align-items:center;gap:3px;padding:5px 11px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap;}
+.btn-primary{background:#4f46e5;color:#fff;}
+.btn-primary:hover{background:#4338ca;}
+.btn-ghost{background:#fff;color:#374151;border:1px solid #d1d5db;}
+.btn-ghost:hover{background:#f3f4f6;}
+.mw-empty{text-align:center;padding:60px;color:#9ca3af;font-size:14px;}
+.toast{position:fixed;bottom:28px;right:28px;background:#1f2937;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;z-index:9999;pointer-events:none;}
+.toast.show{opacity:1;}
+</style>
+{% endblock %}
+{% block subnav %}
+<div class="sub-nav">
+  <div class="sub-nav-inner">
+    <a href="/db/my_work" class="active">📝 내 작업</a>
+    <a href="/history">📚 공유본</a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="mw-wrap">
+  {% if narratives %}
+  <table class="mw-table">
+    <thead>
+      <tr>
+        <th style="width:40%">공고명</th>
+        <th style="width:20%">발주처</th>
+        <th style="width:12%">담당자</th>
+        <th style="width:14%">작성일</th>
+        <th style="width:14%"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for n in narratives %}
+      <tr>
+        <td class="mw-nm">{{ n.bid_ntce_nm or '-' }}</td>
+        <td class="mw-org">{{ n.ntce_instt_nm or '-' }}</td>
+        <td style="font-size:12px;">{{ n.assignee or '-' }}</td>
+        <td class="mw-date">{{ (n.updated_at or '')[:10] }}</td>
+        <td>
+          <div class="mw-actions">
+            <a href="/nara/confirmed/{{ n.id }}/workspace?tab=narrative" class="btn btn-primary">보기</a>
+            <button class="btn btn-ghost" onclick="copyLink({{ n.id }})">🔗 공유</button>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="mw-empty">아직 작성한 내러티브가 없습니다.</div>
+  {% endif %}
+</div>
+<div class="toast" id="toast"></div>
+<script>
+function showToast(msg){const t=document.getElementById('toast');t.textContent=msg;t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
+function copyLink(id){
+  const url=location.origin+'/nara/confirmed/'+id+'/workspace?tab=narrative';
+  navigator.clipboard.writeText(url).then(()=>showToast('공유 링크가 복사되었습니다')).catch(()=>{
+    const ta=document.createElement('textarea');
+    ta.value=url;ta.style.position='fixed';ta.style.opacity='0';
+    document.body.appendChild(ta);ta.select();
+    try{document.execCommand('copy');showToast('공유 링크가 복사되었습니다');}catch(e){showToast('복사 실패',false);}
+    document.body.removeChild(ta);
+  });
+}
+</script>
+{% endblock %}
