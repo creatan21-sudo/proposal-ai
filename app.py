@@ -664,7 +664,7 @@ def health():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if session.get("user_id"):
-        return redirect(url_for("index"))
+        return redirect(url_for("ongoing"))
     error = None
     if request.args.get("reason") == "duplicate":
         error = "다른 기기에서 로그인되어 세션이 종료되었습니다."
