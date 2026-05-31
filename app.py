@@ -90,7 +90,8 @@ from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           get_last_notification_time, record_notification_sent,
                           save_confirmed_rfp_file, list_confirmed_rfp_files,
                           get_confirmed_research, save_confirmed_research,
-                          get_or_create_default_schedules)
+                          get_or_create_default_schedules,
+                          request_completion, approve_completion, set_final_result)
 
 app = Flask(__name__)
 # Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
@@ -683,7 +684,7 @@ def login():
             # user 역할: 공유받은 제안서 목록으로 바로 이동
             if session["role"] == "user":
                 return redirect(url_for("history"))
-            return redirect(url_for("index"))
+            return redirect(url_for("ongoing"))
         error = "아이디 또는 비밀번호가 틀렸습니다."
     return render_template("login.html", error=error)
 
@@ -715,6 +716,7 @@ def ongoing():
         confirmed_list = conn.execute("""
             SELECT cf.id,
                    cf.confirmed_by, cf.notes, cf.assignee, cf.created_at,
+                   cf.completion_status, cf.final_result,
                    COALESCE(pk.bid_ntce_no, ca.bid_ntce_no) AS bid_ntce_no,
                    COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm) AS bid_ntce_nm,
                    COALESCE(pk.ntce_instt_nm, ca.ntce_instt_nm) AS ntce_instt_nm,
@@ -739,6 +741,7 @@ def ongoing():
                    ON sch.confirmed_id = cf.id
             LEFT JOIN nara_results r ON r.confirmed_id = cf.id
             WHERE r.id IS NULL
+              AND (cf.final_result IS NULL OR cf.final_result NOT IN ('won','lost'))
             ORDER BY COALESCE(pk.bid_clse_dt, ca.bid_clse_dt) ASC
         """).fetchall()
 
@@ -772,21 +775,22 @@ def ongoing():
         c["can_edit"]   = can_edit
         tasks.append(c)
 
-    incomplete_tasks = [t for t in tasks if t["incomplete"]]
-    complete_tasks   = [t for t in tasks if not t["incomplete"]]
+    my_tasks  = [t for t in tasks if t.get("assignee") == username]
+    all_tasks = tasks
 
-    if not incomplete_tasks and not complete_tasks:
+    if not all_tasks:
         return redirect(url_for("nara_dashboard"))
 
     from datetime import datetime as _dt, timedelta as _td
     _now = _dt.now()
     return render_template(
         "ongoing.html",
-        incomplete_tasks=incomplete_tasks,
-        complete_tasks=complete_tasks,
+        my_tasks=my_tasks,
+        all_tasks=all_tasks,
         username=username,
         role=role,
         is_admin=is_admin,
+        is_ops=(is_admin or role == "operator"),
         now=_now.strftime("%Y-%m-%d %H:%M"),
         cutoff_d3=(_now + _td(days=3)).strftime("%Y-%m-%d"),
     )
@@ -4057,6 +4061,7 @@ def nara_confirmed_page():
         rows = conn.execute("""
             SELECT cf.id, cf.candidate_id, cf.pickup_id, cf.confirmed_by,
                    cf.notes, cf.assignee, cf.created_at,
+                   cf.completion_status, cf.final_result,
                    COALESCE(pk.bid_ntce_no, ca.bid_ntce_no) AS bid_ntce_no,
                    COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm) AS bid_ntce_nm,
                    COALESCE(pk.ntce_instt_nm, ca.ntce_instt_nm) AS ntce_instt_nm,
@@ -4108,6 +4113,68 @@ def nara_confirmed_page():
                            confirmed=confirmed_items,
                            pagination=pagination,
                            is_ops=is_ops)
+
+
+@app.route("/nara/archive")
+@login_required
+def nara_archive():
+    with get_connection() as conn:
+        rows = conn.execute("""
+            SELECT cf.id, cf.final_result, cf.completion_approved_by, cf.completion_approved_at,
+                   cf.assignee, cf.created_at,
+                   COALESCE(pk.bid_ntce_no, ca.bid_ntce_no) AS bid_ntce_no,
+                   COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm) AS bid_ntce_nm,
+                   COALESCE(pk.ntce_instt_nm, ca.ntce_instt_nm) AS ntce_instt_nm,
+                   COALESCE(pk.presmpt_prce, ca.presmpt_prce) AS presmpt_prce,
+                   COALESCE(pk.bid_clse_dt, ca.bid_clse_dt) AS bid_clse_dt
+            FROM nara_confirmed cf
+            LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
+            LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
+            WHERE cf.final_result IN ('won', 'lost')
+            ORDER BY cf.completion_approved_at DESC
+        """).fetchall()
+    items = [dict(r) for r in rows]
+    return render_template("nara_archive.html", items=items)
+
+
+@app.route("/nara/confirmed/<int:confirmed_id>/request_completion", methods=["POST"])
+@login_required
+def request_completion_route(confirmed_id):
+    username = session.get("username")
+    request_completion(confirmed_id, username)
+    c = get_confirmed_by_id(confirmed_id)
+    nm = (c.get("bid_ntce_nm") or "-") if c else "-"
+    settings = get_notification_settings()
+    for uid in settings.get("completion_approval", []):
+        create_notification(
+            uid, "완료 승인 요청",
+            f"{nm} — {username}님이 완료 승인을 요청했습니다.",
+            f"/nara/confirmed/{confirmed_id}",
+        )
+    return jsonify({"ok": True})
+
+
+@app.route("/nara/confirmed/<int:confirmed_id>/approve_completion", methods=["POST"])
+@login_required
+def approve_completion_route(confirmed_id):
+    if not session.get("is_admin") and session.get("role") != "operator":
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    approve_completion(confirmed_id, session.get("username"))
+    return jsonify({"ok": True})
+
+
+@app.route("/nara/confirmed/<int:confirmed_id>/set_result", methods=["POST"])
+@login_required
+def set_result_route(confirmed_id):
+    if not session.get("is_admin") and session.get("role") != "operator":
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    data = request.get_json(force=True) or {}
+    result = data.get("result", "")
+    if result not in ("won", "lost"):
+        return jsonify({"ok": False, "error": "결과값 오류"}), 400
+    set_final_result(confirmed_id, result, session.get("username"))
+    return jsonify({"ok": True})
+
 
 @app.route("/nara/confirmed/<int:confirmed_id>")
 @login_required
@@ -4951,7 +5018,7 @@ def notification_settings_page():
 @operator_or_admin_required
 def notification_settings_save():
     data = request.get_json(force=True) or {}
-    for trigger_type in ['candidate_manual', 'pickup_auto', 'deadline', 'comment']:
+    for trigger_type in ['candidate_manual', 'pickup_auto', 'deadline', 'comment', 'completion_approval']:
         user_ids = [int(x) for x in data.get(trigger_type, []) if str(x).isdigit()]
         save_notification_settings(trigger_type, user_ids)
     return jsonify({"ok": True})

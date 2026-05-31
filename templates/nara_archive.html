@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}기과업 — Prointerz{% endblock %}
+{% block head %}
+<style>
+.nara-wrap{max-width:1100px;margin:0 auto;padding:24px 16px}
+.nara-tabs{display:flex;gap:2px;margin-bottom:20px;border-bottom:2px solid #e5e7eb;}
+.nara-tab{padding:9px 18px;font-size:13px;font-weight:600;color:#6b7280;text-decoration:none;border-radius:6px 6px 0 0;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;}
+.nara-tab:hover{color:#4f46e5;background:#f5f3ff;}
+.nara-tab.active{color:#4f46e5;border-bottom-color:#4f46e5;background:#fff;}
+
+.arc-table{width:100%;border-collapse:collapse;}
+.arc-table th{padding:10px 14px;font-size:12px;font-weight:700;color:#6b7280;text-align:left;border-bottom:2px solid #e5e7eb;white-space:nowrap;}
+.arc-table td{padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #f3f4f6;vertical-align:middle;}
+.arc-table tr:hover td{background:#f9fafb;cursor:pointer;}
+.arc-badge{display:inline-block;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:700;}
+.arc-won{background:#d1fae5;color:#065f46;}
+.arc-lost{background:#fee2e2;color:#991b1b;}
+.arc-empty{text-align:center;padding:60px;color:#9ca3af;font-size:14px;}
+</style>
+{% endblock %}
+{% block content %}
+<div class="nara-wrap">
+  <div class="nara-tabs">
+    <a href="/nara" class="nara-tab">📋 공고</a>
+    <a href="/nara/candidates" class="nara-tab">⭐ 후보</a>
+    <a href="/nara/pickups" class="nara-tab">📥 픽업</a>
+    <a href="/nara/confirmed" class="nara-tab">✅ 확정</a>
+    <a href="/nara/archive" class="nara-tab active">🗂️ 기과업</a>
+  </div>
+
+  {% if items %}
+  <table class="arc-table">
+    <thead>
+      <tr>
+        <th>결과</th>
+        <th>공고명</th>
+        <th>발주처</th>
+        <th>추정금액</th>
+        <th>마감일</th>
+        <th>담당자</th>
+        <th>확정일</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in items %}
+      <tr onclick="location.href='/nara/confirmed/{{ item.id }}'">
+        <td>
+          {% if item.final_result == 'won' %}
+          <span class="arc-badge arc-won">🏆 수주</span>
+          {% else %}
+          <span class="arc-badge arc-lost">💔 낙주</span>
+          {% endif %}
+        </td>
+        <td style="font-weight:600;max-width:360px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ item.bid_ntce_nm or '-' }}</td>
+        <td>{{ item.ntce_instt_nm or '-' }}</td>
+        <td>
+          {% if item.presmpt_prce and item.presmpt_prce.isdigit() %}
+          {{ '{:,}'.format(item.presmpt_prce|int) }}원
+          {% else %}-{% endif %}
+        </td>
+        <td>{{ (item.bid_clse_dt or '-')[:10] }}</td>
+        <td>{{ item.assignee or '-' }}</td>
+        <td>{{ (item.completion_approved_at or item.created_at or '-')[:10] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="arc-empty">기과업이 없습니다</div>
+  {% endif %}
+</div>
+{% endblock %}

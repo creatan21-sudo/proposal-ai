@@ -528,6 +528,13 @@ def init_db() -> None:
             # nara_confirmed bid_ntce_no 컬럼 추가 + UNIQUE INDEX (비어 있는 행 제외)
             "ALTER TABLE nara_confirmed ADD COLUMN bid_ntce_no TEXT DEFAULT ''",
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_nara_confirmed_no ON nara_confirmed(bid_ntce_no) WHERE bid_ntce_no != ''",
+            # nara_confirmed 완료 워크플로 컬럼 추가
+            "ALTER TABLE nara_confirmed ADD COLUMN completion_status TEXT DEFAULT ''",
+            "ALTER TABLE nara_confirmed ADD COLUMN completion_requested_by TEXT DEFAULT ''",
+            "ALTER TABLE nara_confirmed ADD COLUMN completion_requested_at TEXT DEFAULT ''",
+            "ALTER TABLE nara_confirmed ADD COLUMN completion_approved_by TEXT DEFAULT ''",
+            "ALTER TABLE nara_confirmed ADD COLUMN completion_approved_at TEXT DEFAULT ''",
+            "ALTER TABLE nara_confirmed ADD COLUMN final_result TEXT DEFAULT ''",
         ]:
             try:
                 conn.execute(migration)
@@ -535,7 +542,7 @@ def init_db() -> None:
                 pass  # 이미 존재하는 컬럼 → 무시
         # 모니터링 설정 초기값 (없을 때만)
         conn.execute("INSERT OR IGNORE INTO nara_monitor_settings (id) VALUES (1)")
-        for _tt in ['candidate_manual', 'pickup_auto', 'deadline', 'comment']:
+        for _tt in ['candidate_manual', 'pickup_auto', 'deadline', 'comment', 'completion_approval']:
             conn.execute(
                 "INSERT OR IGNORE INTO notification_settings (trigger_type, target_user_ids) VALUES (?,?)",
                 (_tt, '[]'),
@@ -2923,6 +2930,33 @@ def save_notification_settings(trigger_type: str, user_ids: list) -> None:
                  target_user_ids=excluded.target_user_ids,
                  updated_at=excluded.updated_at""",
             (trigger_type, _json.dumps(user_ids)),
+        )
+
+
+def request_completion(confirmed_id: int, requested_by: str) -> None:
+    from datetime import datetime as _dt
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE nara_confirmed SET completion_status='requested', completion_requested_by=?, completion_requested_at=? WHERE id=?",
+            (requested_by, _dt.now().strftime("%Y-%m-%d %H:%M:%S"), confirmed_id),
+        )
+
+
+def approve_completion(confirmed_id: int, approved_by: str) -> None:
+    from datetime import datetime as _dt
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE nara_confirmed SET completion_status='approved', completion_approved_by=?, completion_approved_at=? WHERE id=?",
+            (approved_by, _dt.now().strftime("%Y-%m-%d %H:%M:%S"), confirmed_id),
+        )
+
+
+def set_final_result(confirmed_id: int, result: str, set_by: str) -> None:
+    from datetime import datetime as _dt
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE nara_confirmed SET final_result=?, completion_status=?, completion_approved_by=?, completion_approved_at=? WHERE id=?",
+            (result, result, set_by, _dt.now().strftime("%Y-%m-%d %H:%M:%S"), confirmed_id),
         )
 
 

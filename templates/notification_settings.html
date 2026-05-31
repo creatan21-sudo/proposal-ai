@@ -43,6 +43,21 @@
   </div>
   {% endfor %}
 
+  {% if session.get('is_admin') %}
+  <div class="ns-card">
+    <div class="ns-card-title">✅ 완료 승인 알림 <span style="font-size:12px;font-weight:400;color:#9ca3af;">— 완료 요청 시 승인자에게 알림 (관리자 전용)</span></div>
+    <div class="ns-users" id="users-completion_approval">
+      {% for u in users %}
+      <label class="ns-user-label">
+        <input type="checkbox" name="completion_approval" value="{{ u.id }}"
+               {% if u.id in (settings.get('completion_approval') or []) %}checked{% endif %}>
+        <span>{{ u.username }}</span>
+      </label>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
   <div style="display:flex;justify-content:flex-end;gap:10px;">
     <a href="/notifications" style="padding:9px 18px;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;text-decoration:none;color:#374151;">취소</a>
     <button class="btn btn-primary" onclick="saveSettings()">저장</button>
@@ -53,7 +68,7 @@
 function showToast(msg,ok=true){const t=document.getElementById('toast');t.textContent=msg;t.style.background=ok?'#1f2937':'#b91c1c';t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2500);}
 async function saveSettings(){
   const payload = {};
-  ['candidate_manual','pickup_auto','deadline','comment'].forEach(tt=>{
+  ['candidate_manual','pickup_auto','deadline','comment','completion_approval'].forEach(tt=>{
     payload[tt] = Array.from(document.querySelectorAll(`input[name="${tt}"]:checked`)).map(el=>parseInt(el.value));
   });
   const r = await fetch('/notification_settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
