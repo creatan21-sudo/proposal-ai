@@ -1,0 +1,371 @@
+{% extends "base.html" %}
+{% block title %}{{ c.bid_ntce_nm or '워크스페이스' }} — Prointerz{% endblock %}
+{% block head %}
+<style>
+.ws-wrap{max-width:1400px;margin:0 auto;padding:16px}
+.ws-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;}
+.ws-title{font-size:17px;font-weight:700;color:#111827;line-height:1.3;}
+.ws-sub{font-size:12px;color:#6b7280;margin-top:2px;}
+.ws-header-btns{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.ws-cols{display:grid;grid-template-columns:55% 1fr;gap:16px;align-items:start;}
+@media(max-width:900px){.ws-cols{grid-template-columns:1fr}}
+.ws-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:20px 22px;}
+.ws-card-title{font-size:14px;font-weight:700;color:#374151;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;}
+/* 리서치 섹션별 아코디언 */
+.rs-section{border:1px solid #e5e7eb;border-radius:8px;margin-bottom:8px;overflow:hidden;}
+.rs-section-header{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;background:#f9fafb;cursor:pointer;font-size:13px;font-weight:600;color:#374151;user-select:none;}
+.rs-section-header:hover{background:#f3f4f6;}
+.rs-section-body{padding:14px;font-size:13px;line-height:1.7;color:#374151;display:none;}
+.rs-section-body.open{display:block;}
+/* 상태 배지 */
+.status-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:99px;font-size:12px;font-weight:600;}
+.status-pending{background:#f3f4f6;color:#6b7280;}
+.status-running{background:#dbeafe;color:#1d4ed8;}
+.status-done{background:#dcfce7;color:#15803d;}
+.status-error{background:#fee2e2;color:#dc2626;}
+/* 내러티브 폼 */
+.nq-block{margin-bottom:16px;}
+.nq-label{font-size:12px;font-weight:700;color:#374151;margin-bottom:6px;}
+.nq-ta{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:vertical;font-family:inherit;line-height:1.6;}
+.nq-ta:focus{outline:none;border-color:#6366f1;}
+.nq-ro{background:#f9fafb;padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.6;color:#374151;min-height:48px;white-space:pre-wrap;}
+/* 파일 목록 */
+.rfp-files{margin-top:10px;}
+.rfp-file-item{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid #f3f4f6;font-size:12px;color:#374151;}
+.rfp-file-item:last-child{border-bottom:none;}
+/* 스피너 */
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid #bfdbfe;border-top-color:#2563eb;border-radius:50%;animation:spin .8s linear infinite;}
+/* btn */
+.btn{display:inline-flex;align-items:center;gap:5px;padding:7px 14px;border:none;border-radius:7px;font-size:12px;font-weight:600;cursor:pointer;text-decoration:none;}
+.btn-primary{background:#4f46e5;color:#fff;}
+.btn-primary:hover{background:#4338ca;}
+.btn-ghost{background:#fff;color:#374151;border:1px solid #d1d5db;}
+.btn-ghost:hover{background:#f3f4f6;}
+.btn-green{background:#059669;color:#fff;}
+.btn-green:hover{background:#047857;}
+.toast{position:fixed;bottom:28px;right:28px;background:#1f2937;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;z-index:999;pointer-events:none}
+.toast.show{opacity:1}
+</style>
+{% endblock %}
+{% block content %}
+<div class="ws-wrap">
+
+  <!-- 헤더 -->
+  <div class="ws-header">
+    <div>
+      <div class="ws-title">{{ c.bid_ntce_nm or '-' }}</div>
+      <div class="ws-sub">{{ c.ntce_instt_nm or '' }}{% if c.assignee %} · 담당: {{ c.assignee }}{% endif %}</div>
+    </div>
+    <div class="ws-header-btns">
+      {% set rs = research or {} %}
+      {% if rs.status == 'running' %}
+      <span class="status-badge status-running"><span class="spinner"></span> 분석 중...</span>
+      {% elif rs.status == 'done' %}
+      <span class="status-badge status-done">✅ 분석 완료</span>
+      {% elif rs.status == 'error' %}
+      <span class="status-badge status-error">⚠️ 오류</span>
+      {% else %}
+      <span class="status-badge status-pending">⏸ 대기 중</span>
+      {% endif %}
+
+      {% if can_edit %}
+      <label class="btn btn-primary" style="cursor:pointer;">
+        📎 RFP 파일 업로드
+        <input type="file" id="rfp-file-input" multiple accept=".pdf,.hwp,.hwpx,.docx,.txt"
+               style="display:none;" onchange="uploadRfpFiles(this)">
+      </label>
+      {% endif %}
+      <a href="/nara/confirmed/{{ c.id }}" class="btn btn-ghost">← 과업 상세로</a>
+    </div>
+  </div>
+
+  <!-- 업로드된 파일 목록 -->
+  {% if rfp_files %}
+  <div style="margin-bottom:12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:10px 14px;">
+    <div style="font-size:12px;font-weight:600;color:#6b7280;margin-bottom:6px;">📁 등록된 RFP 파일</div>
+    <div class="rfp-files">
+      {% for f in rfp_files %}
+      <div class="rfp-file-item">
+        <span>📄</span>
+        <span style="font-weight:500;">{{ f.filename }}</span>
+        <span style="color:#9ca3af;">{{ f.uploaded_by }} · {{ (f.uploaded_at or '')[:10] }}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- 2컬럼 -->
+  <div class="ws-cols">
+
+    <!-- 좌: 리서치 결과 -->
+    <div class="ws-card">
+      <div class="ws-card-title">
+        <span>🔍 리서치 결과</span>
+        {% if rs.status == 'error' and can_edit %}
+        <button class="btn btn-ghost" style="font-size:11px;" onclick="retryResearch()">🔄 재시도</button>
+        {% endif %}
+      </div>
+
+      {% if not rs or rs.status == 'pending' %}
+      <div style="text-align:center;padding:48px 20px;color:#9ca3af;">
+        <div style="font-size:32px;margin-bottom:10px;">📋</div>
+        <div style="font-size:14px;font-weight:600;color:#6b7280;">RFP 파일을 업로드하면 자동으로 분석이 시작됩니다</div>
+        <div style="font-size:12px;margin-top:6px;">발주처 리서치 및 과업 분석이 자동으로 실행됩니다</div>
+      </div>
+
+      {% elif rs.status == 'running' %}
+      <div style="text-align:center;padding:48px 20px;">
+        <div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto 14px;"></div>
+        <div style="font-size:14px;font-weight:600;color:#1d4ed8;">분석 중...</div>
+        <div style="font-size:12px;color:#6b7280;margin-top:6px;">RFP 파일과 발주처 리서치를 분석하고 있습니다</div>
+      </div>
+
+      {% elif rs.status == 'error' %}
+      <div style="text-align:center;padding:40px 20px;color:#dc2626;">
+        <div style="font-size:28px;margin-bottom:8px;">⚠️</div>
+        <div style="font-size:14px;font-weight:600;">분석 중 오류가 발생했습니다</div>
+        <div style="font-size:12px;color:#6b7280;margin-top:4px;">파일을 다시 업로드하거나 재시도해주세요</div>
+      </div>
+
+      {% else %}
+        <!-- RFP 분석 -->
+        {% if rs.rfp_analysis %}
+        <div class="rs-section" style="margin-bottom:12px;">
+          <div class="rs-section-header" onclick="toggleSection(this)">
+            📄 RFP 분석 결과 <span>▼</span>
+          </div>
+          <div class="rs-section-body open" id="rs-rfp">
+            <div id="rs-rfp-content"></div>
+          </div>
+        </div>
+        {% endif %}
+
+        <!-- 리서치 섹션 -->
+        {% set sections = [
+          ('① 기관 특성/정책 분석', 'rs-1'),
+          ('② 과업 맥락 및 배경',   'rs-2'),
+          ('③ 유사사례 및 시장 트렌드', 'rs-3'),
+          ('④ 경쟁 환경 분석',       'rs-4'),
+          ('⑤ 전략 방향 제언',       'rs-5'),
+        ] %}
+        {% for label, sid in sections %}
+        <div class="rs-section">
+          <div class="rs-section-header" onclick="toggleSection(this)">
+            {{ label }} <span>▼</span>
+          </div>
+          <div class="rs-section-body" id="{{ sid }}"></div>
+        </div>
+        {% endfor %}
+      {% endif %}
+    </div>
+
+    <!-- 우: 내러티브 작성 -->
+    <div class="ws-card">
+      <div class="ws-card-title">
+        <span>✍️ 전략 내러티브</span>
+        {% if can_edit and narrative_qa %}
+        <button class="btn btn-ghost" style="font-size:11px;" id="nq-edit-btn" onclick="toggleNarrativeEdit()">✏️ 수정</button>
+        {% endif %}
+      </div>
+
+      {% set NQ_LABELS = [
+        ('q1', 'Q1. 우리 회사가 본 과업을 하는데 내세울 어떤 경쟁력이 있을까요?'),
+        ('q2', 'Q2. 본 과업은 기존에 어떤 문제나 위기를 갖고 있나요?'),
+        ('q3', 'Q3. 문제를 타개하고 좋은 성과를 이루어내기 위해 어떤 전략이 필요할까요?'),
+        ('q4', 'Q4. 추구하는 전략을 각인시킬 직관적인 컨셉은 무엇인가요?'),
+        ('q5', 'Q5. 컨셉에 맞게 실행할 콘텐츠 아이디어는 어떤 것인가요?'),
+        ('q6', 'Q6. 운영이나 관리 부문에 내세울만한 특별한 장점은 어떤 것인가요?'),
+        ('q7', 'Q7. 추가로 기재할 중요한 내용이 있다면 무엇인가요?'),
+      ] %}
+
+      {% if can_edit %}
+      <!-- 작성/수정 폼 -->
+      <div id="nq-view" style="display:{% if narrative_qa %}block{% else %}none{% endif %};">
+        {% for key, label in NQ_LABELS %}
+        <div class="nq-block">
+          <div class="nq-label">{{ label }}</div>
+          <div class="nq-ro" id="nq-ro-{{ key }}">{{ (narrative_qa or {}).get(key, '') or '(미작성)' }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      <div id="nq-edit" style="display:{% if narrative_qa %}none{% else %}block{% endif %};">
+        {% for key, label in NQ_LABELS %}
+        <div class="nq-block">
+          <div class="nq-label">{{ label }}</div>
+          <textarea id="nq-ta-{{ key }}" class="nq-ta" rows="4"
+                    placeholder="자유롭게 작성해주세요">{{ (narrative_qa or {}).get(key, '') }}</textarea>
+        </div>
+        {% endfor %}
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          {% if narrative_qa %}
+          <button class="btn btn-ghost" onclick="cancelNarrativeEdit()">취소</button>
+          {% endif %}
+          <button class="btn btn-green" onclick="saveNarrative()">💾 저장</button>
+        </div>
+      </div>
+
+      {% else %}
+      <!-- 읽기 전용 -->
+      {% if narrative_qa %}
+        {% for key, label in NQ_LABELS %}
+        <div class="nq-block">
+          <div class="nq-label">{{ label }}</div>
+          <div class="nq-ro">{{ narrative_qa.get(key, '') or '(미작성)' }}</div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div style="text-align:center;padding:40px 20px;color:#9ca3af;">
+          <div style="font-size:28px;">📋</div>
+          <div style="font-size:14px;font-weight:600;margin-top:8px;">담당자가 내러티브를 미작성 상태입니다</div>
+        </div>
+      {% endif %}
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const CONFIRMED_ID = {{ c.id }};
+const RS_STATUS    = {{ (research.status if research else 'pending') | tojson }};
+const RS_ANALYSIS  = {{ (research.rfp_analysis if research else '') | tojson }};
+const RS_RESULT    = {{ (research.research_result if research else '') | tojson }};
+
+// 섹션 토글
+function toggleSection(header){
+  const body = header.nextElementSibling;
+  const arrow = header.querySelector('span');
+  body.classList.toggle('open');
+  if(arrow) arrow.textContent = body.classList.contains('open') ? '▲' : '▼';
+}
+
+// 마크다운 섹션 파서
+function parseAndRenderSections(text, sectionIds){
+  if(!text) return;
+  const parts = text.split(/^#{1,2} /m).filter(Boolean);
+  const allText = text;
+
+  // RFP 분석 content
+  const rfpEl = document.getElementById('rs-rfp-content');
+  if(rfpEl) rfpEl.innerHTML = simpleMarkdown(RS_ANALYSIS);
+
+  // 리서치 섹션 파싱
+  const secPattern = /##\s*(①|②|③|④|⑤)[^\n]*/g;
+  const matches = [...RS_RESULT.matchAll(/##\s*(①|②|③|④|⑤)([^\n]*)\n([\s\S]*?)(?=\n##|$)/g)];
+  const ids = ['rs-1','rs-2','rs-3','rs-4','rs-5'];
+  matches.forEach((m, i) => {
+    const el = document.getElementById(ids[i]);
+    if(el) el.innerHTML = simpleMarkdown(m[3].trim());
+  });
+  // 매칭 없으면 전체 텍스트를 rs-1에
+  if(!matches.length){
+    const el = document.getElementById('rs-1');
+    if(el){ el.innerHTML = simpleMarkdown(RS_RESULT); el.classList.add('open'); }
+  }
+}
+
+function simpleMarkdown(text){
+  if(!text) return '<span style="color:#9ca3af;">(내용 없음)</span>';
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  return text.split('\n').map(line=>{
+    const t = line.trim();
+    if(!t) return '<br>';
+    if(/^### /.test(t)) return `<h4 style="font-weight:700;font-size:13px;color:#374151;margin:12px 0 4px;">${esc(t.replace(/^### /,''))}</h4>`;
+    if(/^## /.test(t)) return `<h3 style="font-weight:700;font-size:14px;color:#2563eb;margin:16px 0 6px;border-left:3px solid #2563eb;padding-left:8px;">${esc(t.replace(/^## /,''))}</h3>`;
+    if(/^[-*] /.test(t)) return `<div style="padding-left:12px;">• ${esc(t.replace(/^[-*] /,''))}</div>`;
+    return `<p style="margin:4px 0;">${esc(t)}</p>`;
+  }).join('');
+}
+
+// 내러티브 편집 토글
+function toggleNarrativeEdit(){
+  document.getElementById('nq-view').style.display='none';
+  document.getElementById('nq-edit').style.display='block';
+}
+function cancelNarrativeEdit(){
+  document.getElementById('nq-view').style.display='block';
+  document.getElementById('nq-edit').style.display='none';
+}
+
+async function saveNarrative(){
+  const keys = ['q1','q2','q3','q4','q5','q6','q7'];
+  const data = {};
+  keys.forEach(k=>{
+    const el = document.getElementById(`nq-ta-${k}`);
+    if(el) data[k] = el.value.trim();
+  });
+  try{
+    const r = await fetch(`/nara/confirmed/${CONFIRMED_ID}/narrative`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({content: JSON.stringify(data)})
+    });
+    const d = await r.json();
+    if(d.ok){
+      showToast('저장되었습니다');
+      keys.forEach(k=>{
+        const ro = document.getElementById(`nq-ro-${k}`);
+        if(ro) ro.textContent = data[k] || '(미작성)';
+      });
+      const view = document.getElementById('nq-view');
+      const edit = document.getElementById('nq-edit');
+      if(view) view.style.display='block';
+      if(edit) edit.style.display='none';
+    } else showToast(d.error||'저장 실패', false);
+  } catch(e){ showToast('오류: '+e, false); }
+}
+
+// RFP 파일 업로드
+async function uploadRfpFiles(input){
+  if(!input.files.length) return;
+  const fd = new FormData();
+  Array.from(input.files).forEach(f => fd.append('files', f));
+  showToast('업로드 중...');
+  try{
+    const r = await fetch(`/nara/confirmed/${CONFIRMED_ID}/upload_rfp`,{method:'POST',body:fd});
+    const d = await r.json();
+    if(d.ok){ showToast(d.message); setTimeout(()=>location.reload(), 1500); }
+    else showToast(d.error||'업로드 실패', false);
+  } catch(e){ showToast('오류: '+e, false); }
+  input.value='';
+}
+
+function retryResearch(){
+  document.getElementById('rfp-file-input')?.click();
+}
+
+// 5초 폴링 (running 상태)
+function startPolling(){
+  const interval = setInterval(async()=>{
+    try{
+      const r = await fetch(`/nara/confirmed/${CONFIRMED_ID}/research_status`);
+      const d = await r.json();
+      const status = (d.research||{}).status;
+      if(status && status !== 'running'){
+        clearInterval(interval);
+        location.reload();
+      }
+    } catch(e){}
+  }, 5000);
+}
+
+// 토스트
+function showToast(msg, ok=true){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.style.background=ok?'#1f2937':'#b91c1c';
+  t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800);
+}
+
+// 초기화
+document.addEventListener('DOMContentLoaded', ()=>{
+  if(RS_STATUS === 'running') startPolling();
+  if(RS_STATUS === 'done') parseAndRenderSections(RS_RESULT, []);
+  if(RS_ANALYSIS){
+    const el = document.getElementById('rs-rfp-content');
+    if(el) el.innerHTML = simpleMarkdown(RS_ANALYSIS);
+  }
+});
+</script>
+{% endblock %}

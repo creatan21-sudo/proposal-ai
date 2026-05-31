@@ -445,6 +445,26 @@ def init_db() -> None:
                 trigger_type TEXT NOT NULL,
                 sent_at      TEXT DEFAULT (datetime('now','localtime'))
             );
+
+            CREATE TABLE IF NOT EXISTS confirmed_rfp_files (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                confirmed_id INTEGER NOT NULL,
+                filename     TEXT NOT NULL,
+                filepath     TEXT NOT NULL,
+                uploaded_by  TEXT NOT NULL,
+                uploaded_at  TEXT DEFAULT (datetime('now','localtime'))
+            );
+
+            CREATE TABLE IF NOT EXISTS confirmed_research (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                confirmed_id    INTEGER NOT NULL UNIQUE,
+                status          TEXT DEFAULT 'pending',
+                rfp_analysis    TEXT DEFAULT '',
+                research_result TEXT DEFAULT '',
+                started_at      TEXT DEFAULT '',
+                completed_at    TEXT DEFAULT '',
+                updated_by      TEXT DEFAULT ''
+            );
         """)
         # ── 기본 키워드 삽입 (최초 실행 시 또는 누락 시) ──
         _DEFAULT_KEYWORDS = [
@@ -2886,3 +2906,68 @@ def record_notification_sent(trigger_type: str) -> None:
             "INSERT INTO notification_log (trigger_type) VALUES (?)",
             (trigger_type,),
         )
+
+
+# ── 확정 RFP 파일 / 리서치 ──────────────────────────────────────────
+
+def save_confirmed_rfp_file(confirmed_id: int, filename: str, filepath: str, uploaded_by: str) -> int:
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO confirmed_rfp_files (confirmed_id, filename, filepath, uploaded_by) VALUES (?,?,?,?)",
+            (confirmed_id, filename, filepath, uploaded_by),
+        )
+        return cur.lastrowid
+
+
+def list_confirmed_rfp_files(confirmed_id: int) -> list:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM confirmed_rfp_files WHERE confirmed_id=? ORDER BY uploaded_at DESC",
+            (confirmed_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_confirmed_research(confirmed_id: int) -> "dict | None":
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM confirmed_research WHERE confirmed_id=?",
+            (confirmed_id,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def save_confirmed_research(confirmed_id: int, status: str,
+                             rfp_analysis: str = '', research_result: str = '',
+                             updated_by: str = '') -> None:
+    from datetime import datetime as _dt
+    now = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+    with get_connection() as conn:
+        existing = conn.execute(
+            "SELECT id FROM confirmed_research WHERE confirmed_id=?", (confirmed_id,)
+        ).fetchone()
+        if existing:
+            if status == 'running':
+                conn.execute(
+                    "UPDATE confirmed_research SET status=?, started_at=?, updated_by=? WHERE confirmed_id=?",
+                    (status, now, updated_by, confirmed_id),
+                )
+            elif status == 'done':
+                conn.execute(
+                    "UPDATE confirmed_research SET status=?, rfp_analysis=?, research_result=?, completed_at=?, updated_by=? WHERE confirmed_id=?",
+                    (status, rfp_analysis, research_result, now, updated_by, confirmed_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE confirmed_research SET status=?, rfp_analysis=?, research_result=?, updated_by=? WHERE confirmed_id=?",
+                    (status, rfp_analysis, research_result, updated_by, confirmed_id),
+                )
+        else:
+            started   = now if status == 'running' else ''
+            completed = now if status == 'done'    else ''
+            conn.execute(
+                "INSERT INTO confirmed_research "
+                "(confirmed_id, status, rfp_analysis, research_result, started_at, completed_at, updated_by) "
+                "VALUES (?,?,?,?,?,?,?)",
+                (confirmed_id, status, rfp_analysis, research_result, started, completed, updated_by),
+            )

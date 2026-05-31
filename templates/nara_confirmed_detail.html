@@ -297,6 +297,32 @@
     {% endif %}
   </div>
 
+  <!-- 워크스페이스 링크 + RFP 파일 -->
+  {% if can_edit %}
+  <div class="card" style="background:#f0fdf4;border-color:#bbf7d0;">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+      <div>
+        <div style="font-size:14px;font-weight:700;color:#15803d;">📋 리서치 &amp; 내러티브 작성</div>
+        <div style="font-size:12px;color:#6b7280;margin-top:2px;">RFP 파일 업로드 → 자동 분석 → 전략 내러티브 작성</div>
+      </div>
+      <a href="/nara/confirmed/{{ c.id }}/workspace"
+         style="padding:8px 18px;background:#059669;color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;">
+        📋 리서치 &amp; 내러티브 작성 →
+      </a>
+    </div>
+    {% if rfp_files %}
+    <div style="margin-top:12px;border-top:1px solid #bbf7d0;padding-top:10px;">
+      <div style="font-size:12px;font-weight:600;color:#6b7280;margin-bottom:6px;">📁 등록된 RFP 파일</div>
+      {% for f in rfp_files %}
+      <div style="font-size:12px;color:#374151;padding:3px 0;">
+        📄 {{ f.filename }} <span style="color:#9ca3af;">— {{ f.uploaded_by }} · {{ (f.uploaded_at or '')[:10] }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <!-- ③ 전략 내러티브 -->
   <div class="card">
     {% set nq_labels = [

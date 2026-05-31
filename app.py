@@ -87,7 +87,9 @@ from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           create_notification, list_notifications,
                           mark_notification_read, mark_all_read, count_unread,
                           get_notification_settings, save_notification_settings,
-                          get_last_notification_time, record_notification_sent)
+                          get_last_notification_time, record_notification_sent,
+                          save_confirmed_rfp_file, list_confirmed_rfp_files,
+                          get_confirmed_research, save_confirmed_research)
 
 app = Flask(__name__)
 # Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
@@ -4047,11 +4049,13 @@ def nara_confirmed_detail(confirmed_id):
                 narrative_qa = parsed
         except Exception:
             pass
+    rfp_files  = list_confirmed_rfp_files(confirmed_id)
     from datetime import datetime as _dt
     return render_template("nara_confirmed_detail.html",
                            c=c, narrative=narrative, narrative_qa=narrative_qa,
                            comments=comments,
                            schedule=schedule, bid_info=bid_info,
+                           rfp_files=rfp_files,
                            users=users, can_edit=can_edit, is_ops=is_ops,
                            can_edit_narrative=can_edit_narrative,
                            now=_dt.now().strftime("%Y-%m-%d %H:%M"))
@@ -4370,13 +4374,30 @@ def nara_pickup_delete(pickup_id):
 @operator_or_admin_required
 def nara_confirm_from_pickup(pickup_id):
     data = request.get_json(force=True) or {}
+    assignee = str(data.get("assignee", ""))
     try:
         new_id = confirm_nara_pickup(
             pickup_id    = pickup_id,
             confirmed_by = session.get("username", ""),
             notes        = str(data.get("notes", "")),
-            assignee     = str(data.get("assignee", "")),
+            assignee     = assignee,
         )
+        # 담당자에게 RFP 등록 요청 알림
+        try:
+            c = get_confirmed_by_id(new_id)
+            nm = (c or {}).get("bid_ntce_nm", "") or f"확정#{new_id}"
+            from database.db import get_connection as _gc
+            with _gc() as conn:
+                row = conn.execute("SELECT id FROM users WHERE username=?", (assignee,)).fetchone()
+                if row:
+                    create_notification(
+                        row["id"],
+                        "과업 확정",
+                        f"[{nm}] 과업이 확정되었습니다. 나라장터에서 RFP 파일을 다운받아 프로인터즈에 등록해주세요.",
+                        f"/nara/confirmed/{new_id}/workspace",
+                    )
+        except Exception:
+            pass
         return jsonify({"ok": True, "id": new_id})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
@@ -4395,6 +4416,185 @@ def nara_confirm(candidate_id):
         return jsonify({"ok": True, "id": new_id})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
+
+@app.route("/nara/confirmed/<int:confirmed_id>/upload_rfp", methods=["POST"])
+@login_required
+def upload_rfp(confirmed_id):
+    c = get_confirmed_by_id(confirmed_id)
+    if not c:
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    is_ops      = session.get("role") in ("admin", "operator")
+    is_assignee = session.get("username") == c.get("assignee")
+    if not (is_ops or is_assignee):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+
+    files = request.files.getlist("files") or request.files.getlist("file")
+    if not files or not files[0].filename:
+        return jsonify({"ok": False, "error": "파일을 선택하세요"})
+
+    rfp_dir = UPLOAD_DIR / "rfp_uploads" / str(confirmed_id)
+    rfp_dir.mkdir(parents=True, exist_ok=True)
+
+    saved_paths = []
+    for f in files:
+        safe = str(confirmed_id) + "_" + uuid.uuid4().hex[:8] + "_" + f.filename
+        dest = rfp_dir / safe
+        f.save(str(dest))
+        save_confirmed_rfp_file(confirmed_id, f.filename, str(dest), session["username"])
+        saved_paths.append(str(dest))
+
+    # 백그라운드 RFP 분석 + 리서치 트리거
+    ctx = app.app_context()
+    threading.Thread(
+        target=run_rfp_research,
+        args=(confirmed_id, saved_paths, ctx),
+        daemon=True,
+    ).start()
+
+    return jsonify({"ok": True, "message": f"{len(saved_paths)}개 업로드 완료. 분석을 시작합니다."})
+
+
+def run_rfp_research(confirmed_id: int, file_paths: list, app_context) -> None:
+    """RFP 파일 분석 + 리서치 실행 후 DB 저장. 백그라운드 스레드에서 실행."""
+    with app_context:
+        try:
+            save_confirmed_research(confirmed_id, 'running', updated_by='system')
+            c = get_confirmed_by_id(confirmed_id) or {}
+            client_name  = c.get("ntce_instt_nm", "") or ""
+            project_name = c.get("bid_ntce_nm", "")   or ""
+
+            # ① RFP 텍스트 추출
+            rfp_text = ""
+            try:
+                from agents.rfp_parser import extract_text as _et
+                for fp in file_paths:
+                    try:
+                        rfp_text += _et(fp) + "\n\n"
+                    except Exception as e:
+                        print(f"  [workspace] 파일 추출 오류 {fp}: {e}")
+            except Exception as e:
+                print(f"  [workspace] rfp_parser import 오류: {e}")
+
+            # ② Claude로 RFP 분석 (일정·요구사항 추출)
+            rfp_analysis = ""
+            if rfp_text.strip():
+                import anthropic as _ant
+                _client = _ant.Anthropic()
+                analysis_prompt = (
+                    f"아래는 입찰 공고 RFP 문서입니다. 다음 항목을 마크다운으로 정리해주세요.\n\n"
+                    f"## 과업 개요\n## 주요 요구사항\n## 제출 마감일\n## 제안서 제출 방법\n"
+                    f"## PT 일정 (있으면)\n## 가격투찰 일정 (있으면)\n## 평가 기준\n\n"
+                    f"[RFP 내용]\n{rfp_text[:8000]}"
+                )
+                try:
+                    resp = _client.messages.create(
+                        model="claude-haiku-4-5-20251001",
+                        max_tokens=2000,
+                        messages=[{"role": "user", "content": analysis_prompt}],
+                    )
+                    rfp_analysis = resp.content[0].text.strip()
+                except Exception as e:
+                    rfp_analysis = f"분석 오류: {e}"
+
+            # ③ Perplexity + Claude 리서치
+            research_result = ""
+            try:
+                import os, requests as _req
+                perplexity_key = os.environ.get("PERPLEXITY_API_KEY", "")
+                queries = [
+                    f"{client_name} 2025 최신 현황 주요 정책 사업",
+                    f"{client_name} 2024 2025 최근 이슈 뉴스",
+                ]
+                px_parts = []
+                if perplexity_key:
+                    headers = {"Authorization": f"Bearer {perplexity_key}", "Content-Type": "application/json"}
+                    for q in queries:
+                        try:
+                            r = _req.post(
+                                "https://api.perplexity.ai/chat/completions",
+                                headers=headers,
+                                json={"model": "sonar-pro",
+                                      "messages": [{"role": "user", "content": q}],
+                                      "max_tokens": 800},
+                                timeout=25,
+                            )
+                            r.raise_for_status()
+                            answer = r.json().get("choices", [{}])[0].get("message", {}).get("content", "")
+                            if answer:
+                                px_parts.append(f"[{q}]\n{answer}")
+                        except Exception:
+                            pass
+
+                px_block = "\n\n".join(px_parts) if px_parts else "(Perplexity 검색 결과 없음)"
+
+                import anthropic as _ant2
+                _c2 = _ant2.Anthropic()
+                research_prompt = (
+                    f"당신은 공공입찰 전략 전문가입니다.\n"
+                    f"발주처: {client_name}\n과업명: {project_name}\n\n"
+                    f"[검색 결과]\n{px_block}\n\n"
+                    f"아래 항목을 마크다운으로 작성하세요 (각 항목 최소 200자):\n"
+                    f"## ① 기관 특성/정책 분석\n## ② 과업 맥락 및 배경\n"
+                    f"## ③ 유사사례 및 시장 트렌드\n## ④ 경쟁 환경 분석\n## ⑤ 전략 방향 제언"
+                )
+                resp2 = _c2.messages.create(
+                    model="claude-sonnet-4-6",
+                    max_tokens=4000,
+                    messages=[{"role": "user", "content": research_prompt}],
+                )
+                research_result = resp2.content[0].text.strip()
+            except Exception as e:
+                research_result = f"리서치 오류: {e}"
+
+            save_confirmed_research(
+                confirmed_id,
+                status='done',
+                rfp_analysis=rfp_analysis,
+                research_result=research_result,
+                updated_by='system',
+            )
+            print(f"  [workspace] confirmed_id={confirmed_id} 리서치 완료")
+        except Exception as e:
+            print(f"  [workspace] run_rfp_research 오류: {e}")
+            try:
+                save_confirmed_research(confirmed_id, 'error', updated_by='system')
+            except Exception:
+                pass
+
+
+@app.route("/nara/confirmed/<int:confirmed_id>/research_status")
+@login_required
+def research_status(confirmed_id):
+    return jsonify({"ok": True, "research": get_confirmed_research(confirmed_id)})
+
+
+@app.route("/nara/confirmed/<int:confirmed_id>/workspace")
+@login_required
+def confirmed_workspace(confirmed_id):
+    c = get_confirmed_by_id(confirmed_id)
+    if not c:
+        return "Not found", 404
+    research  = get_confirmed_research(confirmed_id)
+    narrative = get_confirmed_narrative(confirmed_id)
+    rfp_files = list_confirmed_rfp_files(confirmed_id)
+    is_ops      = session.get("role") in ("admin", "operator")
+    is_assignee = session.get("username") == c.get("assignee")
+    can_edit    = is_ops or is_assignee
+    narrative_qa = None
+    if narrative:
+        try:
+            parsed = json.loads(narrative["content"])
+            if isinstance(parsed, dict) and any(parsed.values()):
+                narrative_qa = parsed
+        except Exception:
+            pass
+    return render_template(
+        "confirmed_workspace.html",
+        c=c, research=research, narrative=narrative,
+        narrative_qa=narrative_qa, rfp_files=rfp_files,
+        can_edit=can_edit, is_ops=is_ops,
+    )
+
 
 @app.route("/nara/candidate/<int:candidate_id>/comment", methods=["POST"])
 @login_required
