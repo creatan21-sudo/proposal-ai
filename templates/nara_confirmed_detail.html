@@ -68,6 +68,18 @@
 .badge-sch.direct{background:#dbeafe;color:#1d4ed8;}
 .badge-sch.online{background:#dcfce7;color:#15803d;}
 .pt-loc{color:#9ca3af;font-size:11px;white-space:nowrap;}
+/* 일정 view/edit 토글 */
+.se{display:none;}
+tr.sch-editing .sv{display:none;}
+tr.sch-editing .se{display:block;}
+tr.sch-editing .sch-act-edit{display:flex !important;}
+tr.sch-editing .sch-act-view{display:none !important;}
+/* 상태 뱃지 */
+.sch-st{display:inline-block;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700;}
+.sch-st-planned{background:#fef9c3;color:#713f12;}
+.sch-st-doing{background:#dbeafe;color:#1d4ed8;}
+.sch-st-done{background:#d1fae5;color:#065f46;}
+.sch-st-hold{background:#f3f4f6;color:#6b7280;}
 /* 일정 추가 모달 */
 .sch-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;}
 .sch-modal-overlay.open{display:flex;}
@@ -462,29 +474,57 @@
         {% set today_str = now[:10] if now is defined else '' %}
         {% for s in schedule %}
         {% set overdue = s.due_date and s.due_date < today_str and s.status not in ['완료','보류'] %}
+        {% set is_auto = s.task_name.startswith('입찰 마감') or s.task_name.startswith('제안서 제출') or s.task_name.startswith('PT 발표') or s.task_name.startswith('가격투찰') %}
         <tr data-id="{{ s.id }}"{% if overdue %} class="overdue"{% endif %}>
           <td>
-            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <div class="sv" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
               {% if '제안서 제출' in s.task_name %}
                 {% if '(직)' in s.task_name %}<span class="badge-sch direct">직</span>{% elif '(온)' in s.task_name %}<span class="badge-sch online">온</span>{% endif %}
               {% endif %}
-              <input class="sch-input" value="{{ s.task_name | e }}" style="flex:1;min-width:80px;" onchange="patchSchedule({{ s.id }}, this.closest('tr'))">
+              <span>{{ s.task_name }}</span>
               {% if 'PT 발표 @' in s.task_name %}<small class="pt-loc">@ {{ s.task_name.split('@')[1].strip() }}</small>{% endif %}
+            </div>
+            <div class="se"><input class="sch-input" value="{{ s.task_name | e }}" style="width:100%;"></div>
+          </td>
+          <td>
+            <div class="sv">{{ s.assignee or '-' }}</div>
+            <div class="se">
+              <select class="sch-select">
+                <option value="">-</option>
+                {% for u in users %}<option value="{{ u.username }}"{% if u.username == s.assignee %} selected{% endif %}>{{ u.username }}</option>{% endfor %}
+              </select>
             </div>
           </td>
           <td>
-            <select class="sch-select" onchange="patchSchedule({{ s.id }}, this.closest('tr'))">
-              <option value="">-</option>
-              {% for u in users %}<option value="{{ u.username }}"{% if u.username == s.assignee %} selected{% endif %}>{{ u.username }}</option>{% endfor %}
-            </select>
+            <div class="sv">{{ s.due_date or '-' }}</div>
+            <div class="se"><input type="date" class="sch-input" value="{{ s.due_date }}"></div>
           </td>
-          <td><input type="date" class="sch-input" value="{{ s.due_date }}" onchange="patchSchedule({{ s.id }}, this.closest('tr'))"></td>
           <td>
-            <select class="sch-select" onchange="patchSchedule({{ s.id }}, this.closest('tr'))">
-              {% for st in ['예정','진행중','완료','보류'] %}<option{% if st == s.status %} selected{% endif %}>{{ st }}</option>{% endfor %}
-            </select>
+            <div class="sv">
+              {% if s.status == '예정' %}<span class="sch-st sch-st-planned">예정</span>
+              {% elif s.status == '진행중' %}<span class="sch-st sch-st-doing">진행중</span>
+              {% elif s.status == '완료' %}<span class="sch-st sch-st-done">완료</span>
+              {% elif s.status == '보류' %}<span class="sch-st sch-st-hold">보류</span>
+              {% else %}<span class="sch-st sch-st-planned">{{ s.status }}</span>{% endif %}
+            </div>
+            <div class="se">
+              <select class="sch-select">
+                {% for st in ['예정','진행중','완료','보류'] %}<option{% if st == s.status %} selected{% endif %}>{{ st }}</option>{% endfor %}
+              </select>
+            </div>
           </td>
-          {% if can_edit %}<td><button class="btn btn-danger btn-sm" onclick="delSchedule({{ s.id }}, this.closest('tr'))">삭제</button></td>{% endif %}
+          {% if can_edit %}
+          <td>
+            <div class="sch-act-view" style="display:flex;gap:4px;">
+              <button class="btn btn-ghost btn-sm" onclick="startEdit(this.closest('tr'))">수정</button>
+              {% if not is_auto %}<button class="btn btn-danger btn-sm" onclick="delSchedule({{ s.id }}, this.closest('tr'))">삭제</button>{% endif %}
+            </div>
+            <div class="sch-act-edit" style="display:none;gap:4px;">
+              <button class="btn btn-primary btn-sm" onclick="saveEdit(this.closest('tr'))">저장</button>
+              <button class="btn btn-ghost btn-sm" onclick="cancelEdit(this.closest('tr'))">취소</button>
+            </div>
+          </td>
+          {% endif %}
         </tr>
         {% endfor %}
       </tbody>
@@ -664,9 +704,10 @@ function _rowOverdue(dueDateVal, statusVal){
 }
 
 function _buildRowHtml(id, task_name, assignee, due_date, status){
+  const AUTO_PREFIXES = ['입찰 마감','제안서 제출','PT 발표','가격투찰'];
+  const isAuto = AUTO_PREFIXES.some(p => task_name.startsWith(p));
   const uOpts = ['<option value="">-</option>'].concat(USERS.map(u=>`<option value="${_esc(u.username)}"${u.username===assignee?' selected':''}>${_esc(u.username)}</option>`)).join('');
   const sOpts = ['예정','진행중','완료','보류'].map(s=>`<option${s===status?' selected':''}>${s}</option>`).join('');
-  const delBtn = CAN_EDIT ? `<td><button class="btn btn-danger btn-sm" onclick="delSchedule(${id},this.closest('tr'))">삭제</button></td>` : '';
   let badge = '';
   if(task_name.includes('제안서 제출')){
     if(task_name.includes('(직)')) badge = '<span class="badge-sch direct">직</span>';
@@ -677,13 +718,36 @@ function _buildRowHtml(id, task_name, assignee, due_date, status){
     const parts = task_name.split('@');
     if(parts[1]) locHtml = `<small class="pt-loc">@ ${_esc(parts[1].trim())}</small>`;
   }
-  const taskCell = `<td><div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">${badge}<input class="sch-input" value="${_esc(task_name)}" style="flex:1;min-width:60px;" onchange="patchSchedule(${id},this.closest('tr'))">${locHtml}</div></td>`;
+  const stMap = {'예정':'sch-st-planned','진행중':'sch-st-doing','완료':'sch-st-done','보류':'sch-st-hold'};
+  const stBadge = `<span class="sch-st ${stMap[status]||'sch-st-planned'}">${_esc(status)}</span>`;
+  const actBtns = CAN_EDIT ? `<td>
+    <div class="sch-act-view" style="display:flex;gap:4px;">
+      <button class="btn btn-ghost btn-sm" onclick="startEdit(this.closest('tr'))">수정</button>
+      ${!isAuto?`<button class="btn btn-danger btn-sm" onclick="delSchedule(${id},this.closest('tr'))">삭제</button>`:''}
+    </div>
+    <div class="sch-act-edit" style="display:none;gap:4px;">
+      <button class="btn btn-primary btn-sm" onclick="saveEdit(this.closest('tr'))">저장</button>
+      <button class="btn btn-ghost btn-sm" onclick="cancelEdit(this.closest('tr'))">취소</button>
+    </div>
+  </td>` : '';
   return `
-    ${taskCell}
-    <td><select class="sch-select" onchange="patchSchedule(${id},this.closest('tr'))">${uOpts}</select></td>
-    <td><input type="date" class="sch-input" value="${due_date}" onchange="patchSchedule(${id},this.closest('tr'))"></td>
-    <td><select class="sch-select" onchange="patchSchedule(${id},this.closest('tr'))">${sOpts}</select></td>
-    ${delBtn}`;
+    <td>
+      <div class="sv" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">${badge}<span>${_esc(task_name)}</span>${locHtml}</div>
+      <div class="se"><input class="sch-input" value="${_esc(task_name)}" style="width:100%;"></div>
+    </td>
+    <td>
+      <div class="sv">${_esc(assignee)||'-'}</div>
+      <div class="se"><select class="sch-select">${uOpts}</select></div>
+    </td>
+    <td>
+      <div class="sv">${_esc(due_date)||'-'}</div>
+      <div class="se"><input type="date" class="sch-input" value="${_esc(due_date)}"></div>
+    </td>
+    <td>
+      <div class="sv">${stBadge}</div>
+      <div class="se"><select class="sch-select">${sOpts}</select></div>
+    </td>
+    ${actBtns}`;
 }
 /* ── 일정 추가 모달 ── */
 function openSchModal(){
@@ -746,17 +810,52 @@ async function submitSchModal(){
   closeSchModal();
   showToast('일정이 추가되었습니다');
 }
-async function patchSchedule(id, tr){
-  const inputs = tr.querySelectorAll('input,select');
-  const task_name = inputs[0].value.trim();
-  const assignee  = inputs[1].value;
-  const due_date  = inputs[2].value;
-  const status    = inputs[3].value;
-  tr.className = _rowOverdue(due_date, status) ? 'overdue' : '';
-  await fetch(`/nara/confirmed/${CID}/schedule/${id}`,{
+function startEdit(tr){
+  tr.classList.add('sch-editing');
+}
+function cancelEdit(tr){
+  // restore inputs to last-saved values (sv text)
+  const svs = tr.querySelectorAll('.sv');
+  const ses = tr.querySelectorAll('.se input, .se select');
+  const taskSpan = tr.querySelector('td:first-child .sv span');
+  if(taskSpan && ses[0]) ses[0].value = taskSpan.textContent;
+  if(svs[1] && ses[1]){
+    const txt = svs[1].textContent.trim();
+    ses[1].value = txt === '-' ? '' : txt;
+  }
+  if(svs[2] && ses[2]){
+    const txt = svs[2].textContent.trim();
+    ses[2].value = txt === '-' ? '' : txt;
+  }
+  if(ses[3]){
+    const stEl = tr.querySelector('td:nth-child(4) .sv .sch-st');
+    if(stEl) ses[3].value = stEl.textContent.trim();
+  }
+  tr.classList.remove('sch-editing');
+}
+async function saveEdit(tr){
+  const id = tr.dataset.id;
+  const ses = tr.querySelectorAll('.se input, .se select');
+  const task_name = ses[0].value.trim();
+  const assignee  = ses[1].value;
+  const due_date  = ses[2].value;
+  const status    = ses[3].value;
+  const r = await fetch(`/nara/confirmed/${CID}/schedule/${id}`,{
     method:'PATCH', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({task_name,assignee,due_date,status})
   });
+  const d = await r.json();
+  if(!d.ok){ showToast(d.error||'저장 실패',false); return; }
+  const taskSpan = tr.querySelector('td:first-child .sv span');
+  if(taskSpan) taskSpan.textContent = task_name;
+  const svs = tr.querySelectorAll('.sv');
+  if(svs[1]) svs[1].textContent = assignee || '-';
+  if(svs[2]) svs[2].textContent = due_date || '-';
+  const stMap = {'예정':'sch-st-planned','진행중':'sch-st-doing','완료':'sch-st-done','보류':'sch-st-hold'};
+  if(svs[3]) svs[3].innerHTML = `<span class="sch-st ${stMap[status]||'sch-st-planned'}">${_esc(status)}</span>`;
+  tr.className = _rowOverdue(due_date, status) ? 'overdue' : '';
+  tr.classList.remove('sch-editing');
+  showToast('저장되었습니다');
 }
 async function delSchedule(id, tr){
   if(!confirm('일정을 삭제할까요?')) return;

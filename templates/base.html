@@ -109,9 +109,9 @@
                 const div=document.createElement('div');
                 div.style.cssText='background:#eff6ff;border-radius:8px;padding:8px 10px;font-size:13px;';
                 let btnHtml='';
-                if(n.link && n.link.indexOf('workspace')!==-1){
+                if(n.link && n.link !== 'None' && n.link !== ''){
                   btnHtml='<div style="margin-top:8px;">'
-                    +'<a href="'+n.link+'" style="display:inline-block;padding:5px 12px;background:#059669;color:#fff;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none;" onclick="document.getElementById(\'notif-popup\').style.display=\'none\'">지금 등록 →</a>'
+                    +'<a href="'+n.link+'" style="display:inline-block;padding:5px 12px;background:#ea580c;color:#fff;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none;" onclick="document.getElementById(\'notif-popup\').style.display=\'none\'">📋 지금 등록 →</a>'
                     +'</div>';
                 }
                 div.innerHTML='<div style="font-weight:600;color:#1e40af;">'+_hesc(n.title)+'</div>'
