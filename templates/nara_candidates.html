@@ -57,6 +57,17 @@
 .toast.show{opacity:1}
 </style>
 {% endblock %}
+{% block subnav %}
+<div class="sub-nav">
+  <div class="sub-nav-inner">
+    <a href="/nara">📋 공고</a>
+    <a href="/nara/candidates" class="active">⭐ 후보</a>
+    <a href="/nara/pickups">📥 픽업</a>
+    <a href="/nara/confirmed">✅ 확정</a>
+    <a href="/nara/archive">🗂️ 기과업</a>
+  </div>
+</div>
+{% endblock %}
 {% block content %}
 <div class="nara-wrap">
   <div class="nara-title">📋 입찰</div>

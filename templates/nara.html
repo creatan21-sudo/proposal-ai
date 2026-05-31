@@ -58,21 +58,21 @@
 .cat-btn{padding:5px 13px;font-size:12px;font-weight:600;border:1px solid #d1d5db;border-radius:20px;background:#fff;color:#6b7280;cursor:pointer;transition:all .15s;}
 .cat-btn:hover{background:#f3f4f6;border-color:#9ca3af;}
 .cat-btn.active{background:#4f46e5;color:#fff;border-color:#4f46e5;}
-.nara-tabs{display:flex;gap:2px;margin-bottom:20px;border-bottom:2px solid #e5e7eb;}
-.nara-tab{padding:9px 18px;font-size:13px;font-weight:600;color:#6b7280;text-decoration:none;border-radius:6px 6px 0 0;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;}
-.nara-tab:hover{color:#4f46e5;background:#f5f3ff;}
-.nara-tab.active{color:#4f46e5;border-bottom-color:#4f46e5;background:#fff;}
 </style>
+{% endblock %}
+{% block subnav %}
+<div class="sub-nav">
+  <div class="sub-nav-inner">
+    <a href="/nara" class="active">📋 공고</a>
+    <a href="/nara/candidates">⭐ 후보</a>
+    <a href="/nara/pickups">📥 픽업</a>
+    <a href="/nara/confirmed">✅ 확정</a>
+    <a href="/nara/archive">🗂️ 기과업</a>
+  </div>
+</div>
 {% endblock %}
 {% block content %}
 <div class="nara-wrap">
-  <div class="nara-tabs">
-    <a href="/nara" class="nara-tab active">📋 공고</a>
-    <a href="/nara/candidates" class="nara-tab">⭐ 후보</a>
-    <a href="/nara/pickups" class="nara-tab">📥 픽업</a>
-    <a href="/nara/confirmed" class="nara-tab">✅ 확정</a>
-    <a href="/nara/archive" class="nara-tab">🗂️ 기과업</a>
-  </div>
   <div class="nara-title">📋 입찰</div>
   <div class="nara-subtitle">나라장터 입찰공고를 키워드로 자동 수집합니다 · 1시간마다 자동 스캔</div>
   <div class="kw-section" style="margin-bottom:16px;">

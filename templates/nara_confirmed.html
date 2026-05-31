@@ -4,10 +4,6 @@
 <style>
 .nara-wrap{max-width:1100px;margin:0 auto;padding:24px 16px}
 /* 탭 */
-.nara-tabs{display:flex;gap:2px;margin-bottom:20px;border-bottom:2px solid #e5e7eb;}
-.nara-tab{padding:9px 18px;font-size:13px;font-weight:600;color:#6b7280;text-decoration:none;border-radius:6px 6px 0 0;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;}
-.nara-tab:hover{color:#4f46e5;background:#f5f3ff;}
-.nara-tab.active{color:#4f46e5;border-bottom-color:#4f46e5;background:#fff;}
 /* 카드 */
 .c-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:0;margin-bottom:14px;overflow:hidden;transition:box-shadow .15s,border-color .15s;cursor:pointer;}
 .c-card:hover{box-shadow:0 2px 12px rgba(0,0,0,.08);border-color:#c7d2fe;}
@@ -67,15 +63,19 @@
 .bid-empty{text-align:center;padding:60px;color:#9ca3af;font-size:14px;}
 </style>
 {% endblock %}
+{% block subnav %}
+<div class="sub-nav">
+  <div class="sub-nav-inner">
+    <a href="/nara">📋 공고</a>
+    <a href="/nara/candidates">⭐ 후보</a>
+    <a href="/nara/pickups">📥 픽업</a>
+    <a href="/nara/confirmed" class="active">✅ 확정</a>
+    <a href="/nara/archive">🗂️ 기과업</a>
+  </div>
+</div>
+{% endblock %}
 {% block content %}
 <div class="nara-wrap">
-  <div class="nara-tabs">
-    <a href="/nara" class="nara-tab">📋 공고</a>
-    <a href="/nara/candidates" class="nara-tab">⭐ 후보</a>
-    <a href="/nara/pickups" class="nara-tab">📥 픽업</a>
-    <a href="/nara/confirmed" class="nara-tab active">✅ 확정</a>
-    <a href="/nara/archive" class="nara-tab">🗂️ 기과업</a>
-  </div>
 
   {% if confirmed %}
   {% for c in confirmed %}
