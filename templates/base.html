@@ -13,6 +13,16 @@
   .sub-nav a{display:inline-block;padding:7px 18px;font-size:13px;font-weight:600;color:#6b7280;text-decoration:none;border-bottom:2px solid transparent;transition:color .15s,border-color .15s,background .15s;}
   .sub-nav a:hover{color:#4f46e5;background:#e8eaf6;}
   .sub-nav a.active{color:#4f46e5;border-bottom-color:#4f46e5;font-weight:700;background:#e8eaf6;}
+  /* 알림 아이콘 */
+  .nav-notif-link{position:relative;display:inline-flex;align-items:center;text-decoration:none;font-size:17px;line-height:1;padding:2px 4px;vertical-align:middle;}
+  /* 설정 드롭다운 */
+  .nav-gear-wrap{position:relative;display:inline-flex;align-items:center;}
+  .nav-gear-btn{background:none;border:none;cursor:pointer;font-size:16px;padding:2px 4px;line-height:1;vertical-align:middle;color:#374151;}
+  .nav-gear-btn:hover{color:#4f46e5;}
+  .nav-gear-menu{display:none;position:absolute;right:0;top:calc(100% + 6px);background:#fff;border:1px solid #e5e7eb;border-radius:10px;box-shadow:0 4px 20px rgba(0,0,0,.12);min-width:140px;z-index:200;overflow:hidden;}
+  .nav-gear-menu a{display:block;padding:10px 16px;font-size:13px;font-weight:500;color:#374151;text-decoration:none;border-bottom:1px solid #f3f4f6;transition:background .1s;}
+  .nav-gear-menu a:last-child{border-bottom:none;}
+  .nav-gear-menu a:hover{background:#f5f3ff;color:#4f46e5;}
   </style>
   {% block head %}{% endblock %}
 </head>
@@ -30,25 +40,30 @@
         <a href="/history" class="{{ 'nav-active' if path.startswith('/history') else '' }}">DB</a>
         <a href="/learning" class="{{ 'nav-active' if path.startswith('/learning') else '' }}">입력</a>
         {% else %}
-        <a href="/history" class="{{ 'nav-active' if path.startswith('/history') else '' }}">공유 DB</a>
+        <a href="/history" class="{{ 'nav-active' if path.startswith('/history') else '' }}">DB</a>
         {% endif %}
         {% if session.get('is_admin') %}
         <a href="/admin" class="nav-admin {{ 'nav-active' if path.startswith('/admin') else '' }}">관리자</a>
         {% endif %}
-        {% if session.get('is_admin') or session.get('role') == 'operator' %}
-        <a href="/notification_settings" class="{{ 'nav-active' if path == '/notification_settings' else '' }}">알림 설정</a>
-        {% endif %}
-        <a href="/profile" class="{{ 'nav-active' if path == '/profile' else '' }}">프로필</a>
         {% if session.get('role') != 'user' %}
         <a href="#" id="nav-active-run" style="display:none" title="">
           🔄 진행 중 <span id="nav-active-dot" style="display:inline-block;width:8px;height:8px;background:red;border-radius:50%;vertical-align:middle;margin-left:3px;"></span>
         </a>
         {% endif %}
-        <a href="/notifications" style="position:relative;text-decoration:none;font-size:18px;line-height:1;padding:2px 4px;" title="알림">
+        <a href="/notifications" class="nav-notif-link" title="알림">
           🔔<span id="notif-badge" style="display:none;position:absolute;top:-4px;right:-6px;background:#ef4444;color:#fff;border-radius:99px;font-size:10px;font-weight:700;padding:1px 5px;line-height:1.4;"></span>
         </a>
         <span class="nav-user">{{ session.get('username', '') }}</span>
-        <a href="/logout">로그아웃</a>
+        <div class="nav-gear-wrap">
+          <button class="nav-gear-btn" onclick="toggleGearMenu(event)" title="설정">⚙️</button>
+          <div class="nav-gear-menu" id="nav-gear-menu">
+            <a href="/profile">프로필</a>
+            {% if session.get('is_admin') or session.get('role') == 'operator' %}
+            <a href="/notification_settings">알림 설정</a>
+            {% endif %}
+            <a href="/logout">로그아웃</a>
+          </div>
+        </div>
       </nav>
     </div>
     {% if path.startswith('/nara') %}
@@ -76,6 +91,15 @@
     </div>
   </div>
   <script>
+  function toggleGearMenu(e){
+    e.stopPropagation();
+    const m=document.getElementById('nav-gear-menu');
+    if(m) m.style.display=m.style.display==='block'?'none':'block';
+  }
+  document.addEventListener('click',function(){
+    const m=document.getElementById('nav-gear-menu');
+    if(m) m.style.display='none';
+  });
   (function() {
     fetch('/active_run').then(r => r.json()).then(data => {
       if (data.active) {

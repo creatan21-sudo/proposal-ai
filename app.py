@@ -4809,6 +4809,36 @@ def confirmed_workspace(confirmed_id):
     )
 
 
+@app.route("/nara/confirmed/<int:confirmed_id>/narrative_share")
+def narrative_share(confirmed_id):
+    c = get_confirmed_by_id(confirmed_id)
+    if not c:
+        return "Not found", 404
+    narrative = get_confirmed_narrative(confirmed_id)
+    narrative_qa = None
+    if narrative:
+        try:
+            parsed = json.loads(narrative["content"])
+            if isinstance(parsed, dict) and any(parsed.values()):
+                narrative_qa = parsed
+        except Exception:
+            pass
+    nq_labels = [
+        ("q1", "우리 회사가 본 과업을 하는데 내세울 어떤 경쟁력이 있을까요?"),
+        ("q2", "본 과업은 기존에 어떤 문제나 위기를 갖고 있나요?"),
+        ("q3", "문제를 타개하고 좋은 성과를 이루어내기 위해 어떤 전략이 필요할까요?"),
+        ("q4", "추구하는 전략을 사람들에게 각인시킬 직관적인 컨셉은 무엇인가요?"),
+        ("q5", "컨셉에 맞게 실행할 콘텐츠 아이디어는 어떤 것인가요?"),
+        ("q6", "운영이나 관리 부문에 내세울만한 특별한 장점은 어떤 것인가요?"),
+        ("q7", "추가로 기재할 중요한 내용이 있다면 무엇인가요?"),
+    ]
+    return render_template(
+        "narrative_share.html",
+        c=c, narrative=narrative,
+        narrative_qa=narrative_qa, nq_labels=nq_labels,
+    )
+
+
 @app.route("/nara/candidate/<int:candidate_id>/comment", methods=["POST"])
 @login_required
 def nara_add_comment(candidate_id):

@@ -350,9 +350,14 @@ tr.sch-editing .sch-act-view{display:none !important;}
 
     <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
       <span>📝 전략 내러티브</span>
-      {% if can_edit_narrative and not narrative_empty %}
-      <button class="btn btn-ghost btn-sm" id="narrative-edit-btn" onclick="toggleNarrativeEdit()">✏️ 내러티브 작성</button>
-      {% endif %}
+      <div style="display:flex;gap:6px;align-items:center;">
+        {% if not narrative_empty %}
+        <button class="btn btn-ghost btn-sm" onclick="copyShareLink()">🔗 공유 링크 복사</button>
+        {% endif %}
+        {% if can_edit_narrative and not narrative_empty %}
+        <button class="btn btn-ghost btn-sm" id="narrative-edit-btn" onclick="toggleNarrativeEdit()">✏️ 내러티브 작성</button>
+        {% endif %}
+      </div>
     </div>
 
     {% if narrative_empty %}
@@ -682,6 +687,14 @@ function toggleNarrativeEdit(){
   edit.style.display = isEditing ? 'none' : 'block';
   view.style.display = isEditing ? 'block' : 'none';
   btn.textContent    = isEditing ? '✏️ 내러티브 작성' : '← 보기';
+}
+function copyShareLink(){
+  const url = location.origin + `/nara/confirmed/${CID}/narrative_share`;
+  navigator.clipboard.writeText(url).then(()=>{
+    showToast('공유 링크가 복사되었습니다');
+  }).catch(()=>{
+    prompt('아래 링크를 복사하세요:', url);
+  });
 }
 async function saveNarrative(){
   const data = {};

@@ -331,10 +331,7 @@ tr.sch-editing .sch-act-view{display:none !important;}
             {% set no_date = not s.due_date %}
             <tr data-id="{{ s.id }}"{% if no_date %} class="sch-missing"{% endif %}>
               <td>
-                <div class="sv">
-                  <span>{{ s.task_name }}</span>
-                  {% if no_date %}<span style="font-size:10px;color:#ef4444;margin-left:4px;">날짜 필요</span>{% endif %}
-                </div>
+                <div class="sv"><span>{{ s.task_name }}</span></div>
                 <div class="se"><input class="sch-input" value="{{ s.task_name | e }}" style="width:100%;"></div>
               </td>
               <td>
@@ -347,7 +344,13 @@ tr.sch-editing .sch-act-view{display:none !important;}
                 </div>
               </td>
               <td>
-                <div class="sv">{{ s.due_date or '—' }}</div>
+                <div class="sv">
+                  {% if s.due_date %}
+                  {{ s.due_date }}
+                  {% else %}
+                  <span style="color:#ef4444;font-size:11px;font-weight:700;background:#fff5f5;border:1px solid #fca5a5;border-radius:4px;padding:2px 6px;white-space:nowrap;">날짜 입력 필요</span>
+                  {% endif %}
+                </div>
                 <div class="se"><input type="date" class="sch-input" value="{{ s.due_date }}"></div>
               </td>
               <td>
