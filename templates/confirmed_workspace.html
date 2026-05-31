@@ -319,9 +319,9 @@ tr.sch-editing .sch-act-view{display:none !important;}
           <thead>
             <tr>
               <th style="width:36%">업무명</th>
-              <th style="width:22%">담당자</th>
-              <th style="width:20%">마감일</th>
-              <th style="width:12%">상태</th>
+              <th style="width:24%">날짜</th>
+              <th style="width:14%">상태</th>
+              <th style="width:16%">비고</th>
               {% if can_edit %}<th style="width:10%"></th>{% endif %}
             </tr>
           </thead>
@@ -335,15 +335,6 @@ tr.sch-editing .sch-act-view{display:none !important;}
                 <div class="se"><input class="sch-input" value="{{ s.task_name | e }}" style="width:100%;"></div>
               </td>
               <td>
-                <div class="sv">{{ s.assignee or '-' }}</div>
-                <div class="se">
-                  <select class="sch-select">
-                    <option value="">-</option>
-                    {% for u in users %}<option value="{{ u.username }}"{% if u.username == s.assignee %} selected{% endif %}>{{ u.username }}</option>{% endfor %}
-                  </select>
-                </div>
-              </td>
-              <td>
                 <div class="sv">
                   {% if s.due_date %}
                   {{ s.due_date }}
@@ -351,7 +342,7 @@ tr.sch-editing .sch-act-view{display:none !important;}
                   <span style="color:#ef4444;font-size:11px;font-weight:700;background:#fff5f5;border:1px solid #fca5a5;border-radius:4px;padding:2px 6px;white-space:nowrap;">날짜 입력 필요</span>
                   {% endif %}
                 </div>
-                <div class="se"><input type="date" class="sch-input" value="{{ s.due_date }}"></div>
+                <div class="se"><input type="datetime-local" class="sch-input" value="{{ (s.due_date or '').replace(' ', 'T') }}"></div>
               </td>
               <td>
                 <div class="sv">
@@ -366,6 +357,10 @@ tr.sch-editing .sch-act-view{display:none !important;}
                     {% for st in ['예정','진행중','완료','보류'] %}<option{% if st == s.status %} selected{% endif %}>{{ st }}</option>{% endfor %}
                   </select>
                 </div>
+              </td>
+              <td>
+                <div class="sv">{{ s.assignee or '-' }}</div>
+                <div class="se"><input type="text" class="sch-input" value="{{ s.assignee | e }}"></div>
               </td>
               {% if can_edit %}
               <td>
@@ -462,18 +457,13 @@ tr.sch-editing .sch-act-view{display:none !important;}
       <div class="field-label">업무명</div>
       <input type="text" id="sch-new-name" class="field-input" placeholder="예: 사전 미팅">
     </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px;">
-      <div>
-        <div class="field-label">담당자</div>
-        <select id="sch-new-assignee" class="sch-select" style="width:100%;">
-          <option value="">-</option>
-          {% for u in users %}<option value="{{ u.username }}">{{ u.username }}</option>{% endfor %}
-        </select>
-      </div>
-      <div>
-        <div class="field-label">마감일</div>
-        <input type="date" id="sch-new-date" class="field-input">
-      </div>
+    <div style="margin-bottom:10px;">
+      <div class="field-label">날짜</div>
+      <input type="datetime-local" id="sch-new-date" class="field-input">
+    </div>
+    <div style="margin-bottom:10px;">
+      <div class="field-label">비고</div>
+      <input type="text" id="sch-new-assignee" class="field-input" placeholder="메모 입력">
     </div>
     <div style="margin-bottom:14px;">
       <div class="field-label">상태</div>
@@ -630,28 +620,29 @@ function cancelEdit(tr){
   const svs=tr.querySelectorAll('.sv');
   const taskSpan=tr.querySelector('td:first-child .sv span:first-child');
   if(taskSpan&&ses[0]) ses[0].value=taskSpan.textContent.trim();
-  if(svs[1]&&ses[1]){ const t=svs[1].textContent.trim(); ses[1].value=t==='-'?'':t; }
-  if(svs[2]&&ses[2]){ const t=svs[2].textContent.trim(); ses[2].value=t==='—'?'':t; }
-  if(ses[3]){const stEl=tr.querySelector('td:nth-child(4) .sv .sch-st');if(stEl)ses[3].value=stEl.textContent.trim();}
+  // ses[1]=due_date, ses[2]=status select, ses[3]=assignee text
+  if(svs[1]&&ses[1]){ const t=svs[1].textContent.trim(); ses[1].value=t==='-'||t.includes('날짜')?'':t.replace(' ','T'); }
+  if(ses[2]){const stEl=tr.querySelector('td:nth-child(3) .sv .sch-st');if(stEl)ses[2].value=stEl.textContent.trim();}
+  if(svs[3]&&ses[3]){ const t=svs[3].textContent.trim(); ses[3].value=t==='-'?'':t; }
   tr.classList.remove('sch-editing');
 }
 async function saveEdit(tr){
   const id=tr.dataset.id;
   const ses=tr.querySelectorAll('.se input,.se select');
   const task_name=ses[0].value.trim();
-  const assignee=ses[1].value;
-  const due_date=ses[2].value;
-  const status=ses[3].value;
+  const due_date=ses[1].value;
+  const status=ses[2].value;
+  const assignee=ses[3].value;
   const r=await fetch(`/nara/confirmed/${CID}/schedule/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({task_name,assignee,due_date,status})});
   const d=await r.json();
   if(!d.ok){showToast(d.error||'저장 실패',false);return;}
   const taskSpan=tr.querySelector('td:first-child .sv span:first-child');
   if(taskSpan)taskSpan.textContent=task_name;
   const svs=tr.querySelectorAll('.sv');
-  if(svs[1])svs[1].textContent=assignee||'-';
-  if(svs[2])svs[2].textContent=due_date||'—';
+  if(svs[1])svs[1].textContent=due_date||'-';
   const stMap={'예정':'sch-st-planned','진행중':'sch-st-doing','완료':'sch-st-done','보류':'sch-st-hold'};
-  if(svs[3])svs[3].innerHTML=`<span class="sch-st ${stMap[status]||'sch-st-planned'}">${_esc(status)}</span>`;
+  if(svs[2])svs[2].innerHTML=`<span class="sch-st ${stMap[status]||'sch-st-planned'}">${_esc(status)}</span>`;
+  if(svs[3])svs[3].textContent=assignee||'-';
   tr.classList.remove('sch-editing');
   if(due_date) tr.classList.remove('sch-missing'); else tr.classList.add('sch-missing');
   showToast('저장되었습니다');
@@ -689,16 +680,16 @@ async function submitSchModal(){
       <div class="se"><input class="sch-input" value="${_esc(task_name)}" style="width:100%;"></div>
     </td>
     <td>
-      <div class="sv">${_esc(assignee)||'-'}</div>
-      <div class="se"><select class="sch-select">${uOpts}</select></div>
-    </td>
-    <td>
-      <div class="sv">${_esc(due_date)||'—'}</div>
-      <div class="se"><input type="date" class="sch-input" value="${_esc(due_date)}"></div>
+      <div class="sv">${_esc(due_date)||'-'}</div>
+      <div class="se"><input type="datetime-local" class="sch-input" value="${_esc(due_date)}"></div>
     </td>
     <td>
       <div class="sv"><span class="sch-st ${stMap[status]||'sch-st-planned'}">${_esc(status)}</span></div>
       <div class="se"><select class="sch-select">${sOpts}</select></div>
+    </td>
+    <td>
+      <div class="sv">${_esc(assignee)||'-'}</div>
+      <div class="se"><input type="text" class="sch-input" value="${_esc(assignee)}"></div>
     </td>
     ${CAN_EDIT?`<td>
       <div class="sch-act-view" style="display:flex;gap:3px;">

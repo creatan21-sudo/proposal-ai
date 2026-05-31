@@ -81,7 +81,7 @@
   {% set nm_safe = c.bid_ntce_nm | replace("'","\\'")|e %}
   {% set g2b_url = 'https://www.g2b.go.kr/link/PNPE027_01/?bidPbancNo=' ~ (c.bid_ntce_no or '') ~ '&bidPbancOrd=000' %}
   {# 미완료 플래그 #}
-  {% set miss_rfp  = not c.has_rfp %}
+  {% set miss_rfp  = c.rfp_count == 0 %}
   {% set miss_sched = not c.sched_bid and not c.sched_proposal and not c.sched_pt and not c.sched_price %}
   {% set miss_narr = not c.narrative_content or c.narrative_content in ('{}','') %}
   {# 입찰정보 등록 여부 #}

@@ -4063,7 +4063,7 @@ def nara_confirmed_page():
                    COALESCE(pk.presmpt_prce, ca.presmpt_prce) AS presmpt_prce,
                    COALESCE(pk.bid_clse_dt, ca.bid_clse_dt) AS bid_clse_dt,
                    COALESCE(pk.ntce_url, ca.ntce_url) AS ntce_url,
-                   CASE WHEN rfp.cnt > 0 THEN 1 ELSE 0 END AS has_rfp,
+                   COALESCE(rfp.cnt, 0) AS rfp_count,
                    bi.submit_deadline, bi.submit_method,
                    bi.pt_date, bi.pt_location, bi.price_bid_date,
                    COALESCE(res.status, 'pending') AS research_status,

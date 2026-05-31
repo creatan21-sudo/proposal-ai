@@ -469,9 +469,9 @@ tr.sch-editing .sch-act-view{display:none !important;}
       <thead>
         <tr>
           <th style="width:38%">업무명</th>
-          <th style="width:20%">담당자</th>
-          <th style="width:18%">마감일</th>
+          <th style="width:22%">날짜</th>
           <th style="width:14%">상태</th>
+          <th style="width:16%">비고</th>
           {% if can_edit %}<th style="width:10%"></th>{% endif %}
         </tr>
       </thead>
@@ -492,17 +492,8 @@ tr.sch-editing .sch-act-view{display:none !important;}
             <div class="se"><input class="sch-input" value="{{ s.task_name | e }}" style="width:100%;"></div>
           </td>
           <td>
-            <div class="sv">{{ s.assignee or '-' }}</div>
-            <div class="se">
-              <select class="sch-select">
-                <option value="">-</option>
-                {% for u in users %}<option value="{{ u.username }}"{% if u.username == s.assignee %} selected{% endif %}>{{ u.username }}</option>{% endfor %}
-              </select>
-            </div>
-          </td>
-          <td>
             <div class="sv">{{ s.due_date or '-' }}</div>
-            <div class="se"><input type="date" class="sch-input" value="{{ s.due_date }}"></div>
+            <div class="se"><input type="datetime-local" class="sch-input" value="{{ (s.due_date or '').replace(' ', 'T') }}"></div>
           </td>
           <td>
             <div class="sv">
@@ -517,6 +508,10 @@ tr.sch-editing .sch-act-view{display:none !important;}
                 {% for st in ['예정','진행중','완료','보류'] %}<option{% if st == s.status %} selected{% endif %}>{{ st }}</option>{% endfor %}
               </select>
             </div>
+          </td>
+          <td>
+            <div class="sv">{{ s.assignee or '-' }}</div>
+            <div class="se"><input type="text" class="sch-input" value="{{ s.assignee | e }}"></div>
           </td>
           {% if can_edit %}
           <td>
@@ -589,11 +584,8 @@ tr.sch-editing .sch-act-view{display:none !important;}
     <!-- 공통: 담당자, 상태 -->
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px;">
       <div>
-        <div class="field-label">담당자</div>
-        <select id="sch-modal-assignee" class="sch-select" style="width:100%;">
-          <option value="">-</option>
-          {% for u in users %}<option value="{{ u.username }}">{{ u.username }}</option>{% endfor %}
-        </select>
+        <div class="field-label">비고</div>
+        <input type="text" id="sch-modal-assignee" class="field-input" style="width:100%;" placeholder="메모 입력">
       </div>
       <div>
         <div class="field-label">상태</div>
@@ -719,7 +711,6 @@ function _rowOverdue(dueDateVal, statusVal){
 function _buildRowHtml(id, task_name, assignee, due_date, status){
   const AUTO_PREFIXES = ['입찰 마감','제안서 제출','PT 발표','가격투찰'];
   const isAuto = AUTO_PREFIXES.some(p => task_name.startsWith(p));
-  const uOpts = ['<option value="">-</option>'].concat(USERS.map(u=>`<option value="${_esc(u.username)}"${u.username===assignee?' selected':''}>${_esc(u.username)}</option>`)).join('');
   const sOpts = ['예정','진행중','완료','보류'].map(s=>`<option${s===status?' selected':''}>${s}</option>`).join('');
   let badge = '';
   if(task_name.includes('제안서 제출')){
@@ -733,6 +724,7 @@ function _buildRowHtml(id, task_name, assignee, due_date, status){
   }
   const stMap = {'예정':'sch-st-planned','진행중':'sch-st-doing','완료':'sch-st-done','보류':'sch-st-hold'};
   const stBadge = `<span class="sch-st ${stMap[status]||'sch-st-planned'}">${_esc(status)}</span>`;
+  const dtVal = (due_date||'').replace(' ','T');
   const actBtns = CAN_EDIT ? `<td>
     <div class="sch-act-view" style="display:flex;gap:4px;">
       <button class="btn btn-ghost btn-sm" onclick="startEdit(this.closest('tr'))">수정</button>
@@ -749,16 +741,16 @@ function _buildRowHtml(id, task_name, assignee, due_date, status){
       <div class="se"><input class="sch-input" value="${_esc(task_name)}" style="width:100%;"></div>
     </td>
     <td>
-      <div class="sv">${_esc(assignee)||'-'}</div>
-      <div class="se"><select class="sch-select">${uOpts}</select></div>
-    </td>
-    <td>
       <div class="sv">${_esc(due_date)||'-'}</div>
-      <div class="se"><input type="date" class="sch-input" value="${_esc(due_date)}"></div>
+      <div class="se"><input type="datetime-local" class="sch-input" value="${dtVal}"></div>
     </td>
     <td>
       <div class="sv">${stBadge}</div>
       <div class="se"><select class="sch-select">${sOpts}</select></div>
+    </td>
+    <td>
+      <div class="sv">${_esc(assignee)||'-'}</div>
+      <div class="se"><input type="text" class="sch-input" value="${_esc(assignee)}"></div>
     </td>
     ${actBtns}`;
 }
@@ -828,21 +820,22 @@ function startEdit(tr){
 }
 function cancelEdit(tr){
   // restore inputs to last-saved values (sv text)
+  // ses[0]=task_name, ses[1]=due_date(datetime-local), ses[2]=status(select), ses[3]=assignee(text)
   const svs = tr.querySelectorAll('.sv');
   const ses = tr.querySelectorAll('.se input, .se select');
   const taskSpan = tr.querySelector('td:first-child .sv span');
   if(taskSpan && ses[0]) ses[0].value = taskSpan.textContent;
   if(svs[1] && ses[1]){
     const txt = svs[1].textContent.trim();
-    ses[1].value = txt === '-' ? '' : txt;
+    ses[1].value = txt === '-' ? '' : txt.replace(' ','T');
   }
-  if(svs[2] && ses[2]){
-    const txt = svs[2].textContent.trim();
-    ses[2].value = txt === '-' ? '' : txt;
+  if(ses[2]){
+    const stEl = tr.querySelector('td:nth-child(3) .sv .sch-st');
+    if(stEl) ses[2].value = stEl.textContent.trim();
   }
-  if(ses[3]){
-    const stEl = tr.querySelector('td:nth-child(4) .sv .sch-st');
-    if(stEl) ses[3].value = stEl.textContent.trim();
+  if(svs[3] && ses[3]){
+    const txt = svs[3].textContent.trim();
+    ses[3].value = txt === '-' ? '' : txt;
   }
   tr.classList.remove('sch-editing');
 }
@@ -850,9 +843,9 @@ async function saveEdit(tr){
   const id = tr.dataset.id;
   const ses = tr.querySelectorAll('.se input, .se select');
   const task_name = ses[0].value.trim();
-  const assignee  = ses[1].value;
-  const due_date  = ses[2].value;
-  const status    = ses[3].value;
+  const due_date  = ses[1].value;
+  const status    = ses[2].value;
+  const assignee  = ses[3].value;
   const r = await fetch(`/nara/confirmed/${CID}/schedule/${id}`,{
     method:'PATCH', headers:{'Content-Type':'application/json'},
     body:JSON.stringify({task_name,assignee,due_date,status})
@@ -862,10 +855,10 @@ async function saveEdit(tr){
   const taskSpan = tr.querySelector('td:first-child .sv span');
   if(taskSpan) taskSpan.textContent = task_name;
   const svs = tr.querySelectorAll('.sv');
-  if(svs[1]) svs[1].textContent = assignee || '-';
-  if(svs[2]) svs[2].textContent = due_date || '-';
+  if(svs[1]) svs[1].textContent = due_date || '-';
   const stMap = {'예정':'sch-st-planned','진행중':'sch-st-doing','완료':'sch-st-done','보류':'sch-st-hold'};
-  if(svs[3]) svs[3].innerHTML = `<span class="sch-st ${stMap[status]||'sch-st-planned'}">${_esc(status)}</span>`;
+  if(svs[2]) svs[2].innerHTML = `<span class="sch-st ${stMap[status]||'sch-st-planned'}">${_esc(status)}</span>`;
+  if(svs[3]) svs[3].textContent = assignee || '-';
   tr.className = _rowOverdue(due_date, status) ? 'overdue' : '';
   tr.classList.remove('sch-editing');
   showToast('저장되었습니다');
