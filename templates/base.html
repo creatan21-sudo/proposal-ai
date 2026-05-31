@@ -23,6 +23,9 @@
   .nav-gear-menu a{display:block;padding:10px 16px;font-size:13px;font-weight:500;color:#374151;text-decoration:none;border-bottom:1px solid #f3f4f6;transition:background .1s;}
   .nav-gear-menu a:last-child{border-bottom:none;}
   .nav-gear-menu a:hover{background:#f5f3ff;color:#4f46e5;}
+  /* 사용자명 링크 — nav a 기본 스타일 덮어쓰기 */
+  nav a.nav-user{font-size:13px;font-weight:500;color:var(--muted);box-shadow:none;background:none;padding:6px 8px;}
+  nav a.nav-user:hover{color:#4f46e5;background:none;box-shadow:none;}
   </style>
   {% block head %}{% endblock %}
 </head>
@@ -53,7 +56,6 @@
         <a href="/notifications" class="nav-notif-link" title="알림">
           🔔<span id="notif-badge" style="display:none;position:absolute;top:-4px;right:-6px;background:#ef4444;color:#fff;border-radius:99px;font-size:10px;font-weight:700;padding:1px 5px;line-height:1.4;"></span>
         </a>
-        <span class="nav-user">{{ session.get('username', '') }}</span>
         <div class="nav-gear-wrap">
           <button class="nav-gear-btn" onclick="toggleGearMenu(event)" title="설정">⚙️</button>
           <div class="nav-gear-menu" id="nav-gear-menu">
@@ -64,6 +66,7 @@
             <a href="/logout">로그아웃</a>
           </div>
         </div>
+        <a href="/profile" class="nav-user">{{ session.get('username') or session.get('name', '') }}</a>
       </nav>
     </div>
     {% if path.startswith('/nara') %}
@@ -77,6 +80,7 @@
       </div>
     </div>
     {% endif %}
+    {% block subnav %}{% endblock %}
   </header>
   <!-- 알림 팝업 -->
   <div id="notif-popup" style="display:none;position:fixed;top:60px;right:20px;width:340px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.15);z-index:8888;padding:16px;">

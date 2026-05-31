@@ -5,10 +5,6 @@
 .sch-wrap{max-width:1200px;margin:0 auto;padding:20px 16px}
 .sch-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;}
 .sch-title{font-size:20px;font-weight:700;}
-.sch-view-tabs{display:flex;gap:2px;border-bottom:2px solid #e5e7eb;margin-bottom:0;}
-.sch-view-tab{padding:9px 18px;font-size:13px;font-weight:600;color:#6b7280;background:none;border:none;border-bottom:2px solid transparent;margin-bottom:-2px;cursor:pointer;transition:all .15s;border-radius:6px 6px 0 0;}
-.sch-view-tab:hover{color:#4f46e5;background:#f5f3ff;}
-.sch-view-tab.active{color:#4f46e5;border-bottom-color:#4f46e5;background:#fff;}
 .nav-row{display:flex;align-items:center;gap:8px;}
 .nav-btn{padding:6px 12px;border:1px solid #e5e7eb;border-radius:7px;font-size:13px;cursor:pointer;background:#fff;color:#374151;}
 .nav-btn:hover{background:#f3f4f6;}
@@ -83,22 +79,24 @@
 .legend-dot{width:10px;height:10px;border-radius:3px;}
 </style>
 {% endblock %}
+{% block subnav %}
+<div class="sub-nav">
+  <div class="sub-nav-inner">
+    <a href="javascript:void(0)" id="tab-cal" class="active" onclick="switchView('cal')">📅 캘린더</a>
+    <a href="javascript:void(0)" id="tab-tl" onclick="switchView('tl')">📊 타임라인</a>
+    <a href="javascript:void(0)" id="tab-list" onclick="switchView('list')">📋 리스트</a>
+  </div>
+</div>
+{% endblock %}
 {% block content %}
 <div class="sch-wrap">
   <div class="sch-top">
     <div class="sch-title">📅 일정</div>
-    <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
-      <div class="nav-row">
-        <button class="nav-btn" onclick="prevMonth()">‹ 이전</button>
-        <span class="nav-month" id="nav-month-label"></span>
-        <button class="nav-btn" onclick="nextMonth()">다음 ›</button>
-        <button class="nav-btn" onclick="goToday()">오늘</button>
-      </div>
-      <div class="sch-view-tabs">
-        <button class="sch-view-tab active" id="btn-cal" onclick="switchView('cal')">📅 캘린더</button>
-        <button class="sch-view-tab" id="btn-tl" onclick="switchView('tl')">📊 타임라인</button>
-        <button class="sch-view-tab" id="btn-list" onclick="switchView('list')">📋 리스트</button>
-      </div>
+    <div class="nav-row">
+      <button class="nav-btn" onclick="prevMonth()">‹ 이전</button>
+      <span class="nav-month" id="nav-month-label"></span>
+      <button class="nav-btn" onclick="nextMonth()">다음 ›</button>
+      <button class="nav-btn" onclick="goToday()">오늘</button>
     </div>
   </div>
 
@@ -155,7 +153,8 @@ function switchView(v){
   curView=v;
   ['cal','tl','list'].forEach(x=>{
     document.getElementById('view-'+x).style.display=x===v?'':'none';
-    document.getElementById('btn-'+x).classList.toggle('active',x===v);
+    const tab=document.getElementById('tab-'+x);
+    if(tab) tab.classList.toggle('active',x===v);
   });
   render();
 }
