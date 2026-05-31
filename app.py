@@ -89,7 +89,8 @@ from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           get_notification_settings, save_notification_settings,
                           get_last_notification_time, record_notification_sent,
                           save_confirmed_rfp_file, list_confirmed_rfp_files,
-                          get_confirmed_research, save_confirmed_research)
+                          get_confirmed_research, save_confirmed_research,
+                          get_or_create_default_schedules)
 
 app = Flask(__name__)
 # Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
@@ -4043,11 +4044,67 @@ def nara_pickups_page():
 @app.route("/nara/confirmed")
 @login_required
 def nara_confirmed_page():
-    page   = max(1, int(request.args.get("page", 1)))
-    paged  = list_nara_confirmed(page=page, per_page=50)
-    is_ops = session.get("role") in ("admin", "operator")
-    return render_template("nara_confirmed.html", confirmed=paged["items"],
-                           pagination=paged, is_ops=is_ops)
+    page     = max(1, int(request.args.get("page", 1)))
+    per_page = 20
+    offset   = (page - 1) * per_page
+    is_ops   = session.get("role") in ("admin", "operator")
+
+    with get_connection() as conn:
+        total = conn.execute("SELECT COUNT(*) FROM nara_confirmed").fetchone()[0]
+        rows = conn.execute("""
+            SELECT cf.id, cf.candidate_id, cf.pickup_id, cf.confirmed_by,
+                   cf.notes, cf.assignee, cf.created_at,
+                   COALESCE(pk.bid_ntce_no, ca.bid_ntce_no) AS bid_ntce_no,
+                   COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm) AS bid_ntce_nm,
+                   COALESCE(pk.ntce_instt_nm, ca.ntce_instt_nm) AS ntce_instt_nm,
+                   COALESCE(pk.presmpt_prce, ca.presmpt_prce) AS presmpt_prce,
+                   COALESCE(pk.bid_clse_dt, ca.bid_clse_dt) AS bid_clse_dt,
+                   COALESCE(pk.ntce_url, ca.ntce_url) AS ntce_url,
+                   CASE WHEN rfp.cnt > 0 THEN 1 ELSE 0 END AS has_rfp,
+                   bi.submit_deadline, bi.submit_method,
+                   bi.pt_date, bi.pt_location, bi.price_bid_date,
+                   COALESCE(res.status, 'pending') AS research_status,
+                   n.content AS narrative_content,
+                   COALESCE(sch_bm.due_date, '') AS sched_bid,
+                   COALESCE(sch_ps.due_date, '') AS sched_proposal,
+                   COALESCE(sch_pt.due_date, '') AS sched_pt,
+                   COALESCE(sch_pb.due_date, '') AS sched_price
+            FROM nara_confirmed cf
+            LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
+            LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
+            LEFT JOIN (SELECT confirmed_id, COUNT(*) AS cnt
+                       FROM confirmed_rfp_files GROUP BY confirmed_id) rfp
+                   ON rfp.confirmed_id = cf.id
+            LEFT JOIN confirmed_bid_info bi ON bi.confirmed_id = cf.id
+            LEFT JOIN confirmed_narratives n ON n.confirmed_id = cf.id
+            LEFT JOIN confirmed_research res ON res.confirmed_id = cf.id
+            LEFT JOIN (SELECT confirmed_id, MAX(due_date) AS due_date
+                       FROM confirmed_schedule WHERE task_name LIKE '입찰 마감%'
+                       GROUP BY confirmed_id) sch_bm ON sch_bm.confirmed_id = cf.id
+            LEFT JOIN (SELECT confirmed_id, MAX(due_date) AS due_date
+                       FROM confirmed_schedule WHERE task_name LIKE '제안서 제출%'
+                       GROUP BY confirmed_id) sch_ps ON sch_ps.confirmed_id = cf.id
+            LEFT JOIN (SELECT confirmed_id, MAX(due_date) AS due_date
+                       FROM confirmed_schedule WHERE task_name LIKE 'PT 발표%'
+                       GROUP BY confirmed_id) sch_pt ON sch_pt.confirmed_id = cf.id
+            LEFT JOIN (SELECT confirmed_id, MAX(due_date) AS due_date
+                       FROM confirmed_schedule WHERE task_name LIKE '가격투찰%'
+                       GROUP BY confirmed_id) sch_pb ON sch_pb.confirmed_id = cf.id
+            ORDER BY cf.created_at DESC LIMIT ? OFFSET ?
+        """, (per_page, offset)).fetchall()
+
+    confirmed_items = [dict(r) for r in rows]
+    pagination = {
+        "items":    confirmed_items,
+        "total":    total,
+        "page":     page,
+        "per_page": per_page,
+        "pages":    max(1, -(-total // per_page)),
+    }
+    return render_template("nara_confirmed.html",
+                           confirmed=confirmed_items,
+                           pagination=pagination,
+                           is_ops=is_ops)
 
 @app.route("/nara/confirmed/<int:confirmed_id>")
 @login_required
@@ -4738,11 +4795,17 @@ def confirmed_workspace(confirmed_id):
                 narrative_qa = parsed
         except Exception:
             pass
+    bid_info = get_confirmed_bid_info(confirmed_id) or {}
+    schedule = get_or_create_default_schedules(
+        confirmed_id, c.get("bid_clse_dt", "") or ""
+    )
+    users = list_users()
     return render_template(
         "confirmed_workspace.html",
         c=c, research=research, narrative=narrative,
         narrative_qa=narrative_qa, rfp_files=rfp_files,
         can_edit=can_edit, is_ops=is_ops,
+        bid_info=bid_info, schedule=schedule, users=users,
     )
 
 

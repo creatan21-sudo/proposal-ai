@@ -2490,6 +2490,37 @@ def delete_confirmed_schedule(schedule_id: int) -> None:
         conn.execute("DELETE FROM confirmed_schedule WHERE id=?", (schedule_id,))
 
 
+def get_or_create_default_schedules(confirmed_id: int, bid_clse_dt: str = "") -> list:
+    """Ensure 4 default schedule items exist; create with empty dates if missing."""
+    DEFAULT_TASKS = [
+        ("입찰 마감",   bid_clse_dt[:10] if bid_clse_dt else "", 1),
+        ("제안서 제출", "",                                        2),
+        ("PT 발표",     "",                                        3),
+        ("가격투찰",    "",                                        4),
+    ]
+    with get_connection() as conn:
+        existing = [
+            dict(r) for r in conn.execute(
+                "SELECT * FROM confirmed_schedule WHERE confirmed_id=? ORDER BY sort_order ASC, id ASC",
+                (confirmed_id,),
+            ).fetchall()
+        ]
+        existing_names = [r["task_name"] for r in existing]
+        for task_name, due_date, sort_order in DEFAULT_TASKS:
+            if not any(n.startswith(task_name) for n in existing_names):
+                conn.execute(
+                    """INSERT INTO confirmed_schedule
+                       (confirmed_id, task_name, assignee, due_date, status, sort_order)
+                       VALUES (?,?,?,?,?,?)""",
+                    (confirmed_id, task_name, "", due_date, "예정", sort_order),
+                )
+        rows = conn.execute(
+            "SELECT * FROM confirmed_schedule WHERE confirmed_id=? ORDER BY sort_order ASC, id ASC",
+            (confirmed_id,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def get_confirmed_bid_info(confirmed_id: int) -> dict | None:
     with get_connection() as conn:
         row = conn.execute(
