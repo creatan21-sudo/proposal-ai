@@ -69,17 +69,6 @@
         <a href="/profile" class="nav-user">{{ session.get('username') or session.get('name', '') }}</a>
       </nav>
     </div>
-    {% if path.startswith('/nara') %}
-    <div class="sub-nav">
-      <div class="sub-nav-inner">
-        <a href="/nara" class="{{ 'active' if path == '/nara' else '' }}">공고</a>
-        <a href="/nara/candidates" class="{{ 'active' if path == '/nara/candidates' else '' }}">후보</a>
-        <a href="/nara/pickups" class="{{ 'active' if path == '/nara/pickups' else '' }}">픽업</a>
-        <a href="/nara/confirmed" class="{{ 'active' if path.startswith('/nara/confirmed') else '' }}">확정</a>
-        <a href="/nara/results" class="{{ 'active' if path == '/nara/results' else '' }}">결과</a>
-      </div>
-    </div>
-    {% endif %}
     {% block subnav %}{% endblock %}
   </header>
   <!-- 알림 팝업 -->
