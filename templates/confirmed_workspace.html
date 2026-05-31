@@ -429,6 +429,9 @@ tr.sch-editing .sch-act-view{display:none !important;}
           <div class="nq-ro" id="nq-ro-{{ key }}">{{ (narrative_qa or {}).get(key,'') or '(미작성)' }}</div>
         </div>
         {% endfor %}
+        <div style="display:flex;justify-content:flex-end;margin-top:10px;">
+          <button id="nq-share-btn" class="btn btn-ghost btn-sm" style="display:none;" onclick="copyNarrativeLink()">🔗 공유 링크 복사</button>
+        </div>
       </div>
       <div id="nq-edit" style="display:{% if narrative_qa %}none{% else %}block{% endif %};">
         {% for key, label in NQ_LABELS %}
@@ -529,6 +532,12 @@ document.addEventListener('DOMContentLoaded',()=>{
     const el=document.getElementById('rs-rfp-content');
     if(el) el.innerHTML=simpleMarkdown(RS_ANALYSIS);
   }
+  // 이미 저장된 내러티브가 있으면 공유 버튼 표시
+  const shareBtn=document.getElementById('nq-share-btn');
+  if(shareBtn && document.getElementById('nq-view')?.style.display!=='none'){
+    const hasContent=[...document.querySelectorAll('.nq-ro')].some(el=>el.textContent.trim()&&el.textContent!=='(미작성)');
+    if(hasContent) shareBtn.style.display='inline-flex';
+  }
 });
 
 /* ── 입찰정보 저장 ── */
@@ -617,7 +626,19 @@ async function saveNarrative(){
     keys.forEach(k=>{const ro=document.getElementById(`nq-ro-${k}`);if(ro)ro.textContent=data[k]||'(미작성)';});
     document.getElementById('nq-view').style.display='block';
     document.getElementById('nq-edit').style.display='none';
+    const shareBtn=document.getElementById('nq-share-btn');
+    if(shareBtn) shareBtn.style.display='inline-flex';
   } else showToast(d.error||'저장 실패',false);
+}
+function copyNarrativeLink(){
+  const url=location.origin+location.pathname+'?tab=narrative';
+  navigator.clipboard.writeText(url).then(()=>showToast('공유 링크가 복사되었습니다')).catch(()=>{
+    const ta=document.createElement('textarea');
+    ta.value=url; ta.style.position='fixed'; ta.style.opacity='0';
+    document.body.appendChild(ta); ta.select();
+    try{document.execCommand('copy');showToast('공유 링크가 복사되었습니다');}catch(e){showToast('복사 실패: '+url,false);}
+    document.body.removeChild(ta);
+  });
 }
 
 /* ── RFP 업로드 ── */
