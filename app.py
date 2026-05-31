@@ -727,7 +727,8 @@ def ongoing():
                    bi.pt_date, bi.price_bid_date,
                    n.content AS narrative_content,
                    COALESCE(rfp.cnt, 0) AS rfp_count,
-                   COALESCE(sch.cnt, 0) AS schedule_count
+                   COALESCE(sch.cnt, 0) AS schedule_count,
+                   COALESCE(res.status, 'pending') AS research_status
             FROM nara_confirmed cf
             LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
             LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
@@ -739,6 +740,7 @@ def ongoing():
             LEFT JOIN (SELECT confirmed_id, COUNT(*) AS cnt
                        FROM confirmed_schedule GROUP BY confirmed_id) sch
                    ON sch.confirmed_id = cf.id
+            LEFT JOIN confirmed_research res ON res.confirmed_id = cf.id
             LEFT JOIN nara_results r ON r.confirmed_id = cf.id
             WHERE r.id IS NULL
               AND (cf.final_result IS NULL OR cf.final_result NOT IN ('won','lost'))
@@ -756,19 +758,25 @@ def ongoing():
             incomplete.append({
                 "icon": "📄",
                 "label": "RFP 미등록",
-                "link": f"/nara/confirmed/{c['id']}/workspace",
+                "link": f"/nara/confirmed/{c['id']}/workspace?tab=research",
+            })
+        if c.get("research_status") not in ("done",):
+            incomplete.append({
+                "icon": "🔍",
+                "label": "리서치 미실시",
+                "link": f"/nara/confirmed/{c['id']}/workspace?tab=research",
             })
         if c["schedule_count"] <= 1:
             incomplete.append({
                 "icon": "📅",
                 "label": "일정 미등록",
-                "link": f"/nara/confirmed/{c['id']}",
+                "link": f"/nara/confirmed/{c['id']}/workspace?tab=narrative",
             })
         if not c["narrative_content"] or c["narrative_content"] in ("{}", ""):
             incomplete.append({
                 "icon": "✍️",
                 "label": "내러티브 미작성",
-                "link": f"/nara/confirmed/{c['id']}/workspace",
+                "link": f"/nara/confirmed/{c['id']}/workspace?tab=narrative",
             })
 
         c["incomplete"] = incomplete

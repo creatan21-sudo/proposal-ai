@@ -83,6 +83,7 @@
   {% set g2b_url = 'https://www.g2b.go.kr/link/PNPE027_01/?bidPbancNo=' ~ (c.bid_ntce_no or '') ~ '&bidPbancOrd=000' %}
   {# 미완료 플래그 #}
   {% set miss_rfp  = c.rfp_count == 0 %}
+  {% set miss_research = c.research_status not in ('done',) %}
   {% set miss_sched = not c.sched_bid and not c.sched_proposal and not c.sched_pt and not c.sched_price %}
   {% set miss_narr = not c.narrative_content or c.narrative_content in ('{}','') %}
   {# 입찰정보 등록 여부 #}
@@ -98,13 +99,18 @@
           📄<span class="tip">RFP 미등록</span>
         </span>
         {% endif %}
+        {% if miss_research %}
+        <span class="c-flag" onclick="event.stopPropagation(); location.href='/nara/confirmed/{{ c.id }}/workspace?tab=research'" title="리서치 미실시">
+          🔍<span class="tip">리서치 미실시</span>
+        </span>
+        {% endif %}
         {% if miss_sched %}
-        <span class="c-flag" onclick="event.stopPropagation(); location.href='/nara/confirmed/{{ c.id }}/workspace'" title="일정 미등록">
+        <span class="c-flag" onclick="event.stopPropagation(); location.href='/nara/confirmed/{{ c.id }}/workspace?tab=narrative'" title="일정 미등록">
           📅<span class="tip">일정 미등록</span>
         </span>
         {% endif %}
         {% if miss_narr %}
-        <span class="c-flag" onclick="event.stopPropagation(); location.href='/nara/confirmed/{{ c.id }}/workspace'" title="내러티브 미작성">
+        <span class="c-flag" onclick="event.stopPropagation(); location.href='/nara/confirmed/{{ c.id }}/workspace?tab=narrative'" title="내러티브 미작성">
           ✍️<span class="tip">내러티브 미작성</span>
         </span>
         {% endif %}

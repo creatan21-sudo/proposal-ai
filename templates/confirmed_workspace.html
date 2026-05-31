@@ -8,12 +8,11 @@
 .ws-title{font-size:17px;font-weight:700;color:#111827;line-height:1.3;}
 .ws-sub{font-size:12px;color:#6b7280;margin-top:3px;}
 .ws-header-right{display:flex;gap:8px;align-items:center;flex-wrap:wrap;flex-shrink:0;}
-/* 2컬럼 */
-.ws-cols{display:grid;grid-template-columns:55% 1fr;gap:16px;align-items:start;}
-@media(max-width:960px){.ws-cols{grid-template-columns:1fr}}
-.ws-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;margin-bottom:16px;}
-.ws-card:last-child{margin-bottom:0;}
-.ws-card-title{font-size:14px;font-weight:700;color:#374151;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;}
+/* 탭 */
+.ws-tabs{display:flex;gap:2px;margin-bottom:16px;border-bottom:2px solid #e5e7eb;}
+.ws-tab{padding:10px 22px;font-size:14px;font-weight:600;color:#6b7280;cursor:pointer;border-radius:6px 6px 0 0;border-bottom:2px solid transparent;margin-bottom:-2px;transition:all .15s;user-select:none;}
+.ws-tab:hover{color:#4f46e5;background:#f5f3ff;}
+.ws-tab.active{color:#4f46e5;border-bottom-color:#4f46e5;background:#fff;}
 /* 상태 배지 */
 .status-badge{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:99px;font-size:12px;font-weight:600;}
 .status-pending{background:#f3f4f6;color:#6b7280;}
@@ -23,6 +22,13 @@
 /* 스피너 */
 @keyframes spin{to{transform:rotate(360deg)}}
 .spinner{display:inline-block;width:14px;height:14px;border:2px solid #bfdbfe;border-top-color:#2563eb;border-radius:50%;animation:spin .8s linear infinite;}
+/* 카드 */
+.ws-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 20px;margin-bottom:16px;}
+.ws-card:last-child{margin-bottom:0;}
+.ws-card-title{font-size:14px;font-weight:700;color:#374151;margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid #e5e7eb;display:flex;align-items:center;justify-content:space-between;}
+/* 리서치 탭 레이아웃 */
+.rs-tab-cols{display:grid;grid-template-columns:40% 1fr;gap:16px;align-items:start;}
+@media(max-width:960px){.rs-tab-cols{grid-template-columns:1fr}}
 /* RFP 섹션 */
 .rfp-bar{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:10px;}
 .rfp-bar-left{font-size:12px;font-weight:600;color:#6b7280;}
@@ -95,7 +101,6 @@ tr.sch-editing .sch-act-view{display:none !important;}
 {% block content %}
 {% set rs = research or {} %}
 {% set bi = bid_info or {} %}
-{% set today_str = '' %}
 <div class="ws-wrap">
 
   <!-- 헤더 -->
@@ -123,330 +128,341 @@ tr.sch-editing .sch-act-view{display:none !important;}
     </div>
   </div>
 
-  <!-- 2컬럼 -->
-  <div class="ws-cols">
+  <!-- 탭 바 -->
+  <div class="ws-tabs">
+    <div class="ws-tab" id="tab-research" onclick="switchTab('research')">🔍 리서치</div>
+    <div class="ws-tab" id="tab-narrative" onclick="switchTab('narrative')">✍️ 내러티브</div>
+  </div>
 
-    <!-- 좌측 55%: 입찰정보 + 리서치 -->
-    <div>
+  <!-- 리서치 탭 -->
+  <div id="pane-research">
+    <div class="rs-tab-cols">
 
-      <!-- ① 입찰정보 등록 -->
-      <div class="ws-card">
-        <div class="ws-card-title">📋 입찰정보 등록</div>
+      <!-- 좌측 40%: 입찰정보 등록 -->
+      <div>
+        <div class="ws-card">
+          <div class="ws-card-title">📋 입찰정보 등록</div>
 
-        <!-- RFP 파일 -->
-        <div class="rfp-bar">
-          <div class="rfp-bar-left">📁 RFP 파일 ({{ rfp_files|length }}개)</div>
-          <div class="rfp-bar-btns">
-            {% if c.ntce_url or c.bid_ntce_no %}
-            <a href="{{ c.ntce_url or 'https://www.g2b.go.kr/index.jsp?bidNtceNo=' + (c.bid_ntce_no or '') }}"
-               target="_blank" class="btn btn-ghost btn-sm">나라장터 원문 →</a>
-            {% endif %}
-            {% if can_edit %}
-            <label class="btn btn-primary btn-sm" style="cursor:pointer;">
-              RFP 업로드 ↑
-              <input type="file" id="rfp-file-input" multiple accept=".pdf,.hwp,.hwpx,.docx,.txt"
-                     style="display:none;" onchange="uploadRfpFiles(this)">
-            </label>
-            {% endif %}
-          </div>
-        </div>
-        {% if rfp_files %}
-        <div class="rfp-files">
-          {% for f in rfp_files %}
-          <div class="rfp-file-item">
-            📄 <span style="font-weight:500;">{{ f.filename }}</span>
-            <span style="color:#9ca3af;margin-left:4px;">{{ f.uploaded_by }} · {{ (f.uploaded_at or '')[:10] }}</span>
-          </div>
-          {% endfor %}
-        </div>
-        {% else %}
-        <div class="rfp-none">등록된 파일 없음 — RFP 업로드 시 자동 분석이 시작됩니다</div>
-        {% endif %}
-
-        <!-- 입찰정보 폼 -->
-        <div style="border-top:1px solid #f3f4f6;padding-top:14px;margin-top:4px;">
-          {% if can_edit %}
-          <!-- hidden: 폼에 없는 기존 값 보존 -->
-          <div id="bi-preserved" style="display:none;"
-               data-json="{{ bi | tojson | e }}"></div>
-          <div class="bi-grid">
-            <div>
-              <div class="bi-label">제출 마감일시</div>
-              <input type="datetime-local" id="bi-deadline" class="bi-input{% if not bi.submit_deadline %} field-missing{% endif %}"
-                     value="{{ bi.submit_deadline or '' }}">
+          <!-- RFP 파일 -->
+          <div class="rfp-bar">
+            <div class="rfp-bar-left">📁 RFP 파일 ({{ rfp_files|length }}개)</div>
+            <div class="rfp-bar-btns">
+              {% if c.ntce_url or c.bid_ntce_no %}
+              <a href="{{ c.ntce_url or 'https://www.g2b.go.kr/index.jsp?bidNtceNo=' + (c.bid_ntce_no or '') }}"
+                 target="_blank" class="btn btn-ghost btn-sm">나라장터 원문 →</a>
+              {% endif %}
+              {% if can_edit %}
+              <label class="btn btn-primary btn-sm" style="cursor:pointer;">
+                RFP 업로드 ↑
+                <input type="file" id="rfp-file-input" multiple accept=".pdf,.hwp,.hwpx,.docx,.txt"
+                       style="display:none;" onchange="uploadRfpFiles(this)">
+              </label>
+              {% endif %}
             </div>
-            <div>
-              <div class="bi-label">제출 방법</div>
-              <div class="radio-row">
-                {% for m in ['온라인','오프라인','가격투찰만'] %}
-                <label><input type="radio" name="bi-method" value="{{ m }}"
-                               {% if (bi.submit_method or '') == m %}checked{% endif %}> {{ m }}</label>
-                {% endfor %}
+          </div>
+          {% if rfp_files %}
+          <div class="rfp-files">
+            {% for f in rfp_files %}
+            <div class="rfp-file-item">
+              📄 <span style="font-weight:500;">{{ f.filename }}</span>
+              <span style="color:#9ca3af;margin-left:4px;">{{ f.uploaded_by }} · {{ (f.uploaded_at or '')[:10] }}</span>
+            </div>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="rfp-none">등록된 파일 없음 — RFP 업로드 시 자동 분석이 시작됩니다</div>
+          {% endif %}
+
+          <!-- 입찰정보 폼 -->
+          <div style="border-top:1px solid #f3f4f6;padding-top:14px;margin-top:4px;">
+            {% if can_edit %}
+            <div id="bi-preserved" style="display:none;"
+                 data-json="{{ bi | tojson | e }}"></div>
+            <div class="bi-grid">
+              <div>
+                <div class="bi-label">제출 마감일시</div>
+                <input type="datetime-local" id="bi-deadline" class="bi-input{% if not bi.submit_deadline %} field-missing{% endif %}"
+                       value="{{ bi.submit_deadline or '' }}">
+              </div>
+              <div>
+                <div class="bi-label">제출 방법</div>
+                <div class="radio-row">
+                  {% for m in ['온라인','오프라인','가격투찰만'] %}
+                  <label><input type="radio" name="bi-method" value="{{ m }}"
+                                 {% if (bi.submit_method or '') == m %}checked{% endif %}> {{ m }}</label>
+                  {% endfor %}
+                </div>
+              </div>
+              <div>
+                <div class="bi-label">PT 일시</div>
+                <input type="datetime-local" id="bi-pt-date" class="bi-input{% if not bi.pt_date %} field-missing{% endif %}"
+                       value="{{ bi.pt_date or '' }}">
+              </div>
+              <div>
+                <div class="bi-label">PT 장소</div>
+                <input type="text" id="bi-pt-location" class="bi-input"
+                       value="{{ bi.pt_location or '' }}" placeholder="장소 입력">
+              </div>
+              <div>
+                <div class="bi-label">가격투찰 일시</div>
+                <input type="datetime-local" id="bi-price-bid-date" class="bi-input{% if not bi.price_bid_date %} field-missing{% endif %}"
+                       value="{{ bi.price_bid_date or '' }}">
+              </div>
+              <div>
+                <div class="bi-label">제안서 제출 일시</div>
+                <input type="datetime-local" id="bi-proposal-submit-date" class="bi-input{% if not bi.proposal_submit_date %} field-missing{% endif %}"
+                       value="{{ bi.proposal_submit_date or '' }}">
               </div>
             </div>
-            <div>
-              <div class="bi-label">PT 일시</div>
-              <input type="datetime-local" id="bi-pt-date" class="bi-input{% if not bi.pt_date %} field-missing{% endif %}"
-                     value="{{ bi.pt_date or '' }}">
+            <div style="margin-top:10px;">
+              <div class="bi-label">제출 서류</div>
+              <div class="doc-checks">
+                {% set docs = [('doc_qualitative','정성평가'),('doc_quantitative','정량평가'),
+                  ('doc_presentation','발표자료'),('doc_summary','요약본'),('doc_sample_video','샘플영상')] %}
+                {% for key, label in docs %}
+                <label><input type="checkbox" class="bi-doc" data-key="{{ key }}"
+                               {% if bi[key] %}checked{% endif %}> {{ label }}</label>
+                {% endfor %}
+                <label><input type="checkbox" id="bi-doc-pt"
+                               {% if bi.doc_pt %}checked{% endif %}> PT 발표</label>
+                <label style="display:inline-flex;align-items:center;gap:4px;">
+                  <input type="checkbox" id="bi-doc-other-chk"
+                         {% if bi.doc_other %}checked{% endif %}
+                         onchange="document.getElementById('bi-doc-other').disabled=!this.checked">
+                  기타:
+                  <input type="text" id="bi-doc-other" class="bi-input" style="width:90px;"
+                         value="{{ bi.doc_other or '' }}"
+                         {% if not bi.doc_other %}disabled{% endif %} placeholder="서류명">
+                </label>
+              </div>
             </div>
-            <div>
-              <div class="bi-label">PT 장소</div>
-              <input type="text" id="bi-pt-location" class="bi-input"
-                     value="{{ bi.pt_location or '' }}" placeholder="장소 입력">
+            <div style="display:flex;justify-content:flex-end;margin-top:12px;">
+              <button class="btn btn-primary" onclick="saveBidInfo()">💾 저장</button>
             </div>
-            <div>
-              <div class="bi-label">가격투찰 일시</div>
-              <input type="datetime-local" id="bi-price-bid-date" class="bi-input{% if not bi.price_bid_date %} field-missing{% endif %}"
-                     value="{{ bi.price_bid_date or '' }}">
+            {% if bi.updated_by %}
+            <div class="bi-updated">최종 수정: {{ bi.updated_by }} · {{ (bi.updated_at or '')[:16] }}</div>
+            {% endif %}
+
+            {% else %}
+            <!-- 읽기 전용 -->
+            <div style="font-size:13px;color:#374151;display:flex;flex-direction:column;gap:6px;">
+              {% if bi.submit_deadline %}
+              <div><span style="color:#9ca3af;font-size:11px;margin-right:6px;">제출마감</span>{{ bi.submit_deadline }}
+                {% if bi.submit_method %} · {{ bi.submit_method }}{% endif %}</div>
+              {% endif %}
+              {% if bi.pt_date %}
+              <div><span style="color:#9ca3af;font-size:11px;margin-right:6px;">PT</span>{{ bi.pt_date }}
+                {% if bi.pt_location %} @ {{ bi.pt_location }}{% endif %}</div>
+              {% endif %}
+              {% if bi.price_bid_date %}
+              <div><span style="color:#9ca3af;font-size:11px;margin-right:6px;">가격투찰</span>{{ bi.price_bid_date }}</div>
+              {% endif %}
+              {% if not bi.submit_deadline and not bi.pt_date and not bi.price_bid_date %}
+              <div style="color:#9ca3af;">입찰정보 미등록 상태입니다</div>
+              {% endif %}
             </div>
-            <div>
-              <div class="bi-label">제안서 제출 일시</div>
-              <input type="datetime-local" id="bi-proposal-submit-date" class="bi-input{% if not bi.proposal_submit_date %} field-missing{% endif %}"
-                     value="{{ bi.proposal_submit_date or '' }}">
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- 우측 60%: 리서치 분석 -->
+      <div>
+        <div class="ws-card">
+          <div class="ws-card-title">
+            <span>🔍 리서치 분석</span>
+            <div style="display:flex;gap:6px;">
+              {% if rs.status == 'done' and can_edit %}
+              <button class="btn btn-ghost btn-sm" onclick="retryResearch()">🔄 재분석</button>
+              {% elif rs.status == 'error' and can_edit %}
+              <button class="btn btn-ghost btn-sm" onclick="retryResearch()">🔄 재시도</button>
+              {% endif %}
             </div>
           </div>
-          <div style="margin-top:10px;">
-            <div class="bi-label">제출 서류</div>
-            <div class="doc-checks">
-              {% set docs = [('doc_qualitative','정성평가'),('doc_quantitative','정량평가'),
-                ('doc_presentation','발표자료'),('doc_summary','요약본'),('doc_sample_video','샘플영상')] %}
-              {% for key, label in docs %}
-              <label><input type="checkbox" class="bi-doc" data-key="{{ key }}"
-                             {% if bi[key] %}checked{% endif %}> {{ label }}</label>
-              {% endfor %}
-              <label><input type="checkbox" id="bi-doc-pt"
-                             {% if bi.doc_pt %}checked{% endif %}> PT 발표</label>
-              <label style="display:inline-flex;align-items:center;gap:4px;">
-                <input type="checkbox" id="bi-doc-other-chk"
-                       {% if bi.doc_other %}checked{% endif %}
-                       onchange="document.getElementById('bi-doc-other').disabled=!this.checked">
-                기타:
-                <input type="text" id="bi-doc-other" class="bi-input" style="width:90px;"
-                       value="{{ bi.doc_other or '' }}"
-                       {% if not bi.doc_other %}disabled{% endif %} placeholder="서류명">
-              </label>
-            </div>
+
+          {% if not rs or rs.status in ('pending', '') %}
+          <div style="text-align:center;padding:40px 20px;color:#9ca3af;">
+            <div style="font-size:28px;margin-bottom:10px;">📋</div>
+            <div style="font-size:14px;font-weight:600;color:#6b7280;">RFP 파일 업로드 후 자동 분석됩니다</div>
+            <div style="font-size:12px;margin-top:4px;">발주처 리서치 및 과업 분석이 자동으로 실행됩니다</div>
           </div>
-          <div style="display:flex;justify-content:flex-end;margin-top:12px;">
-            <button class="btn btn-primary" onclick="saveBidInfo()">💾 저장</button>
+
+          {% elif rs.status == 'running' %}
+          <div style="text-align:center;padding:40px 20px;">
+            <div class="spinner" style="width:28px;height:28px;border-width:3px;margin:0 auto 12px;"></div>
+            <div style="font-size:14px;font-weight:600;color:#1d4ed8;">분석 중...</div>
+            <div style="font-size:12px;color:#6b7280;margin-top:4px;">RFP 파일과 발주처 정보를 분석하고 있습니다</div>
           </div>
-          {% if bi.updated_by %}
-          <div class="bi-updated">최종 수정: {{ bi.updated_by }} · {{ (bi.updated_at or '')[:16] }}</div>
-          {% endif %}
+
+          {% elif rs.status == 'error' %}
+          <div style="text-align:center;padding:36px 20px;color:#dc2626;">
+            <div style="font-size:28px;margin-bottom:8px;">⚠️</div>
+            <div style="font-size:14px;font-weight:600;">분석 중 오류가 발생했습니다</div>
+            <div style="font-size:12px;color:#6b7280;margin-top:4px;">파일을 다시 업로드하거나 재시도해주세요</div>
+          </div>
 
           {% else %}
-          <!-- 읽기 전용 -->
-          <div style="font-size:13px;color:#374151;display:flex;flex-direction:column;gap:6px;">
-            {% if bi.submit_deadline %}
-            <div><span style="color:#9ca3af;font-size:11px;margin-right:6px;">제출마감</span>{{ bi.submit_deadline }}
-              {% if bi.submit_method %} · {{ bi.submit_method }}{% endif %}</div>
-            {% endif %}
-            {% if bi.pt_date %}
-            <div><span style="color:#9ca3af;font-size:11px;margin-right:6px;">PT</span>{{ bi.pt_date }}
-              {% if bi.pt_location %} @ {{ bi.pt_location }}{% endif %}</div>
-            {% endif %}
-            {% if bi.price_bid_date %}
-            <div><span style="color:#9ca3af;font-size:11px;margin-right:6px;">가격투찰</span>{{ bi.price_bid_date }}</div>
-            {% endif %}
-            {% if not bi.submit_deadline and not bi.pt_date and not bi.price_bid_date %}
-            <div style="color:#9ca3af;">입찰정보 미등록 상태입니다</div>
-            {% endif %}
+          {% if rs.rfp_analysis %}
+          <div class="rs-section">
+            <div class="rs-section-header" onclick="toggleSection(this)">📄 RFP 분석 결과 <span>▼</span></div>
+            <div class="rs-section-body open" id="rs-rfp"><div id="rs-rfp-content"></div></div>
           </div>
+          {% endif %}
+          {% set sections = [
+            ('① 기관 특성/정책 분석','rs-1'),('② 과업 맥락 및 배경','rs-2'),
+            ('③ 유사사례 및 시장 트렌드','rs-3'),('④ 경쟁 환경 분석','rs-4'),
+            ('⑤ 전략 방향 제언','rs-5'),
+          ] %}
+          {% for label, sid in sections %}
+          <div class="rs-section">
+            <div class="rs-section-header" onclick="toggleSection(this)">{{ label }} <span>▼</span></div>
+            <div class="rs-section-body" id="{{ sid }}"></div>
+          </div>
+          {% endfor %}
           {% endif %}
         </div>
       </div>
 
-      <!-- ② 리서치 분석 -->
-      <div class="ws-card">
-        <div class="ws-card-title">
-          <span>🔍 리서치 분석</span>
-          {% if rs.status == 'error' and can_edit %}
-          <button class="btn btn-ghost btn-sm" onclick="retryResearch()">🔄 재시도</button>
-          {% endif %}
-        </div>
+    </div>
+  </div>
 
-        {% if not rs or rs.status in ('pending', '') %}
-        <div style="text-align:center;padding:40px 20px;color:#9ca3af;">
-          <div style="font-size:28px;margin-bottom:10px;">📋</div>
-          <div style="font-size:14px;font-weight:600;color:#6b7280;">RFP 파일 업로드 후 자동 분석됩니다</div>
-          <div style="font-size:12px;margin-top:4px;">발주처 리서치 및 과업 분석이 자동으로 실행됩니다</div>
-        </div>
+  <!-- 내러티브 탭 -->
+  <div id="pane-narrative" style="display:none;">
 
-        {% elif rs.status == 'running' %}
-        <div style="text-align:center;padding:40px 20px;">
-          <div class="spinner" style="width:28px;height:28px;border-width:3px;margin:0 auto 12px;"></div>
-          <div style="font-size:14px;font-weight:600;color:#1d4ed8;">분석 중...</div>
-          <div style="font-size:12px;color:#6b7280;margin-top:4px;">RFP 파일과 발주처 정보를 분석하고 있습니다</div>
-        </div>
+    <!-- ③ 진행 일정 -->
+    <div class="ws-card">
+      <div class="ws-card-title">📅 진행 일정</div>
+      <table class="sch-table">
+        <thead>
+          <tr>
+            <th style="width:36%">업무명</th>
+            <th style="width:24%">날짜</th>
+            <th style="width:14%">상태</th>
+            <th style="width:16%">비고</th>
+            {% if can_edit %}<th style="width:10%"></th>{% endif %}
+          </tr>
+        </thead>
+        <tbody id="sch-tbody">
+          {% for s in schedule %}
+          {% set is_auto = s.task_name.startswith('입찰 마감') or s.task_name.startswith('제안서 제출') or s.task_name.startswith('PT 발표') or s.task_name.startswith('가격투찰') %}
+          {% set no_date = not s.due_date %}
+          <tr data-id="{{ s.id }}"{% if no_date %} class="sch-missing"{% endif %}>
+            <td>
+              <div class="sv"><span>{{ s.task_name }}</span></div>
+              <div class="se"><input class="sch-input" value="{{ s.task_name | e }}" style="width:100%;"></div>
+            </td>
+            <td>
+              <div class="sv">
+                {% if s.due_date %}
+                {{ s.due_date }}
+                {% else %}
+                <span style="color:#ef4444;font-size:11px;font-weight:700;background:#fff5f5;border:1px solid #fca5a5;border-radius:4px;padding:2px 6px;white-space:nowrap;">날짜 입력 필요</span>
+                {% endif %}
+              </div>
+              <div class="se"><input type="datetime-local" class="sch-input" value="{{ (s.due_date or '').replace(' ', 'T') }}"></div>
+            </td>
+            <td>
+              <div class="sv">
+                {% if s.status == '예정' %}<span class="sch-st sch-st-planned">예정</span>
+                {% elif s.status == '진행중' %}<span class="sch-st sch-st-doing">진행중</span>
+                {% elif s.status == '완료' %}<span class="sch-st sch-st-done">완료</span>
+                {% elif s.status == '보류' %}<span class="sch-st sch-st-hold">보류</span>
+                {% else %}<span class="sch-st sch-st-planned">{{ s.status }}</span>{% endif %}
+              </div>
+              <div class="se">
+                <select class="sch-select">
+                  {% for st in ['예정','진행중','완료','보류'] %}<option{% if st == s.status %} selected{% endif %}>{{ st }}</option>{% endfor %}
+                </select>
+              </div>
+            </td>
+            <td>
+              <div class="sv">{{ s.assignee or '-' }}</div>
+              <div class="se"><input type="text" class="sch-input" value="{{ s.assignee | e }}"></div>
+            </td>
+            {% if can_edit %}
+            <td>
+              <div class="sch-act-view" style="display:flex;gap:3px;">
+                <button class="btn btn-ghost btn-sm" onclick="startEdit(this.closest('tr'))">수정</button>
+                {% if not is_auto %}<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;" onclick="delSchedule({{ s.id }},this.closest('tr'))">삭제</button>{% endif %}
+              </div>
+              <div class="sch-act-edit" style="display:none;gap:3px;">
+                <button class="btn btn-primary btn-sm" onclick="saveEdit(this.closest('tr'))">저장</button>
+                <button class="btn btn-ghost btn-sm" onclick="cancelEdit(this.closest('tr'))">취소</button>
+              </div>
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if can_edit %}
+      <div style="margin-top:10px;text-align:right;">
+        <button class="btn btn-ghost btn-sm" onclick="openSchModal()">+ 일정 추가</button>
+      </div>
+      {% endif %}
+    </div>
 
-        {% elif rs.status == 'error' %}
-        <div style="text-align:center;padding:36px 20px;color:#dc2626;">
-          <div style="font-size:28px;margin-bottom:8px;">⚠️</div>
-          <div style="font-size:14px;font-weight:600;">분석 중 오류가 발생했습니다</div>
-          <div style="font-size:12px;color:#6b7280;margin-top:4px;">파일을 다시 업로드하거나 재시도해주세요</div>
-        </div>
-
-        {% else %}
-        {% if rs.rfp_analysis %}
-        <div class="rs-section">
-          <div class="rs-section-header" onclick="toggleSection(this)">📄 RFP 분석 결과 <span>▼</span></div>
-          <div class="rs-section-body open" id="rs-rfp"><div id="rs-rfp-content"></div></div>
-        </div>
+    <!-- ④ 전략 내러티브 -->
+    <div class="ws-card">
+      <div class="ws-card-title">
+        <span>✍️ 전략 내러티브</span>
+        {% if can_edit and narrative_qa %}
+        <button class="btn btn-ghost btn-sm" id="nq-edit-btn" onclick="toggleNarrativeEdit()">✏️ 수정</button>
         {% endif %}
-        {% set sections = [
-          ('① 기관 특성/정책 분석','rs-1'),('② 과업 맥락 및 배경','rs-2'),
-          ('③ 유사사례 및 시장 트렌드','rs-3'),('④ 경쟁 환경 분석','rs-4'),
-          ('⑤ 전략 방향 제언','rs-5'),
-        ] %}
-        {% for label, sid in sections %}
-        <div class="rs-section">
-          <div class="rs-section-header" onclick="toggleSection(this)">{{ label }} <span>▼</span></div>
-          <div class="rs-section-body" id="{{ sid }}"></div>
+      </div>
+
+      {% set NQ_LABELS = [
+        ('q1','Q1. 우리 회사가 본 과업을 하는데 내세울 어떤 경쟁력이 있을까요?'),
+        ('q2','Q2. 본 과업은 기존에 어떤 문제나 위기를 갖고 있나요?'),
+        ('q3','Q3. 문제를 타개하고 좋은 성과를 이루어내기 위해 어떤 전략이 필요할까요?'),
+        ('q4','Q4. 추구하는 전략을 각인시킬 직관적인 컨셉은 무엇인가요?'),
+        ('q5','Q5. 컨셉에 맞게 실행할 콘텐츠 아이디어는 어떤 것인가요?'),
+        ('q6','Q6. 운영이나 관리 부문에 내세울만한 특별한 장점은 어떤 것인가요?'),
+        ('q7','Q7. 추가로 기재할 중요한 내용이 있다면 무엇인가요?'),
+      ] %}
+
+      {% if can_edit %}
+      <div id="nq-view" style="display:{% if narrative_qa %}block{% else %}none{% endif %};">
+        {% for key, label in NQ_LABELS %}
+        <div class="nq-block">
+          <div class="nq-label">{{ label }}</div>
+          <div class="nq-ro" id="nq-ro-{{ key }}">{{ (narrative_qa or {}).get(key,'') or '(미작성)' }}</div>
         </div>
         {% endfor %}
-        {% endif %}
       </div>
-
-    </div><!-- /좌측 -->
-
-    <!-- 우측 45%: 진행 일정 + 내러티브 -->
-    <div>
-
-      <!-- ③ 진행 일정 -->
-      <div class="ws-card">
-        <div class="ws-card-title">📅 진행 일정</div>
-        <table class="sch-table">
-          <thead>
-            <tr>
-              <th style="width:36%">업무명</th>
-              <th style="width:24%">날짜</th>
-              <th style="width:14%">상태</th>
-              <th style="width:16%">비고</th>
-              {% if can_edit %}<th style="width:10%"></th>{% endif %}
-            </tr>
-          </thead>
-          <tbody id="sch-tbody">
-            {% for s in schedule %}
-            {% set is_auto = s.task_name.startswith('입찰 마감') or s.task_name.startswith('제안서 제출') or s.task_name.startswith('PT 발표') or s.task_name.startswith('가격투찰') %}
-            {% set no_date = not s.due_date %}
-            <tr data-id="{{ s.id }}"{% if no_date %} class="sch-missing"{% endif %}>
-              <td>
-                <div class="sv"><span>{{ s.task_name }}</span></div>
-                <div class="se"><input class="sch-input" value="{{ s.task_name | e }}" style="width:100%;"></div>
-              </td>
-              <td>
-                <div class="sv">
-                  {% if s.due_date %}
-                  {{ s.due_date }}
-                  {% else %}
-                  <span style="color:#ef4444;font-size:11px;font-weight:700;background:#fff5f5;border:1px solid #fca5a5;border-radius:4px;padding:2px 6px;white-space:nowrap;">날짜 입력 필요</span>
-                  {% endif %}
-                </div>
-                <div class="se"><input type="datetime-local" class="sch-input" value="{{ (s.due_date or '').replace(' ', 'T') }}"></div>
-              </td>
-              <td>
-                <div class="sv">
-                  {% if s.status == '예정' %}<span class="sch-st sch-st-planned">예정</span>
-                  {% elif s.status == '진행중' %}<span class="sch-st sch-st-doing">진행중</span>
-                  {% elif s.status == '완료' %}<span class="sch-st sch-st-done">완료</span>
-                  {% elif s.status == '보류' %}<span class="sch-st sch-st-hold">보류</span>
-                  {% else %}<span class="sch-st sch-st-planned">{{ s.status }}</span>{% endif %}
-                </div>
-                <div class="se">
-                  <select class="sch-select">
-                    {% for st in ['예정','진행중','완료','보류'] %}<option{% if st == s.status %} selected{% endif %}>{{ st }}</option>{% endfor %}
-                  </select>
-                </div>
-              </td>
-              <td>
-                <div class="sv">{{ s.assignee or '-' }}</div>
-                <div class="se"><input type="text" class="sch-input" value="{{ s.assignee | e }}"></div>
-              </td>
-              {% if can_edit %}
-              <td>
-                <div class="sch-act-view" style="display:flex;gap:3px;">
-                  <button class="btn btn-ghost btn-sm" onclick="startEdit(this.closest('tr'))">수정</button>
-                  {% if not is_auto %}<button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;" onclick="delSchedule({{ s.id }},this.closest('tr'))">삭제</button>{% endif %}
-                </div>
-                <div class="sch-act-edit" style="display:none;gap:3px;">
-                  <button class="btn btn-primary btn-sm" onclick="saveEdit(this.closest('tr'))">저장</button>
-                  <button class="btn btn-ghost btn-sm" onclick="cancelEdit(this.closest('tr'))">취소</button>
-                </div>
-              </td>
-              {% endif %}
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-        {% if can_edit %}
-        <div style="margin-top:10px;text-align:right;">
-          <button class="btn btn-ghost btn-sm" onclick="openSchModal()">+ 일정 추가</button>
+      <div id="nq-edit" style="display:{% if narrative_qa %}none{% else %}block{% endif %};">
+        {% for key, label in NQ_LABELS %}
+        <div class="nq-block">
+          <div class="nq-label">{{ label }}</div>
+          <textarea id="nq-ta-{{ key }}" class="nq-ta" rows="3"
+                    placeholder="자유롭게 작성해주세요">{{ (narrative_qa or {}).get(key,'') }}</textarea>
         </div>
-        {% endif %}
-      </div>
-
-      <!-- ④ 전략 내러티브 -->
-      <div class="ws-card">
-        <div class="ws-card-title">
-          <span>✍️ 전략 내러티브</span>
-          {% if can_edit and narrative_qa %}
-          <button class="btn btn-ghost btn-sm" id="nq-edit-btn" onclick="toggleNarrativeEdit()">✏️ 수정</button>
+        {% endfor %}
+        <div style="display:flex;gap:8px;justify-content:flex-end;">
+          {% if narrative_qa %}
+          <button class="btn btn-ghost" onclick="cancelNarrativeEdit()">취소</button>
           {% endif %}
+          <button class="btn btn-green" onclick="saveNarrative()">💾 저장</button>
         </div>
-
-        {% set NQ_LABELS = [
-          ('q1','Q1. 우리 회사가 본 과업을 하는데 내세울 어떤 경쟁력이 있을까요?'),
-          ('q2','Q2. 본 과업은 기존에 어떤 문제나 위기를 갖고 있나요?'),
-          ('q3','Q3. 문제를 타개하고 좋은 성과를 이루어내기 위해 어떤 전략이 필요할까요?'),
-          ('q4','Q4. 추구하는 전략을 각인시킬 직관적인 컨셉은 무엇인가요?'),
-          ('q5','Q5. 컨셉에 맞게 실행할 콘텐츠 아이디어는 어떤 것인가요?'),
-          ('q6','Q6. 운영이나 관리 부문에 내세울만한 특별한 장점은 어떤 것인가요?'),
-          ('q7','Q7. 추가로 기재할 중요한 내용이 있다면 무엇인가요?'),
-        ] %}
-
-        {% if can_edit %}
-        <div id="nq-view" style="display:{% if narrative_qa %}block{% else %}none{% endif %};">
-          {% for key, label in NQ_LABELS %}
-          <div class="nq-block">
-            <div class="nq-label">{{ label }}</div>
-            <div class="nq-ro" id="nq-ro-{{ key }}">{{ (narrative_qa or {}).get(key,'') or '(미작성)' }}</div>
-          </div>
-          {% endfor %}
-        </div>
-        <div id="nq-edit" style="display:{% if narrative_qa %}none{% else %}block{% endif %};">
-          {% for key, label in NQ_LABELS %}
-          <div class="nq-block">
-            <div class="nq-label">{{ label }}</div>
-            <textarea id="nq-ta-{{ key }}" class="nq-ta" rows="3"
-                      placeholder="자유롭게 작성해주세요">{{ (narrative_qa or {}).get(key,'') }}</textarea>
-          </div>
-          {% endfor %}
-          <div style="display:flex;gap:8px;justify-content:flex-end;">
-            {% if narrative_qa %}
-            <button class="btn btn-ghost" onclick="cancelNarrativeEdit()">취소</button>
-            {% endif %}
-            <button class="btn btn-green" onclick="saveNarrative()">💾 저장</button>
-          </div>
-        </div>
-        {% else %}
-        {% if narrative_qa %}
-          {% for key, label in NQ_LABELS %}
-          <div class="nq-block">
-            <div class="nq-label">{{ label }}</div>
-            <div class="nq-ro">{{ narrative_qa.get(key,'') or '(미작성)' }}</div>
-          </div>
-          {% endfor %}
-        {% else %}
-          <div style="text-align:center;padding:36px 20px;color:#9ca3af;">
-            <div style="font-size:24px;">📋</div>
-            <div style="font-size:13px;font-weight:600;margin-top:8px;">담당자가 내러티브를 미작성 상태입니다</div>
-          </div>
-        {% endif %}
-        {% endif %}
       </div>
+      {% else %}
+      {% if narrative_qa %}
+        {% for key, label in NQ_LABELS %}
+        <div class="nq-block">
+          <div class="nq-label">{{ label }}</div>
+          <div class="nq-ro">{{ narrative_qa.get(key,'') or '(미작성)' }}</div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div style="text-align:center;padding:36px 20px;color:#9ca3af;">
+          <div style="font-size:24px;">📋</div>
+          <div style="font-size:13px;font-weight:600;margin-top:8px;">담당자가 내러티브를 미작성 상태입니다</div>
+        </div>
+      {% endif %}
+      {% endif %}
+    </div>
 
-    </div><!-- /우측 -->
-  </div><!-- /ws-cols -->
+  </div><!-- /pane-narrative -->
 </div>
 
 <!-- 일정 추가 모달 -->
@@ -495,6 +511,26 @@ function showToast(msg, ok=true){
 }
 function _esc(s){return(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
+/* ── 탭 전환 ── */
+function switchTab(name){
+  ['research','narrative'].forEach(t=>{
+    document.getElementById('pane-'+t).style.display=t===name?'block':'none';
+    document.getElementById('tab-'+t).classList.toggle('active',t===name);
+  });
+  history.replaceState(null,'','?tab='+name);
+}
+document.addEventListener('DOMContentLoaded',()=>{
+  const params=new URLSearchParams(location.search);
+  const tab=params.get('tab')||'research';
+  switchTab(tab);
+  if(RS_STATUS==='running') startPolling();
+  if(RS_STATUS==='done') parseAndRenderSections();
+  if(RS_ANALYSIS && RS_STATUS==='done'){
+    const el=document.getElementById('rs-rfp-content');
+    if(el) el.innerHTML=simpleMarkdown(RS_ANALYSIS);
+  }
+});
+
 /* ── 입찰정보 저장 ── */
 async function saveBidInfo(){
   const preserved = JSON.parse(document.getElementById('bi-preserved')?.dataset?.json || '{}');
@@ -518,7 +554,6 @@ async function saveBidInfo(){
     doc_other:               otherChk ? (document.getElementById('bi-doc-other').value.trim()) : '',
     notes:                   preserved.notes || '',
   };
-  // clear red borders on save
   document.querySelectorAll('.bi-input.field-missing').forEach(el => el.classList.remove('field-missing'));
   const r = await fetch(`/nara/confirmed/${CID}/bid_info`, {
     method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
@@ -620,7 +655,6 @@ function cancelEdit(tr){
   const svs=tr.querySelectorAll('.sv');
   const taskSpan=tr.querySelector('td:first-child .sv span:first-child');
   if(taskSpan&&ses[0]) ses[0].value=taskSpan.textContent.trim();
-  // ses[1]=due_date, ses[2]=status select, ses[3]=assignee text
   if(svs[1]&&ses[1]){ const t=svs[1].textContent.trim(); ses[1].value=t==='-'||t.includes('날짜')?'':t.replace(' ','T'); }
   if(ses[2]){const stEl=tr.querySelector('td:nth-child(3) .sv .sch-st');if(stEl)ses[2].value=stEl.textContent.trim();}
   if(svs[3]&&ses[3]){ const t=svs[3].textContent.trim(); ses[3].value=t==='-'?'':t; }
@@ -669,7 +703,6 @@ async function submitSchModal(){
   const d=await r.json();
   if(!d.ok){showToast(d.error||'추가 실패',false);return;}
   const stMap={'예정':'sch-st-planned','진행중':'sch-st-doing','완료':'sch-st-done','보류':'sch-st-hold'};
-  const uOpts=['<option value="">-</option>'].concat(USERS.map(u=>`<option value="${_esc(u.username)}"${u.username===assignee?' selected':''}>${_esc(u.username)}</option>`)).join('');
   const sOpts=['예정','진행중','완료','보류'].map(s=>`<option${s===status?' selected':''}>${s}</option>`).join('');
   const tr=document.createElement('tr');
   tr.dataset.id=d.id;
@@ -707,15 +740,5 @@ async function submitSchModal(){
   document.getElementById('sch-new-date').value='';
   showToast('일정이 추가되었습니다');
 }
-
-/* ── 초기화 ── */
-document.addEventListener('DOMContentLoaded', ()=>{
-  if(RS_STATUS==='running') startPolling();
-  if(RS_STATUS==='done') parseAndRenderSections();
-  if(RS_ANALYSIS && RS_STATUS==='done'){
-    const el=document.getElementById('rs-rfp-content');
-    if(el) el.innerHTML=simpleMarkdown(RS_ANALYSIS);
-  }
-});
 </script>
 {% endblock %}
