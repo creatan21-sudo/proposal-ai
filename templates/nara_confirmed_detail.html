@@ -450,7 +450,7 @@ tr.sch-editing .sch-act-view{display:none !important;}
     <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
       <span>📝 전략 내러티브</span>
       <div style="display:flex;gap:6px;align-items:center;">
-        {% if not narrative_empty %}
+        {% if not narrative_empty and is_assignee %}
         <button class="btn btn-ghost btn-sm" onclick="openFbModal('narrative')">📣 피드백 요청</button>
         {% endif %}
         {% if can_edit_narrative and not narrative_empty %}
@@ -538,9 +538,10 @@ tr.sch-editing .sch-act-view{display:none !important;}
     {% endif %}
 
     <!-- 제안설계 아코디언 -->
+    {% if can_edit or (proposal_design and proposal_design.content) %}
     <div id="pd-accordion-wrap">
       <div class="pd-accord-hdr" onclick="togglePdAccordion()">
-        <span>✏️ 제안설계 작성</span>
+        {% if can_edit %}<span>✏️ 제안설계 작성</span>{% else %}<span>📄 작성된 제안설계 보기</span>{% endif %}
         <span id="pd-accord-arrow">▼</span>
       </div>
       <div id="pd-accord-body" class="pd-accord-body">
@@ -548,7 +549,9 @@ tr.sch-editing .sch-act-view{display:none !important;}
         <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:8px;">
           <span id="pd-autosave-hint" style="font-size:11px;color:#9ca3af;"></span>
           <button class="btn btn-ghost btn-sm" onclick="savePd()">💾 저장</button>
+          {% if is_assignee %}
           <button class="btn btn-ghost btn-sm" id="pd-feedback-btn" onclick="requestPdFeedback()">🤖 AI 피드백 받기</button>
+          {% endif %}
         </div>
         <textarea id="pd-content" class="narrative-ta" rows="12"
           placeholder="제안서 구성, 차별화 전략, 핵심 메시지, 슬라이드 구성안 등 자유롭게 작성하세요"
@@ -563,6 +566,7 @@ tr.sch-editing .sch-act-view{display:none !important;}
         </div>
       </div>
     </div>
+    {% endif %}
 
     <!-- 코멘트 -->
     <div style="margin-top:24px;border-top:1px solid #e5e7eb;padding-top:18px;" id="tab-proposal_design-anchor">

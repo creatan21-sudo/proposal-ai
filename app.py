@@ -101,6 +101,9 @@ app.secret_key = os.environ.get("SECRET_KEY", "prointerz-web-secret-2024")
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB
 
 _IS_PRODUCTION = os.environ.get("FLASK_ENV", "production") == "production"
+
+# 피드백 알림 발송 제외 사용자 (username 기준)
+FEEDBACK_EXCLUDE_USERS = {'정진주', '김은지', '최민식'}
 _default_upload = "/tmp/uploads" if _IS_PRODUCTION else str(Path(__file__).parent / "uploads")
 UPLOAD_DIR = Path(os.environ.get("UPLOAD_DIR", _default_upload))
 
@@ -4640,6 +4643,7 @@ def nara_confirmed_detail(confirmed_id):
                            rfp_files=rfp_files, research=research,
                            proposal_design=proposal_design,
                            users=users, can_edit=can_edit, is_ops=is_ops,
+                           is_assignee=is_assignee,
                            can_edit_narrative=can_edit_narrative,
                            now=_dt.now().strftime("%Y-%m-%d %H:%M"))
 
@@ -5391,15 +5395,16 @@ def confirmed_workspace(confirmed_id):
     schedule = get_or_create_default_schedules(
         confirmed_id, c.get("bid_clse_dt", "") or ""
     )
-    users    = list_users()
-    comments = list_confirmed_comments(confirmed_id)
+    users           = list_users()
+    comments        = list_confirmed_comments(confirmed_id)
+    proposal_design = get_proposal_design(confirmed_id)
     return render_template(
         "confirmed_workspace.html",
         c=c, research=research, narrative=narrative,
         narrative_qa=narrative_qa, rfp_files=rfp_files,
-        can_edit=can_edit, is_ops=is_ops,
+        can_edit=can_edit, is_ops=is_ops, is_assignee=is_assignee,
         bid_info=bid_info, schedule=schedule, users=users,
-        comments=comments,
+        comments=comments, proposal_design=proposal_design,
     )
 
 
@@ -5471,10 +5476,12 @@ def nara_users():
 @login_required
 def api_team_members():
     current_user = session.get("username")
+    exclude = [current_user] + list(FEEDBACK_EXCLUDE_USERS)
+    ph = ",".join("?" * len(exclude))
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT id, username FROM users WHERE username != ? ORDER BY username",
-            (current_user,)
+            f"SELECT id, username FROM users WHERE username NOT IN ({ph}) ORDER BY username",
+            exclude
         ).fetchall()
     return jsonify([{"id": r["id"], "username": r["username"], "display_name": r["username"]} for r in rows])
 
@@ -5500,6 +5507,9 @@ def nara_request_feedback(confirmed_id):
     sent = 0
     for uid in user_ids:
         try:
+            user = get_user_by_id(int(uid))
+            if user and user.get("username") in FEEDBACK_EXCLUDE_USERS:
+                continue
             create_notification(int(uid), title, msg, link)
             sent += 1
         except Exception:
