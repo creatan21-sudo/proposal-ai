@@ -78,6 +78,15 @@ tr.sch-editing .sch-act-view{display:none !important;}
 .nq-ta{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:vertical;font-family:inherit;line-height:1.6;}
 .nq-ta:focus{outline:none;border-color:#6366f1;}
 .nq-ro{background:#f9fafb;padding:10px 12px;border-radius:8px;font-size:13px;line-height:1.6;color:#374151;min-height:44px;white-space:pre-wrap;}
+.narrative-subtitle{font-size:13px;font-weight:700;color:#111827;margin-bottom:4px;}
+/* 코멘트 */
+.comment-list{display:flex;flex-direction:column;gap:10px;margin-bottom:14px;max-height:320px;overflow-y:auto;}
+.comment-item{background:#f9fafb;border-radius:8px;padding:10px 12px;}
+.comment-author{font-size:12px;font-weight:700;color:#4f46e5;}
+.comment-time{font-size:11px;color:#9ca3af;margin-left:6px;}
+.comment-body{font-size:13px;color:#374151;margin-top:4px;line-height:1.5;white-space:pre-wrap;}
+.comment-ta{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:none;font-family:inherit;}
+.comment-ta:focus{outline:none;border-color:#6366f1;}
 /* 일정 추가 모달 */
 .sch-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;}
 .sch-modal-overlay.open{display:flex;}
@@ -423,12 +432,16 @@ tr.sch-editing .sch-act-view{display:none !important;}
 
       {% if can_edit %}
       <div id="nq-view" style="display:{% if narrative_qa %}block{% else %}none{% endif %};">
-        {% for key, label in NQ_LABELS %}
-        <div class="nq-block">
-          <div class="nq-label">{{ label }}</div>
-          <div class="nq-ro" id="nq-ro-{{ key }}">{{ (narrative_qa or {}).get(key,'') or '(미작성)' }}</div>
+        <div id="narrative-paras">
+          {% for key, label in NQ_LABELS %}
+          {% if (narrative_qa or {}).get(key) %}
+          <div class="narrative-para" data-key="{{ key }}" style="margin-bottom:20px;">
+            <div class="narrative-subtitle"></div>
+            <div class="nq-ro" id="nq-ro-{{ key }}">{{ narrative_qa[key] }}</div>
+          </div>
+          {% endif %}
+          {% endfor %}
         </div>
-        {% endfor %}
         <div style="display:flex;justify-content:flex-end;margin-top:10px;">
           <button id="nq-fb-btn" class="btn btn-ghost btn-sm" style="display:none;" onclick="openNarrativeFbModal()">📣 피드백 요청</button>
         </div>
@@ -450,12 +463,16 @@ tr.sch-editing .sch-act-view{display:none !important;}
       </div>
       {% else %}
       {% if narrative_qa %}
-        {% for key, label in NQ_LABELS %}
-        <div class="nq-block">
-          <div class="nq-label">{{ label }}</div>
-          <div class="nq-ro">{{ narrative_qa.get(key,'') or '(미작성)' }}</div>
+        <div id="narrative-paras">
+          {% for key, label in NQ_LABELS %}
+          {% if narrative_qa.get(key) %}
+          <div class="narrative-para" data-key="{{ key }}" style="margin-bottom:20px;">
+            <div class="narrative-subtitle"></div>
+            <div class="nq-ro">{{ narrative_qa.get(key,'') }}</div>
+          </div>
+          {% endif %}
+          {% endfor %}
         </div>
-        {% endfor %}
       {% else %}
         <div style="text-align:center;padding:36px 20px;color:#9ca3af;">
           <div style="font-size:24px;">📋</div>
@@ -463,6 +480,28 @@ tr.sch-editing .sch-act-view{display:none !important;}
         </div>
       {% endif %}
       {% endif %}
+    </div>
+
+    <!-- 코멘트 -->
+    <div class="ws-card">
+      <div class="ws-card-title">💬 코멘트</div>
+      <div class="comment-list" id="comment-list">
+        {% if comments %}
+          {% for cm in comments %}
+          <div class="comment-item">
+            <span class="comment-author">{{ cm.author }}</span>
+            <span class="comment-time">{{ (cm.created_at or '')[:16] }}</span>
+            <div class="comment-body">{{ cm.content }}</div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div id="comment-empty" style="text-align:center;color:#9ca3af;font-size:13px;padding:16px 0;">아직 코멘트가 없습니다</div>
+        {% endif %}
+      </div>
+      <textarea id="comment-ta" class="comment-ta" rows="3" placeholder="코멘트를 입력하세요..."></textarea>
+      <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+        <button class="btn btn-primary" onclick="addComment()">등록</button>
+      </div>
     </div>
 
   </div><!-- /pane-narrative -->
@@ -548,11 +587,12 @@ document.addEventListener('DOMContentLoaded',()=>{
     const el=document.getElementById('rs-rfp-content');
     if(el) el.innerHTML=simpleMarkdown(RS_ANALYSIS);
   }
-  // 이미 저장된 내러티브가 있으면 피드백 요청 버튼 표시
-  const fbBtn=document.getElementById('nq-fb-btn');
-  if(fbBtn && document.getElementById('nq-view')?.style.display!=='none'){
-    const hasContent=[...document.querySelectorAll('.nq-ro')].some(el=>el.textContent.trim()&&el.textContent!=='(미작성)');
-    if(hasContent) fbBtn.style.display='inline-flex';
+  // 내러티브 소제목 로드 + 피드백 버튼 표시
+  const hasNarrativeContent=document.querySelectorAll('#narrative-paras .narrative-para').length>0;
+  if(hasNarrativeContent){
+    loadNarrativeSubtitles();
+    const fbBtn=document.getElementById('nq-fb-btn');
+    if(fbBtn) fbBtn.style.display='inline-flex';
   }
 });
 
@@ -637,14 +677,37 @@ async function saveNarrative(){
   keys.forEach(k=>{const el=document.getElementById(`nq-ta-${k}`);if(el)data[k]=el.value.trim();});
   const r=await fetch(`/nara/confirmed/${CID}/narrative`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:JSON.stringify(data)})});
   const d=await r.json();
-  if(d.ok){
-    showToast('저장되었습니다');
-    keys.forEach(k=>{const ro=document.getElementById(`nq-ro-${k}`);if(ro)ro.textContent=data[k]||'(미작성)';});
-    document.getElementById('nq-view').style.display='block';
-    document.getElementById('nq-edit').style.display='none';
-    const fbBtn=document.getElementById('nq-fb-btn');
-    if(fbBtn) fbBtn.style.display='inline-flex';
-  } else showToast(d.error||'저장 실패',false);
+  if(d.ok){ showToast('저장되었습니다'); setTimeout(()=>location.href=location.pathname+'?tab=narrative', 800); }
+  else showToast(d.error||'저장 실패',false);
+}
+async function loadNarrativeSubtitles(){
+  const paras=document.querySelectorAll('#narrative-paras .narrative-para');
+  if(!paras.length) return;
+  const answers=Array.from(paras).map(p=>p.querySelector('.nq-ro')?.textContent?.trim()||'');
+  try{
+    const r=await fetch('/narrative/summarize',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({answers})});
+    const d=await r.json();
+    if(d.ok&&d.subtitles){
+      paras.forEach((p,i)=>{ const sub=d.subtitles[i]; if(sub) p.querySelector('.narrative-subtitle').textContent=sub; });
+    }
+  }catch(e){ console.warn('소제목 로드 실패:',e); }
+}
+async function addComment(){
+  const ta=document.getElementById('comment-ta');
+  const content=ta.value.trim();
+  if(!content){ showToast('내용을 입력하세요',false); return; }
+  const r=await fetch(`/nara/confirmed/${CID}/comment`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content})});
+  const d=await r.json();
+  if(!d.ok){ showToast(d.error||'등록 실패',false); return; }
+  const empty=document.getElementById('comment-empty');
+  if(empty) empty.remove();
+  const now=new Date().toISOString().slice(0,16).replace('T',' ');
+  const div=document.createElement('div');
+  div.className='comment-item';
+  div.innerHTML=`<span class="comment-author">{{ session.get('username','') }}</span><span class="comment-time">${now}</span><div class="comment-body">${_esc(content)}</div>`;
+  const list=document.getElementById('comment-list');
+  list.appendChild(div); list.scrollTop=list.scrollHeight;
+  ta.value=''; showToast('등록되었습니다');
 }
 /* ── 피드백 요청 모달 ── */
 function openNarrativeFbModal(){

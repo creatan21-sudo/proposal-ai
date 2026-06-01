@@ -5387,13 +5387,15 @@ def confirmed_workspace(confirmed_id):
     schedule = get_or_create_default_schedules(
         confirmed_id, c.get("bid_clse_dt", "") or ""
     )
-    users = list_users()
+    users    = list_users()
+    comments = list_confirmed_comments(confirmed_id)
     return render_template(
         "confirmed_workspace.html",
         c=c, research=research, narrative=narrative,
         narrative_qa=narrative_qa, rfp_files=rfp_files,
         can_edit=can_edit, is_ops=is_ops,
         bid_info=bid_info, schedule=schedule, users=users,
+        comments=comments,
     )
 
 
