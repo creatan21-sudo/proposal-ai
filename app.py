@@ -2032,6 +2032,34 @@ def admin_change_role(uid):
     return redirect(url_for("admin"))
 
 
+@app.route("/admin/purge_user", methods=["POST"])
+@login_required
+def purge_user():
+    """특정 사용자가 생성한 모든 데이터 삭제 (admin만)"""
+    if not session.get('is_admin'):
+        return jsonify({"ok": False, "error": "권한 없음"})
+
+    data = request.get_json() or {}
+    username = data.get('username', '').strip()
+    if not username:
+        return jsonify({"ok": False, "error": "username 필요"})
+
+    from database.db import get_connection
+    with get_connection() as conn:
+        conn.execute("DELETE FROM nara_candidates WHERE registered_by=?", (username,))
+        conn.execute("DELETE FROM nara_pickups WHERE registered_by=?", (username,))
+        conn.execute("DELETE FROM confirmed_comments WHERE author=?", (username,))
+        conn.execute("DELETE FROM confirmed_narratives WHERE updated_by=?", (username,))
+        conn.execute("""
+            DELETE FROM notifications WHERE user_id = (
+                SELECT id FROM users WHERE username=?
+            )
+        """, (username,))
+        conn.execute("DELETE FROM confirmed_rfp_files WHERE uploaded_by=?", (username,))
+
+    return jsonify({"ok": True, "message": f"{username} 데이터 삭제 완료"})
+
+
 @app.route("/my/change-password", methods=["POST"])
 @login_required
 def my_change_password():
