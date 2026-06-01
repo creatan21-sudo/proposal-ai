@@ -4498,18 +4498,44 @@ def set_result_route(confirmed_id):
 def nara_confirmed_delete(confirmed_id):
     """확정 과업 개별 삭제 (admin/operator만). FK 순서 cascade."""
     if session.get("role") not in ("admin", "operator"):
-        return jsonify({"ok": False, "error": "권한 없음"}), 403
-    from database.db import get_connection as _gc
-    with _gc() as conn:
-        for table in ["proposal_design", "confirmed_research", "confirmed_narratives",
-                      "confirmed_comments", "confirmed_schedule", "confirmed_bid_info",
-                      "confirmed_rfp_files"]:
-            try:
-                conn.execute(f"DELETE FROM {table} WHERE confirmed_id=?", (confirmed_id,))
-            except Exception:
-                pass
-        conn.execute("DELETE FROM nara_confirmed WHERE id=?", (confirmed_id,))
-    return jsonify({"success": True, "deleted_id": confirmed_id})
+        return jsonify({"success": False, "error": "권한 없음"}), 403
+
+    print(f"[delete] confirmed_id={confirmed_id} by={session.get('username')}")
+    fk_tables = [
+        "proposal_design",
+        "confirmed_research",
+        "confirmed_narratives",
+        "confirmed_comments",
+        "confirmed_schedule",
+        "confirmed_bid_info",
+        "confirmed_rfp_files",
+    ]
+    try:
+        from database.db import get_connection as _gc
+        with _gc() as conn:
+            for table in fk_tables:
+                try:
+                    result = conn.execute(
+                        f"DELETE FROM {table} WHERE confirmed_id=?", (confirmed_id,)
+                    )
+                    print(f"[delete]   {table}: {result.rowcount}행 삭제")
+                except Exception as e:
+                    print(f"[delete]   {table}: 스킵 ({e})")
+
+            print(f"[delete]   nara_confirmed id={confirmed_id} 삭제 시도")
+            result = conn.execute(
+                "DELETE FROM nara_confirmed WHERE id=?", (confirmed_id,)
+            )
+            print(f"[delete]   nara_confirmed: {result.rowcount}행 삭제")
+            if result.rowcount == 0:
+                return jsonify({"success": False, "error": f"id={confirmed_id} 레코드 없음"}), 404
+
+        print(f"[delete] 완료: confirmed_id={confirmed_id}")
+        return jsonify({"success": True, "deleted_id": confirmed_id})
+
+    except Exception as e:
+        print(f"[delete] 오류: confirmed_id={confirmed_id} {e}")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/nara/confirmed/<int:confirmed_id>")
