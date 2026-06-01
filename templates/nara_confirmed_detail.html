@@ -531,7 +531,7 @@ tr.sch-editing .sch-act-view{display:none !important;}
     {% endif %}
 
     <!-- 코멘트 -->
-    <div style="margin-top:24px;border-top:1px solid #e5e7eb;padding-top:18px;">
+    <div style="margin-top:24px;border-top:1px solid #e5e7eb;padding-top:18px;" id="tab-proposal_design-anchor">
       <div style="font-size:14px;font-weight:700;color:#374151;margin-bottom:14px;">💬 코멘트</div>
       <div class="comment-list" id="comment-list">
         {% if comments %}
@@ -554,6 +554,40 @@ tr.sch-editing .sch-act-view{display:none !important;}
     </div>
   </div>
 
+</div>
+
+<!-- ④ 제안서 설계 -->
+<div class="card" id="section-proposal-design" style="margin-top:20px;">
+  <div class="section-title" style="display:flex;justify-content:space-between;align-items:center;">
+    <span>✏️ 제안서 설계</span>
+    {% if can_edit %}
+    <div style="display:flex;gap:6px;align-items:center;">
+      <span id="pd-autosave-hint" style="font-size:11px;color:#9ca3af;"></span>
+      <button class="btn btn-ghost btn-sm" id="pd-feedback-btn" onclick="requestPdFeedback()">🤖 AI 피드백 받기</button>
+    </div>
+    {% endif %}
+  </div>
+  {% if can_edit %}
+  <textarea id="pd-content" class="narrative-ta" rows="20"
+    placeholder="제안서 구성, 차별화 전략, 핵심 메시지, 슬라이드 구성안 등 자유롭게 작성하세요"
+    oninput="schedulePdSave()"
+    style="min-height:300px;">{{ (proposal_design.content if proposal_design else '') }}</textarea>
+  {% else %}
+  <div class="narrative-ro" style="min-height:120px;white-space:pre-wrap;">{{ (proposal_design.content if proposal_design else '') or '제안서 설계 내용이 없습니다.' }}</div>
+  {% endif %}
+  {% if proposal_design and proposal_design.ai_feedback %}
+  <div id="pd-feedback-area" style="margin-top:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 16px;">
+    <div style="font-size:12px;font-weight:600;color:#15803d;margin-bottom:8px;">🤖 AI 피드백
+      <span style="font-weight:400;color:#9ca3af;margin-left:8px;">{{ (proposal_design.updated_at or '')[:16] }}</span>
+    </div>
+    <div style="font-size:13px;color:#374151;white-space:pre-wrap;line-height:1.7;" id="pd-feedback-text">{{ proposal_design.ai_feedback }}</div>
+  </div>
+  {% else %}
+  <div id="pd-feedback-area" style="display:none;margin-top:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 16px;">
+    <div style="font-size:12px;font-weight:600;color:#15803d;margin-bottom:8px;">🤖 AI 피드백</div>
+    <div style="font-size:13px;color:#374151;white-space:pre-wrap;line-height:1.7;" id="pd-feedback-text"></div>
+  </div>
+  {% endif %}
 </div>
 
 <!-- 일정 추가 모달 -->
@@ -624,6 +658,52 @@ const USERS  = {{ users | tojson }};
 const TODAY  = new Date().toISOString().slice(0,10);
 const CAN_EDIT = {{ 'true' if can_edit else 'false' }};
 const CAN_EDIT_NARRATIVE = {{ 'true' if can_edit_narrative else 'false' }};
+
+/* ── 제안서 설계 ── */
+let _pdTimer = null;
+function schedulePdSave(){
+  clearTimeout(_pdTimer);
+  document.getElementById('pd-autosave-hint').textContent = '입력 중...';
+  _pdTimer = setTimeout(savePd, 3000);
+}
+async function savePd(){
+  const ta = document.getElementById('pd-content');
+  if(!ta) return;
+  const content = ta.value;
+  const r = await fetch(`/nara/confirmed/${CID}/proposal_design`,{
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({content})
+  });
+  const d = await r.json();
+  const hint = document.getElementById('pd-autosave-hint');
+  if(d.ok){ hint.textContent = '저장됨 ✓'; setTimeout(()=>{ if(hint.textContent==='저장됨 ✓') hint.textContent=''; }, 3000); }
+  else hint.textContent = '저장 실패';
+}
+async function requestPdFeedback(){
+  await savePd();
+  const btn = document.getElementById('pd-feedback-btn');
+  btn.disabled = true; btn.textContent = '⏳ 분석 중...';
+  try{
+    const r = await fetch(`/nara/confirmed/${CID}/proposal_design/feedback`,{method:'POST'});
+    const d = await r.json();
+    if(d.ok){
+      const area = document.getElementById('pd-feedback-area');
+      document.getElementById('pd-feedback-text').textContent = d.feedback;
+      area.style.display = 'block';
+      area.scrollIntoView({behavior:'smooth', block:'nearest'});
+      showToast('AI 피드백이 생성되었습니다');
+    } else showToast(d.error||'피드백 생성 실패', false);
+  }catch(e){ showToast('오류: '+e, false); }
+  btn.disabled = false; btn.textContent = '🤖 AI 피드백 받기';
+}
+// URL ?tab=proposal_design 시 자동 스크롤
+(function(){
+  const params = new URLSearchParams(location.search);
+  if(params.get('tab') === 'proposal_design'){
+    const el = document.getElementById('section-proposal-design');
+    if(el) setTimeout(()=>el.scrollIntoView({behavior:'smooth'}), 300);
+  }
+})();
 
 function showToast(msg, ok=true){
   const t=document.getElementById('toast');

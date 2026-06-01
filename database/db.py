@@ -465,6 +465,15 @@ def init_db() -> None:
                 completed_at    TEXT DEFAULT '',
                 updated_by      TEXT DEFAULT ''
             );
+
+            CREATE TABLE IF NOT EXISTS proposal_design (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                confirmed_id INTEGER NOT NULL UNIQUE,
+                content      TEXT DEFAULT '',
+                ai_feedback  TEXT DEFAULT '',
+                created_at   TEXT DEFAULT (datetime('now','localtime')),
+                updated_at   TEXT DEFAULT (datetime('now','localtime'))
+            );
         """)
         # ── 기본 키워드 삽입 (최초 실행 시 또는 누락 시) ──
         _DEFAULT_KEYWORDS = [
@@ -3039,4 +3048,39 @@ def save_confirmed_research(confirmed_id: int, status: str,
                 "(confirmed_id, status, rfp_analysis, research_result, started_at, completed_at, updated_by) "
                 "VALUES (?,?,?,?,?,?,?)",
                 (confirmed_id, status, rfp_analysis, research_result, started, completed, updated_by),
+            )
+
+
+def get_proposal_design(confirmed_id: int) -> "dict | None":
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM proposal_design WHERE confirmed_id=?", (confirmed_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def save_proposal_design(confirmed_id: int, content: str,
+                          ai_feedback: str = None) -> None:
+    from datetime import datetime as _dt
+    now = _dt.now().strftime("%Y-%m-%d %H:%M:%S")
+    with get_connection() as conn:
+        existing = conn.execute(
+            "SELECT id FROM proposal_design WHERE confirmed_id=?", (confirmed_id,)
+        ).fetchone()
+        if existing:
+            if ai_feedback is not None:
+                conn.execute(
+                    "UPDATE proposal_design SET content=?, ai_feedback=?, updated_at=? WHERE confirmed_id=?",
+                    (content, ai_feedback, now, confirmed_id),
+                )
+            else:
+                conn.execute(
+                    "UPDATE proposal_design SET content=?, updated_at=? WHERE confirmed_id=?",
+                    (content, now, confirmed_id),
+                )
+        else:
+            conn.execute(
+                "INSERT INTO proposal_design (confirmed_id, content, ai_feedback, created_at, updated_at) "
+                "VALUES (?,?,?,?,?)",
+                (confirmed_id, content, ai_feedback or '', now, now),
             )

@@ -91,7 +91,8 @@ from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           save_confirmed_rfp_file, list_confirmed_rfp_files,
                           get_confirmed_research, save_confirmed_research,
                           get_or_create_default_schedules,
-                          request_completion, approve_completion, set_final_result)
+                          request_completion, approve_completion, set_final_result,
+                          get_proposal_design, save_proposal_design)
 
 app = Flask(__name__)
 # Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
@@ -137,13 +138,13 @@ def _safe_upload_name(original_filename: str, forced_ext: str) -> str:
 
     - secure_filename()은 한글 등 비ASCII 문자를 제거해 확장자가 사라질 수 있음.
     - 확장자를 forced_ext(소문자)로 강제 통일하고, base만 secure_filename으로 처리.
+    - UUID 8자리 접두사로 동시 업로드 시 파일명 충돌 방지.
     """
-    # base 부분(확장자 제외)만 안전하게 처리
-    stem = Path(original_filename).stem  # 확장자 없는 파일명
+    stem = Path(original_filename).stem
     safe_stem = secure_filename(stem)
     if not safe_stem:
         safe_stem = "upload"
-    return safe_stem + forced_ext  # forced_ext는 항상 소문자
+    return uuid.uuid4().hex[:8] + "_" + safe_stem + forced_ext
 
 # ── 인메모리 파이프라인 세션
 _sessions: dict = {}
@@ -737,7 +738,8 @@ def ongoing():
                    n.content AS narrative_content,
                    COALESCE(rfp.cnt, 0) AS rfp_count,
                    COALESCE(sch.cnt, 0) AS schedule_count,
-                   COALESCE(res.status, 'pending') AS research_status
+                   COALESCE(res.status, 'pending') AS research_status,
+                   CASE WHEN pd.confirmed_id IS NOT NULL THEN 1 ELSE 0 END AS has_proposal_design
             FROM nara_confirmed cf
             LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
             LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
@@ -750,6 +752,8 @@ def ongoing():
                        FROM confirmed_schedule GROUP BY confirmed_id) sch
                    ON sch.confirmed_id = cf.id
             LEFT JOIN confirmed_research res ON res.confirmed_id = cf.id
+            LEFT JOIN (SELECT confirmed_id FROM proposal_design WHERE content != '') pd
+                   ON pd.confirmed_id = cf.id
             LEFT JOIN nara_results r ON r.confirmed_id = cf.id
             WHERE r.id IS NULL
               AND (cf.final_result IS NULL OR cf.final_result NOT IN ('won','lost'))
@@ -792,6 +796,12 @@ def ongoing():
                 "icon": "✍️",
                 "label": "내러티브 미작성",
                 "link": f"/nara/confirmed/{c['id']}/workspace?tab=narrative",
+            })
+        if c.get("has_proposal_design"):
+            incomplete.append({
+                "icon": "✏️",
+                "label": "제안서 설계 작성됨",
+                "link": f"/nara/confirmed/{c['id']}?tab=proposal_design",
             })
 
         c["incomplete"] = incomplete
@@ -2285,6 +2295,16 @@ def ppt_start():
     use_gamma = (mode == "gamma") and bool(gamma_key)
     print(f"[PPT] mode={mode} use_gamma={use_gamma}")
 
+    # 동일 case_id 중복 실행 방어
+    with _ppt_jobs_lock:
+        _running_ppt = next(
+            (jid for jid, j in _ppt_jobs.items()
+             if j.get("status") == "running" and j.get("case_id") == case_id),
+            None,
+        )
+    if _running_ppt:
+        return jsonify({"ok": False, "error": "이미 PPT 생성 중입니다"}), 409
+
     job_id  = str(uuid.uuid4())
     case    = detail["case"]
     user_id = session["user_id"]
@@ -2299,6 +2319,7 @@ def ppt_start():
     with _ppt_jobs_lock:
         _ppt_jobs[job_id] = {
             "status":     "running",
+            "case_id":    case_id,
             "events":     [],
             "pptx_bytes": None,
             "filename":   fname,
@@ -4343,14 +4364,16 @@ def nara_confirmed_detail(confirmed_id):
                 narrative_qa = parsed
         except Exception:
             pass
-    rfp_files  = list_confirmed_rfp_files(confirmed_id)
-    research   = get_confirmed_research(confirmed_id)
+    rfp_files       = list_confirmed_rfp_files(confirmed_id)
+    research        = get_confirmed_research(confirmed_id)
+    proposal_design = get_proposal_design(confirmed_id)
     from datetime import datetime as _dt
     return render_template("nara_confirmed_detail.html",
                            c=c, narrative=narrative, narrative_qa=narrative_qa,
                            comments=comments,
                            schedule=schedule, bid_info=bid_info,
                            rfp_files=rfp_files, research=research,
+                           proposal_design=proposal_design,
                            users=users, can_edit=can_edit, is_ops=is_ops,
                            can_edit_narrative=can_edit_narrative,
                            now=_dt.now().strftime("%Y-%m-%d %H:%M"))
@@ -4370,6 +4393,71 @@ def nara_confirmed_narrative_save(confirmed_id):
     content = (data.get("content") or "").strip()
     save_confirmed_narrative(confirmed_id, content, session["username"])
     return jsonify({"ok": True})
+
+
+@app.route("/nara/confirmed/<int:confirmed_id>/proposal_design", methods=["GET", "POST"])
+@login_required
+def nara_proposal_design(confirmed_id):
+    c = get_confirmed_by_id(confirmed_id)
+    if not c:
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    if request.method == "GET":
+        pd = get_proposal_design(confirmed_id)
+        return jsonify({"ok": True, "proposal_design": pd})
+    data    = request.get_json(force=True) or {}
+    content = (data.get("content") or "")
+    save_proposal_design(confirmed_id, content)
+    return jsonify({"ok": True})
+
+
+@app.route("/nara/confirmed/<int:confirmed_id>/proposal_design/feedback", methods=["POST"])
+@login_required
+def nara_proposal_design_feedback(confirmed_id):
+    c = get_confirmed_by_id(confirmed_id)
+    if not c:
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    is_ops      = session.get("role") in ("admin", "operator")
+    is_assignee = session.get("username") == c.get("assignee")
+    if not (is_ops or is_assignee):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    pd = get_proposal_design(confirmed_id)
+    content = (pd or {}).get("content", "").strip()
+    if not content:
+        return jsonify({"ok": False, "error": "제안서 설계 내용을 먼저 작성하세요"}), 400
+    narrative = get_confirmed_narrative(confirmed_id)
+    narrative_text = ""
+    if narrative and narrative.get("content"):
+        try:
+            import json as _j
+            nq = _j.loads(narrative["content"])
+            if isinstance(nq, dict):
+                narrative_text = "\n".join(f"- {v}" for v in nq.values() if v)
+        except Exception:
+            narrative_text = narrative["content"]
+    research = get_confirmed_research(confirmed_id)
+    rfp_analysis = (research or {}).get("rfp_analysis", "") or ""
+    prompt = (
+        f"당신은 공공입찰 제안서 전문 컨설턴트입니다.\n\n"
+        f"과업명: {c.get('bid_ntce_nm','')}\n발주처: {c.get('ntce_instt_nm','')}\n\n"
+        f"[제안서 설계안]\n{content}\n\n"
+        + (f"[전략 내러티브]\n{narrative_text}\n\n" if narrative_text else "")
+        + (f"[RFP 분석]\n{rfp_analysis[:2000]}\n\n" if rfp_analysis else "")
+        + "다음 관점에서 구체적인 피드백을 작성하세요 (각 항목 3~5문장):\n"
+        + "## 1. 평가위원 시각\n## 2. 경쟁력 분석\n## 3. 논리 흐름\n## 4. 보완점 및 제안"
+    )
+    try:
+        import anthropic as _ant
+        resp = _ant.Anthropic().messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=2000,
+            messages=[{"role": "user", "content": prompt}],
+            timeout=90,
+        )
+        feedback = resp.content[0].text.strip()
+        save_proposal_design(confirmed_id, content, ai_feedback=feedback)
+        return jsonify({"ok": True, "feedback": feedback})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route("/nara/confirmed/<int:confirmed_id>/comment", methods=["POST"])
