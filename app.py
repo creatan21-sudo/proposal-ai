@@ -2149,6 +2149,69 @@ def purge_user():
                     "message": f"{username} 영향 데이터 미리보기 (실제 삭제 안 됨)"})
 
 
+@app.route("/admin/purge_test_data", methods=["POST"])
+@login_required
+def purge_test_data():
+    """임시 라우트 — test 계정 데이터 삭제 및 스키마 확인."""
+    if session.get("username") != "admin":
+        return jsonify({"error": "unauthorized"}), 403
+
+    from database.db import get_connection as _gc
+    with _gc() as conn:
+        tables = [r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        ).fetchall()]
+
+        schema = {}
+        for t in tables:
+            cols = [r[1] for r in conn.execute(f"PRAGMA table_info({t})").fetchall()]
+            schema[t] = cols
+
+        test_user = conn.execute("SELECT id FROM users WHERE username='test'").fetchone()
+        test_uid  = test_user[0] if test_user else None
+
+        cf_ids = []
+        if "nara_confirmed" in tables:
+            cf_ids = [r[0] for r in conn.execute(
+                "SELECT id FROM nara_confirmed WHERE confirmed_by='test' OR assignee='test'"
+            ).fetchall()]
+
+        counts = {}
+        if "nara_confirmed" in tables:
+            counts["nara_confirmed"] = len(cf_ids)
+
+        fk_tables = ["proposal_design","confirmed_research","confirmed_narratives",
+                     "confirmed_schedule","confirmed_bid_info","confirmed_rfp_files","confirmed_comments"]
+        for t in fk_tables:
+            if t in tables and cf_ids:
+                ph = ",".join("?"*len(cf_ids))
+                counts[t] = conn.execute(
+                    f"SELECT COUNT(*) FROM {t} WHERE confirmed_id IN ({ph})", cf_ids
+                ).fetchone()[0]
+
+        for t, col in [("nara_candidates","registered_by"),("nara_pickups","registered_by"),
+                       ("confirmed_comments","author"),("confirmed_narratives","updated_by"),
+                       ("confirmed_rfp_files","uploaded_by")]:
+            if t in tables:
+                counts[f"{t}_{col}"] = conn.execute(
+                    f"SELECT COUNT(*) FROM {t} WHERE {col}='test'"
+                ).fetchone()[0]
+
+        if test_uid and "notifications" in tables:
+            counts["notifications"] = conn.execute(
+                "SELECT COUNT(*) FROM notifications WHERE user_id=?", (test_uid,)
+            ).fetchone()[0]
+
+        return jsonify({
+            "test_user_id": test_uid,
+            "confirmed_ids": cf_ids,
+            "counts": counts,
+            "schema_sample": {k: v for k, v in schema.items()
+                              if any(x in k for x in
+                                     ["confirmed","candidate","pickup","proposal","notif","user"])},
+        })
+
+
 @app.route("/my/change-password", methods=["POST"])
 @login_required
 def my_change_password():
