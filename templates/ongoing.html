@@ -33,6 +33,8 @@
 .og-icon-btn:hover .tip{display:block;}
 
 .og-empty{text-align:center;padding:48px 0;color:#9ca3af;font-size:14px;}
+.badge-status{display:inline-block;font-size:11px;padding:2px 7px;border-radius:10px;margin-left:4px;font-weight:500;cursor:pointer;background:#e8f5e9;color:#2e7d32;text-decoration:none;vertical-align:middle;}
+.badge-status:hover{background:#c8e6c9;}
 </style>
 {% endblock %}
 {% block content %}
@@ -55,9 +57,21 @@
         <div class="og-card-left">
           <div class="og-card-name" title="{{ t.bid_ntce_nm or '-' }}">
             {{ t.bid_ntce_nm or '-' }}
-            {% if t.research_status == 'done' %}
-            <span title="RFP&amp;리서치 완료" style="cursor:pointer;font-size:14px;vertical-align:middle;margin-left:4px;"
-              onclick="event.stopPropagation();location.href='/nara/confirmed/{{ t.id }}?tab=research'">🔍</span>
+            {% if t.badge_rfp %}
+            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=research"
+               onclick="event.stopPropagation();" title="RFP 등록됨">RFP분석</a>
+            {% endif %}
+            {% if t.badge_research %}
+            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=research"
+               onclick="event.stopPropagation();" title="리서치 완료">리서치</a>
+            {% endif %}
+            {% if t.badge_narrative %}
+            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=narrative"
+               onclick="event.stopPropagation();" title="내러티브 작성됨">내러티브</a>
+            {% endif %}
+            {% if t.badge_proposal %}
+            <a class="badge-status" href="/nara/confirmed/{{ t.id }}?tab=proposal_design"
+               onclick="event.stopPropagation();" title="제안서 설계 작성됨">제안설계</a>
             {% endif %}
           </div>
           <div class="og-card-meta">
@@ -98,9 +112,21 @@
         <div class="og-card-left">
           <div class="og-card-name" title="{{ t.bid_ntce_nm or '-' }}">
             {{ t.bid_ntce_nm or '-' }}
-            {% if t.research_status == 'done' %}
-            <span title="RFP&amp;리서치 완료" style="cursor:pointer;font-size:14px;vertical-align:middle;margin-left:4px;"
-              onclick="event.stopPropagation();location.href='/nara/confirmed/{{ t.id }}?tab=research'">🔍</span>
+            {% if t.badge_rfp %}
+            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=research"
+               onclick="event.stopPropagation();" title="RFP 등록됨">RFP분석</a>
+            {% endif %}
+            {% if t.badge_research %}
+            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=research"
+               onclick="event.stopPropagation();" title="리서치 완료">리서치</a>
+            {% endif %}
+            {% if t.badge_narrative %}
+            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=narrative"
+               onclick="event.stopPropagation();" title="내러티브 작성됨">내러티브</a>
+            {% endif %}
+            {% if t.badge_proposal %}
+            <a class="badge-status" href="/nara/confirmed/{{ t.id }}?tab=proposal_design"
+               onclick="event.stopPropagation();" title="제안서 설계 작성됨">제안설계</a>
             {% endif %}
           </div>
           <div class="og-card-meta">

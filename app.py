@@ -806,6 +806,12 @@ def ongoing():
 
         c["incomplete"] = incomplete
         c["can_edit"]   = can_edit
+        # 완료 상태 뱃지 (done인 것만)
+        c["badge_rfp"]      = c["rfp_count"] > 0
+        c["badge_research"] = c.get("research_status") == "done"
+        c["badge_narrative"]= bool(c.get("narrative_content") and
+                                   c["narrative_content"] not in ("{}", ""))
+        c["badge_proposal"] = bool(c.get("has_proposal_design"))
         tasks.append(c)
 
     my_tasks  = [t for t in tasks if t.get("assignee") == username]
@@ -2060,29 +2066,87 @@ def admin_change_role(uid):
 @app.route("/admin/purge_user", methods=["POST"])
 @login_required
 def purge_user():
-    """특정 사용자가 생성한 모든 데이터 삭제 (admin만)"""
+    """특정 사용자가 생성한 모든 데이터 삭제 (admin만). FK 순서 준수."""
     if not session.get('is_admin'):
         return jsonify({"ok": False, "error": "권한 없음"})
 
     data = request.get_json() or {}
     username = data.get('username', '').strip()
+    dry_run  = bool(data.get('dry_run', False))
     if not username:
         return jsonify({"ok": False, "error": "username 필요"})
 
     from database.db import get_connection
-    with get_connection() as conn:
-        conn.execute("DELETE FROM nara_candidates WHERE registered_by=?", (username,))
-        conn.execute("DELETE FROM nara_pickups WHERE registered_by=?", (username,))
-        conn.execute("DELETE FROM confirmed_comments WHERE author=?", (username,))
-        conn.execute("DELETE FROM confirmed_narratives WHERE updated_by=?", (username,))
-        conn.execute("""
-            DELETE FROM notifications WHERE user_id = (
-                SELECT id FROM users WHERE username=?
-            )
-        """, (username,))
-        conn.execute("DELETE FROM confirmed_rfp_files WHERE uploaded_by=?", (username,))
 
-    return jsonify({"ok": True, "message": f"{username} 데이터 삭제 완료"})
+    counts = {}
+    with get_connection() as conn:
+        # 해당 유저가 confirmed_by 또는 assignee인 nara_confirmed id 목록
+        cf_ids = [r[0] for r in conn.execute(
+            "SELECT id FROM nara_confirmed WHERE confirmed_by=? OR assignee=?",
+            (username, username)
+        ).fetchall()]
+
+        def _count(table, where, params):
+            try:
+                return conn.execute(f"SELECT COUNT(*) FROM {table} WHERE {where}", params).fetchone()[0]
+            except Exception:
+                return 0
+
+        def _delete(table, where, params):
+            try:
+                conn.execute(f"DELETE FROM {table} WHERE {where}", params)
+                return conn.execute(f"SELECT changes()").fetchone()[0]
+            except Exception:
+                return 0
+
+        # ── 영향 row 수 먼저 계산 ──
+        if cf_ids:
+            ph = ",".join("?" * len(cf_ids))
+            counts["proposal_design"]      = _count("proposal_design",    f"confirmed_id IN ({ph})", cf_ids)
+            counts["confirmed_research"]   = _count("confirmed_research",  f"confirmed_id IN ({ph})", cf_ids)
+            counts["confirmed_narratives"] = _count("confirmed_narratives",f"confirmed_id IN ({ph})", cf_ids)
+            counts["confirmed_schedule"]   = _count("confirmed_schedule",  f"confirmed_id IN ({ph})", cf_ids)
+            counts["confirmed_bid_info"]   = _count("confirmed_bid_info",  f"confirmed_id IN ({ph})", cf_ids)
+            counts["confirmed_rfp_files"]  = _count("confirmed_rfp_files", f"confirmed_id IN ({ph})", cf_ids)
+            counts["confirmed_comments"]   = _count("confirmed_comments",  f"confirmed_id IN ({ph})", cf_ids)
+            counts["nara_confirmed"]       = len(cf_ids)
+        counts["nara_candidates"]  = _count("nara_candidates", "registered_by=?", (username,))
+        counts["nara_pickups"]     = _count("nara_pickups",    "registered_by=?", (username,))
+        counts["confirmed_comments_author"] = _count("confirmed_comments", "author=?", (username,))
+        counts["confirmed_narratives_upd"]  = _count("confirmed_narratives", "updated_by=?", (username,))
+        counts["confirmed_rfp_files_upd"]   = _count("confirmed_rfp_files",  "uploaded_by=?", (username,))
+        counts["notifications"] = _count("notifications",
+            "user_id=(SELECT id FROM users WHERE username=?)", (username,))
+
+        print(f"[purge_user] username={username!r} dry_run={dry_run}")
+        for k, v in counts.items():
+            print(f"  {k}: {v}건")
+
+        if not dry_run:
+            deleted = {}
+            if cf_ids:
+                ph = ",".join("?" * len(cf_ids))
+                deleted["proposal_design"]      = _delete("proposal_design",    f"confirmed_id IN ({ph})", cf_ids)
+                deleted["confirmed_research"]   = _delete("confirmed_research",  f"confirmed_id IN ({ph})", cf_ids)
+                deleted["confirmed_narratives"] = _delete("confirmed_narratives",f"confirmed_id IN ({ph})", cf_ids)
+                deleted["confirmed_schedule"]   = _delete("confirmed_schedule",  f"confirmed_id IN ({ph})", cf_ids)
+                deleted["confirmed_bid_info"]   = _delete("confirmed_bid_info",  f"confirmed_id IN ({ph})", cf_ids)
+                deleted["confirmed_rfp_files"]  = _delete("confirmed_rfp_files", f"confirmed_id IN ({ph})", cf_ids)
+                deleted["confirmed_comments"]   = _delete("confirmed_comments",  f"confirmed_id IN ({ph})", cf_ids)
+                deleted["nara_confirmed"]       = _delete("nara_confirmed", "id IN ("+ph+")", cf_ids)
+            deleted["nara_candidates"] = _delete("nara_candidates", "registered_by=?", (username,))
+            deleted["nara_pickups"]    = _delete("nara_pickups",    "registered_by=?", (username,))
+            _delete("confirmed_comments",  "author=?",    (username,))
+            _delete("confirmed_narratives","updated_by=?",(username,))
+            _delete("confirmed_rfp_files", "uploaded_by=?",(username,))
+            _delete("notifications",
+                "user_id=(SELECT id FROM users WHERE username=?)", (username,))
+            print(f"[purge_user] 삭제 완료: {deleted}")
+            return jsonify({"ok": True, "message": f"{username} 데이터 삭제 완료",
+                            "counts": counts, "deleted": deleted})
+
+    return jsonify({"ok": True, "dry_run": True, "counts": counts,
+                    "message": f"{username} 영향 데이터 미리보기 (실제 삭제 안 됨)"})
 
 
 @app.route("/my/change-password", methods=["POST"])
