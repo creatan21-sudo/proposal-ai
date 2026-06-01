@@ -2149,6 +2149,64 @@ def purge_user():
                     "message": f"{username} 영향 데이터 미리보기 (실제 삭제 안 됨)"})
 
 
+@app.route("/admin/delete_test", methods=["GET"])
+def delete_test():
+    """임시 라우트 — test 관련 데이터 전체 삭제 후 결과 반환."""
+    if not session.get("is_admin"):
+        return "unauthorized", 403
+
+    from database.db import get_connection as _gc
+    results = {}
+
+    with _gc() as conn:
+        tables = [r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        ).fetchall()]
+
+        test_cols = ["created_by", "username", "registered_by", "confirmed_by",
+                     "assignee", "assigned_to", "user", "updated_by", "author",
+                     "uploaded_by"]
+
+        for t in tables:
+            cols = [r[1] for r in conn.execute(f"PRAGMA table_info({t})").fetchall()]
+            matched = [c for c in cols if c in test_cols]
+            deleted = 0
+            for col in matched:
+                try:
+                    before = conn.execute(
+                        f"SELECT COUNT(*) FROM {t} WHERE {col}='test'"
+                    ).fetchone()[0]
+                    if before > 0:
+                        conn.execute(f"DELETE FROM {t} WHERE {col}='test'")
+                        deleted += before
+                except Exception:
+                    pass
+            if deleted:
+                results[t] = {"deleted": deleted}
+
+        # user_id FK (notifications 등)
+        test_user = conn.execute(
+            "SELECT id FROM users WHERE username='test'"
+        ).fetchone()
+        if test_user:
+            uid = test_user[0]
+            for t in tables:
+                cols = [r[1] for r in conn.execute(f"PRAGMA table_info({t})").fetchall()]
+                if "user_id" in cols:
+                    try:
+                        before = conn.execute(
+                            f"SELECT COUNT(*) FROM {t} WHERE user_id=?", (uid,)
+                        ).fetchone()[0]
+                        if before > 0:
+                            conn.execute(f"DELETE FROM {t} WHERE user_id=?", (uid,))
+                            results.setdefault(t, {})["deleted_by_uid"] = before
+                    except Exception:
+                        pass
+
+    return jsonify({"ok": True, "deleted": results,
+                    "message": "test 데이터 삭제 완료. 이 라우트를 이후 제거하세요."})
+
+
 @app.route("/admin/purge_test_data", methods=["POST"])
 @login_required
 def purge_test_data():
