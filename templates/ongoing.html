@@ -202,10 +202,11 @@ function closeDelModal(){ document.getElementById('del-modal').classList.remove(
 function confirmDelete(){
   if(!_delId) return;
   const cardId = _delId;
+  const activeTab = document.getElementById('tab-my')?.classList.contains('active') ? 'mine' : 'all';
   closeDelModal();
   fetch(`/nara/confirmed/${cardId}/delete`,{method:'POST'})
-    .then(()=>{ location.reload(); })
-    .catch(()=>{ location.reload(); });
+    .then(()=>{ location.href = location.pathname + '?tab=' + activeTab; })
+    .catch(()=>{ location.href = location.pathname + '?tab=' + activeTab; });
 }
 
 function switchTab(name){
@@ -214,5 +215,10 @@ function switchTab(name){
     document.getElementById('tab-'+t).classList.toggle('active',t===name);
   });
 }
+
+(function(){
+  const tab = new URLSearchParams(location.search).get('tab');
+  if(tab === 'all') switchTab('all');
+})();
 </script>
 {% endblock %}
