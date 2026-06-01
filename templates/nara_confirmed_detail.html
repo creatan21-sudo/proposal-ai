@@ -389,15 +389,30 @@ tr.sch-editing .sch-act-view{display:none !important;}
   <!-- 워크스페이스 링크 + RFP 파일 -->
   {% if can_edit %}
   <div class="card" style="background:#f0fdf4;border-color:#bbf7d0;">
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+    <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:10px;">
       <div>
-        <div style="font-size:14px;font-weight:700;color:#15803d;">📋 리서치 &amp; 내러티브 작성</div>
-        <div style="font-size:12px;color:#6b7280;margin-top:2px;">RFP 파일 업로드 → 자동 분석 → 전략 내러티브 작성</div>
+        <div style="font-size:14px;font-weight:700;color:#15803d;">📋 리서치 &amp; 내러티브</div>
+        <div style="font-size:12px;margin-top:4px;">
+          {% set rs = research or {} %}
+          {% if rs.status == 'done' %}
+          <span style="color:#059669;font-weight:600;">✅ 리서치 완료</span>
+          {% elif rs.status == 'running' %}
+          <span style="color:#2563eb;font-weight:600;">⏳ 분석중...</span>
+          {% else %}
+          <span style="color:#d97706;font-weight:600;">⚠️ 리서치 미실시</span>
+          {% endif %}
+        </div>
       </div>
-      <a href="/nara/confirmed/{{ c.id }}/workspace"
-         style="padding:8px 18px;background:#059669;color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;">
-        📋 리서치 &amp; 내러티브 작성 →
-      </a>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <a href="/nara/confirmed/{{ c.id }}/workspace?tab=research"
+           style="padding:8px 14px;background:#2563eb;color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;">
+          🔍 리서치 보기 →
+        </a>
+        <a href="/nara/confirmed/{{ c.id }}/workspace?tab=narrative"
+           style="padding:8px 14px;background:#059669;color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;">
+          ✍️ 내러티브 작성 →
+        </a>
+      </div>
     </div>
     {% if rfp_files %}
     <div style="margin-top:12px;border-top:1px solid #bbf7d0;padding-top:10px;">

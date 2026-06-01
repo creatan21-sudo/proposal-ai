@@ -69,7 +69,20 @@
         <a href="/profile" class="nav-user">{{ session.get('username') or session.get('name', '') }}</a>
       </nav>
     </div>
+    {% if path.startswith('/nara') or path.startswith('/ongoing') %}
+    <div class="sub-nav">
+      <div class="sub-nav-inner">
+        <a href="/nara" class="{{ 'active' if path == '/nara' else '' }}">📋 공고</a>
+        <a href="/nara/candidates" class="{{ 'active' if path == '/nara/candidates' else '' }}">⭐ 후보</a>
+        <a href="/nara/pickups" class="{{ 'active' if path == '/nara/pickups' else '' }}">📥 픽업</a>
+        <a href="/nara/confirmed" class="{{ 'active' if path.startswith('/nara/confirmed') else '' }}">✅ 확정</a>
+        <a href="/nara/results" class="{{ 'active' if path == '/nara/results' else '' }}">🏆 결과</a>
+        <a href="/ongoing" class="{{ 'active' if path.startswith('/ongoing') else '' }}">📁 기과업</a>
+      </div>
+    </div>
+    {% else %}
     {% block subnav %}{% endblock %}
+    {% endif %}
   </header>
   <!-- 알림 팝업 -->
   <div id="notif-popup" style="display:none;position:fixed;top:60px;right:20px;width:340px;background:#fff;border:1px solid #e5e7eb;border-radius:12px;box-shadow:0 8px 32px rgba(0,0,0,.15);z-index:8888;padding:16px;">

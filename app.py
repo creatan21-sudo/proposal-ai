@@ -760,7 +760,13 @@ def ongoing():
                 "label": "RFP 미등록",
                 "link": f"/nara/confirmed/{c['id']}/workspace?tab=research",
             })
-        if c.get("research_status") not in ("done",):
+        if c.get("research_status") == "done":
+            incomplete.append({
+                "icon": "🔍",
+                "label": "리서치 결과 보기",
+                "link": f"/nara/confirmed/{c['id']}/workspace?tab=research",
+            })
+        else:
             incomplete.append({
                 "icon": "🔍",
                 "label": "리서치 미실시",
@@ -4329,12 +4335,13 @@ def nara_confirmed_detail(confirmed_id):
         except Exception:
             pass
     rfp_files  = list_confirmed_rfp_files(confirmed_id)
+    research   = get_confirmed_research(confirmed_id)
     from datetime import datetime as _dt
     return render_template("nara_confirmed_detail.html",
                            c=c, narrative=narrative, narrative_qa=narrative_qa,
                            comments=comments,
                            schedule=schedule, bid_info=bid_info,
-                           rfp_files=rfp_files,
+                           rfp_files=rfp_files, research=research,
                            users=users, can_edit=can_edit, is_ops=is_ops,
                            can_edit_narrative=can_edit_narrative,
                            now=_dt.now().strftime("%Y-%m-%d %H:%M"))
@@ -4722,6 +4729,12 @@ def upload_rfp(confirmed_id):
         save_confirmed_rfp_file(confirmed_id, f.filename, str(dest), session["username"])
         saved_paths.append(str(dest))
 
+    # 기존 리서치가 완료 상태이면 파일만 저장, 재실행 안 함
+    existing_research = get_confirmed_research(confirmed_id)
+    current_status = existing_research.get("status") if existing_research else None
+    if current_status == "done":
+        return jsonify({"ok": True, "message": f"{len(saved_paths)}개 업로드 완료. (리서치 이미 완료 — 재분석은 🔄 버튼을 이용하세요)"})
+
     # 백그라운드 RFP 분석 + 리서치 트리거
     ctx = app.app_context()
     threading.Thread(
@@ -4932,6 +4945,32 @@ def research_fix(confirmed_id):
         )
         return jsonify({"ok": True, "message": "상태 수정 완료"})
     return jsonify({"ok": False, "error": "수정 불필요"})
+
+
+@app.route("/nara/confirmed/<int:confirmed_id>/rerun_research", methods=["POST"])
+@login_required
+def rerun_research(confirmed_id):
+    """기존 리서치 상태와 무관하게 강제 재실행 (담당자/admin/operator만)"""
+    c = get_confirmed_by_id(confirmed_id)
+    if not c:
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    is_ops      = session.get("role") in ("admin", "operator")
+    is_assignee = session.get("username") == c.get("assignee")
+    if not (is_ops or is_assignee):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    rfp_files = list_confirmed_rfp_files(confirmed_id)
+    if not rfp_files:
+        return jsonify({"ok": False, "error": "업로드된 RFP 파일이 없습니다"})
+    file_paths = [f["filepath"] for f in rfp_files if f.get("filepath")]
+    if not file_paths:
+        return jsonify({"ok": False, "error": "파일 경로를 찾을 수 없습니다"})
+    ctx = app.app_context()
+    threading.Thread(
+        target=run_rfp_research,
+        args=(confirmed_id, file_paths, ctx),
+        daemon=True,
+    ).start()
+    return jsonify({"ok": True})
 
 
 @app.route("/nara/confirmed/<int:confirmed_id>/workspace")

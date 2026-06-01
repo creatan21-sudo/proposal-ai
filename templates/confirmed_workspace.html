@@ -655,7 +655,13 @@ async function uploadRfpFiles(input){
   }catch(e){showToast('오류: '+e,false);}
   input.value='';
 }
-function retryResearch(){ document.getElementById('rfp-file-input')?.click(); }
+async function retryResearch(){
+  if(!confirm('기존 리서치를 덮어씁니다. 계속하시겠습니까?')) return;
+  const r = await fetch(`/nara/confirmed/${CID}/rerun_research`, {method:'POST'});
+  const d = await r.json();
+  if(d.ok){ showToast('재분석을 시작합니다'); setTimeout(()=>location.reload(), 1000); }
+  else showToast(d.error||'오류 발생', false);
+}
 
 /* ── 폴링 ── */
 function startPolling(){
