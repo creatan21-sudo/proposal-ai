@@ -4509,7 +4509,7 @@ def nara_confirmed_delete(confirmed_id):
             except Exception:
                 pass
         conn.execute("DELETE FROM nara_confirmed WHERE id=?", (confirmed_id,))
-    return jsonify({"ok": True})
+    return jsonify({"success": True, "deleted_id": confirmed_id})
 
 
 @app.route("/nara/confirmed/<int:confirmed_id>")

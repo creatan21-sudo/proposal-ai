@@ -52,6 +52,7 @@
         {% for r in results %}
         <tr data-result="{{ r.result }}">
           <td class="bid-nm">
+            <span style="font-size:12px;color:#999;font-weight:400;margin-right:8px;">{{ r.confirmed_id }}</span>
             <a href="{{ r.ntce_url if r.ntce_url else '#' }}" target="_blank">{{ r.bid_ntce_nm or '-' }}</a>
           </td>
           <td>{{ r.ntce_instt_nm or '-' }}</td>

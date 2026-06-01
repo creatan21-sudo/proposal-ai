@@ -93,7 +93,7 @@
     <!-- 상단: 공고명 + 미완료 아이콘 -->
     <div class="c-card-head">
       <div class="c-card-name">
-        <span style="font-size:11px;color:#9ca3af;font-weight:500;margin-right:6px;">#{{ '%03d' % c.id }}</span>{{ c.bid_ntce_nm or '-' }}
+        <span style="font-size:12px;color:#999;font-weight:400;margin-right:8px;">{{ c.id }}</span>{{ c.bid_ntce_nm or '-' }}
       </div>
       <div class="c-card-flags">
         {% if miss_rfp %}
