@@ -105,11 +105,16 @@ tr.sch-editing .sch-act-view{display:none !important;}
 .toast.show{opacity:1}
 .field-label{font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;}
 .field-input{width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #d1d5db;border-radius:7px;font-size:13px;}
-/* 제안설계 아코디언 */
-.pd-accord-hdr{display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:10px 0;font-size:13px;font-weight:700;color:#374151;border-top:1px solid #e5e7eb;margin-top:16px;user-select:none;}
-.pd-accord-hdr:hover{color:#4f46e5;}
-.pd-accord-body{display:none;padding-top:12px;}
+/* 제안설계 아코디언 — 내러티브와 동일한 초록 계열 */
+.pd-accord-wrap{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;margin-top:14px;overflow:hidden;}
+.pd-accord-hdr{display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:10px 14px;font-size:13px;font-weight:700;color:#15803d;user-select:none;}
+.pd-accord-hdr:hover{background:#e0fae0;}
+.pd-accord-body{display:none;padding:0 14px 12px;}
 .pd-accord-body.open{display:block;}
+/* 내러티브 AI 피드백 */
+.narrative-ai-area{margin-top:14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 16px;}
+.narrative-ai-title{font-size:12px;font-weight:700;color:#15803d;margin-bottom:8px;}
+.narrative-ai-text{font-size:13px;color:#374151;white-space:pre-wrap;line-height:1.7;}
 </style>
 {% endblock %}
 {% block content %}
@@ -420,8 +425,8 @@ tr.sch-editing .sch-act-view{display:none !important;}
     <div class="ws-card">
       <div class="ws-card-title">
         <span>✍️ 전략 내러티브</span>
-        {% if can_edit and narrative_qa %}
-        <button class="btn btn-ghost btn-sm" id="nq-edit-btn" onclick="toggleNarrativeEdit()">✏️ 수정</button>
+        {% if is_assignee and narrative_qa %}
+        <button id="nq-edit-btn" onclick="toggleNarrativeEdit()" style="background:transparent;border:1px solid #e5e7eb;border-radius:6px;padding:3px 9px;font-size:11px;color:#9ca3af;cursor:pointer;">수정</button>
         {% endif %}
       </div>
 
@@ -435,24 +440,27 @@ tr.sch-editing .sch-act-view{display:none !important;}
         ('q7','Q7. 추가로 기재할 중요한 내용이 있다면 무엇인가요?'),
       ] %}
 
-      {% if can_edit %}
+      <!-- narrative view: 모든 사용자 (내용 있을 때) -->
       <div id="nq-view" style="display:{% if narrative_qa %}block{% else %}none{% endif %};">
         <div id="narrative-paras">
           {% for key, label in NQ_LABELS %}
           {% if (narrative_qa or {}).get(key) %}
           <div class="narrative-para" data-key="{{ key }}" style="margin-bottom:20px;">
             <div class="narrative-subtitle"></div>
-            <div class="nq-ro" id="nq-ro-{{ key }}">{{ narrative_qa[key] }}</div>
+            <div class="nq-ro" id="nq-ro-{{ key }}">{{ (narrative_qa or {}).get(key,'') }}</div>
           </div>
           {% endif %}
           {% endfor %}
         </div>
+        {% if is_assignee %}
         <div style="display:flex;justify-content:flex-end;margin-top:10px;">
-          {% if is_assignee %}
           <button id="nq-fb-btn" class="btn btn-ghost btn-sm" style="display:none;" onclick="openNarrativeFbModal()">📣 피드백 요청</button>
-          {% endif %}
         </div>
+        {% endif %}
       </div>
+
+      <!-- narrative edit: 담당자만 -->
+      {% if is_assignee %}
       <div id="nq-edit" style="display:{% if narrative_qa %}none{% else %}block{% endif %};">
         {% for key, label in NQ_LABELS %}
         <div class="nq-block">
@@ -468,29 +476,30 @@ tr.sch-editing .sch-act-view{display:none !important;}
           <button class="btn btn-green" onclick="saveNarrative()">💾 저장</button>
         </div>
       </div>
-      {% else %}
-      {% if narrative_qa %}
-        <div id="narrative-paras">
-          {% for key, label in NQ_LABELS %}
-          {% if narrative_qa.get(key) %}
-          <div class="narrative-para" data-key="{{ key }}" style="margin-bottom:20px;">
-            <div class="narrative-subtitle"></div>
-            <div class="nq-ro">{{ narrative_qa.get(key,'') }}</div>
-          </div>
-          {% endif %}
-          {% endfor %}
-        </div>
-      {% else %}
-        <div style="text-align:center;padding:36px 20px;color:#9ca3af;">
-          <div style="font-size:24px;">📋</div>
-          <div style="font-size:13px;font-weight:600;margin-top:8px;">담당자가 내러티브를 미작성 상태입니다</div>
-        </div>
+      {% elif not narrative_qa %}
+      <div style="text-align:center;padding:36px 20px;color:#9ca3af;">
+        <div style="font-size:24px;">📋</div>
+        <div style="font-size:13px;font-weight:600;margin-top:8px;">담당자가 내러티브를 미작성 상태입니다</div>
+      </div>
       {% endif %}
+
+      <!-- 내러티브 AI 피드백 -->
+      {% if narrative_qa %}
+      <div style="margin-top:12px;">
+        {% if is_assignee %}
+        <button id="narrative-ai-btn" class="btn btn-ghost btn-sm" onclick="requestNarrativeFeedback()">🤖 AI 피드백 받기</button>
+        {% endif %}
+        <div id="narrative-ai-feedback-area" class="narrative-ai-area"
+             style="{% if not (narrative and narrative.get('ai_feedback')) %}display:none;{% endif %}margin-top:10px;">
+          <div class="narrative-ai-title">🤖 내러티브 AI 피드백</div>
+          <div class="narrative-ai-text" id="narrative-ai-feedback-text">{{ narrative.ai_feedback if (narrative and narrative.get('ai_feedback')) else '' }}</div>
+        </div>
+      </div>
       {% endif %}
 
       <!-- 제안설계 아코디언 -->
       {% if can_edit or (proposal_design and proposal_design.content) %}
-      <div id="pd-accordion-wrap">
+      <div id="pd-accordion-wrap" class="pd-accord-wrap">
         <div class="pd-accord-hdr" onclick="togglePdAccordion()">
           {% if can_edit %}<span>✏️ 제안설계 작성</span>{% else %}<span>📄 작성된 제안설계 보기</span>{% endif %}
           <span id="pd-accord-arrow">▼</span>
@@ -702,12 +711,37 @@ function parseAndRenderSections(){
 
 /* ── 내러티브 ── */
 function toggleNarrativeEdit(){
-  document.getElementById('nq-view').style.display='none';
-  document.getElementById('nq-edit').style.display='block';
+  const view=document.getElementById('nq-view');
+  const edit=document.getElementById('nq-edit');
+  const btn=document.getElementById('nq-edit-btn');
+  if(!edit) return;
+  view.style.display='none';
+  edit.style.display='block';
+  if(btn) btn.textContent='← 보기';
 }
 function cancelNarrativeEdit(){
-  document.getElementById('nq-view').style.display='block';
-  document.getElementById('nq-edit').style.display='none';
+  const view=document.getElementById('nq-view');
+  const edit=document.getElementById('nq-edit');
+  const btn=document.getElementById('nq-edit-btn');
+  if(view) view.style.display='block';
+  if(edit) edit.style.display='none';
+  if(btn) btn.textContent='수정';
+}
+async function requestNarrativeFeedback(){
+  const btn=document.getElementById('narrative-ai-btn');
+  if(btn){btn.disabled=true;btn.textContent='⏳ 분석 중...';}
+  try{
+    const r=await fetch(`/nara/confirmed/${CID}/narrative/feedback`,{method:'POST'});
+    const d=await r.json();
+    if(d.ok){
+      document.getElementById('narrative-ai-feedback-text').textContent=d.feedback;
+      const area=document.getElementById('narrative-ai-feedback-area');
+      area.style.display='block';
+      area.scrollIntoView({behavior:'smooth',block:'nearest'});
+      showToast('AI 피드백이 생성되었습니다');
+    }else showToast(d.error||'피드백 생성 실패',false);
+  }catch(e){showToast('오류: '+e,false);}
+  if(btn){btn.disabled=false;btn.textContent='🤖 AI 피드백 받기';}
 }
 async function saveNarrative(){
   const keys=['q1','q2','q3','q4','q5','q6','q7'];

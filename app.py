@@ -80,6 +80,7 @@ from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           get_pickup_candidate_ids, confirm_nara_pickup,
                           get_confirmed_by_id,
                           get_confirmed_narrative, save_confirmed_narrative,
+                          save_narrative_ai_feedback,
                           add_confirmed_comment, list_confirmed_comments,
                           add_confirmed_schedule, list_confirmed_schedule,
                           update_confirmed_schedule, delete_confirmed_schedule,
@@ -4662,6 +4663,50 @@ def nara_confirmed_narrative_save(confirmed_id):
     content = (data.get("content") or "").strip()
     save_confirmed_narrative(confirmed_id, content, session["username"])
     return jsonify({"ok": True})
+
+
+@app.route("/nara/confirmed/<int:confirmed_id>/narrative/feedback", methods=["POST"])
+@login_required
+def nara_narrative_feedback(confirmed_id):
+    c = get_confirmed_by_id(confirmed_id)
+    if not c:
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    is_ops      = session.get("role") in ("admin", "operator")
+    is_assignee = session.get("username") == c.get("assignee")
+    if not (is_ops or is_assignee):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    narrative = get_confirmed_narrative(confirmed_id)
+    if not narrative or not narrative.get("content"):
+        return jsonify({"ok": False, "error": "내러티브를 먼저 작성하세요"}), 400
+    try:
+        import json as _j
+        nq = _j.loads(narrative["content"])
+        narrative_text = "\n".join(f"- {v}" for v in nq.values() if v) if isinstance(nq, dict) else narrative["content"]
+    except Exception:
+        narrative_text = narrative["content"]
+    research = get_confirmed_research(confirmed_id)
+    rfp_analysis = (research or {}).get("rfp_analysis", "") or ""
+    prompt = (
+        f"당신은 공공입찰 전문 컨설턴트입니다.\n\n"
+        f"과업명: {c.get('bid_ntce_nm','')}\n발주처: {c.get('ntce_instt_nm','')}\n\n"
+        f"[전략 내러티브]\n{narrative_text}\n\n"
+        + (f"[RFP 분석]\n{rfp_analysis[:2000]}\n\n" if rfp_analysis else "")
+        + "다음 관점에서 구체적인 피드백을 작성하세요 (각 항목 3~5문장):\n"
+        + "## 1. 평가위원 시각\n## 2. 논리 흐름\n## 3. 경쟁력 분석\n## 4. 보완점 및 제안"
+    )
+    try:
+        import anthropic as _ant
+        resp = _ant.Anthropic().messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=2000,
+            messages=[{"role": "user", "content": prompt}],
+            timeout=90,
+        )
+        feedback = resp.content[0].text.strip()
+        save_narrative_ai_feedback(confirmed_id, feedback)
+        return jsonify({"ok": True, "feedback": feedback})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 
 @app.route("/nara/confirmed/<int:confirmed_id>/proposal_design", methods=["GET", "POST"])

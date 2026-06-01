@@ -544,6 +544,7 @@ def init_db() -> None:
             "ALTER TABLE nara_confirmed ADD COLUMN completion_approved_by TEXT DEFAULT ''",
             "ALTER TABLE nara_confirmed ADD COLUMN completion_approved_at TEXT DEFAULT ''",
             "ALTER TABLE nara_confirmed ADD COLUMN final_result TEXT DEFAULT ''",
+            "ALTER TABLE confirmed_narratives ADD COLUMN ai_feedback TEXT DEFAULT ''",
         ]:
             try:
                 conn.execute(migration)
@@ -2436,6 +2437,14 @@ def get_confirmed_narrative(confirmed_id: int) -> dict | None:
             "SELECT * FROM confirmed_narratives WHERE confirmed_id=?", (confirmed_id,)
         ).fetchone()
     return dict(row) if row else None
+
+
+def save_narrative_ai_feedback(confirmed_id: int, ai_feedback: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE confirmed_narratives SET ai_feedback=? WHERE confirmed_id=?",
+            (ai_feedback, confirmed_id),
+        )
 
 
 def save_confirmed_narrative(confirmed_id: int, content: str, updated_by: str) -> None:
