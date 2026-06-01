@@ -421,17 +421,6 @@ tr.sch-editing .sch-act-view{display:none !important;}
            style="padding:8px 14px;background:#2563eb;color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;">
           🔍 리서치 보기 →
         </a>
-        {% if is_assignee and narrative_empty %}
-        <a href="/nara/confirmed/{{ c.id }}/workspace?tab=narrative"
-           style="padding:8px 14px;background:#059669;color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;">
-          ✍️ 내러티브 작성 →
-        </a>
-        {% elif not narrative_empty %}
-        <a href="/nara/confirmed/{{ c.id }}/workspace?tab=narrative"
-           style="padding:8px 14px;background:#6b7280;color:#fff;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;">
-          ✍️ 내러티브 보기 →
-        </a>
-        {% endif %}
       </div>
     </div>
     {% if rfp_files %}
