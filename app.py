@@ -4510,32 +4510,38 @@ def nara_confirmed_delete(confirmed_id):
         "confirmed_bid_info",
         "confirmed_rfp_files",
     ]
+    from database.db import get_connection as _gc
+    conn = _gc()
     try:
-        from database.db import get_connection as _gc
-        with _gc() as conn:
-            for table in fk_tables:
-                try:
-                    result = conn.execute(
-                        f"DELETE FROM {table} WHERE confirmed_id=?", (confirmed_id,)
-                    )
-                    print(f"[delete]   {table}: {result.rowcount}행 삭제")
-                except Exception as e:
-                    print(f"[delete]   {table}: 스킵 ({e})")
+        for table in fk_tables:
+            try:
+                result = conn.execute(
+                    f"DELETE FROM {table} WHERE confirmed_id=?", (confirmed_id,)
+                )
+                print(f"[delete]   {table}: {result.rowcount}행 삭제")
+            except Exception as e:
+                print(f"[delete]   {table}: 스킵 ({e})")
 
-            print(f"[delete]   nara_confirmed id={confirmed_id} 삭제 시도")
-            result = conn.execute(
-                "DELETE FROM nara_confirmed WHERE id=?", (confirmed_id,)
-            )
-            print(f"[delete]   nara_confirmed: {result.rowcount}행 삭제")
-            if result.rowcount == 0:
-                return jsonify({"success": False, "error": f"id={confirmed_id} 레코드 없음"}), 404
-
+        print(f"[delete]   nara_confirmed id={confirmed_id} 삭제 시도")
+        result = conn.execute(
+            "DELETE FROM nara_confirmed WHERE id=?", (confirmed_id,)
+        )
+        print(f"[delete]   nara_confirmed: {result.rowcount}행 삭제")
+        if result.rowcount == 0:
+            conn.rollback()
+            return jsonify({"success": False, "error": f"id={confirmed_id} 레코드 없음"}), 404
+        conn.commit()
         print(f"[delete] 완료: confirmed_id={confirmed_id}")
         return jsonify({"success": True, "deleted_id": confirmed_id})
-
     except Exception as e:
         print(f"[delete] 오류: confirmed_id={confirmed_id} {e}")
+        try:
+            conn.rollback()
+        except Exception:
+            pass
         return jsonify({"success": False, "error": str(e)}), 500
+    finally:
+        conn.close()
 
 
 @app.route("/nara/confirmed/<int:confirmed_id>")
