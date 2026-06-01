@@ -5460,6 +5460,46 @@ def nara_users():
         ).fetchall()
     return jsonify({"ok": True, "users": [dict(r) for r in rows]})
 
+
+@app.route("/api/team_members")
+@login_required
+def api_team_members():
+    current_user = session.get("username")
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, username FROM users WHERE username != ? ORDER BY username",
+            (current_user,)
+        ).fetchall()
+    return jsonify([{"id": r["id"], "username": r["username"], "display_name": r["username"]} for r in rows])
+
+
+@app.route("/nara/confirmed/<int:confirmed_id>/request_feedback", methods=["POST"])
+@login_required
+def nara_request_feedback(confirmed_id):
+    c = get_confirmed_by_id(confirmed_id)
+    if not c:
+        return jsonify({"success": False, "error": "Not found"}), 404
+    data      = request.get_json(force=True) or {}
+    user_ids  = data.get("user_ids", [])
+    target    = data.get("target", "narrative")
+    requester = session.get("username", "")
+    bid_nm    = c.get("bid_ntce_nm") or f"확정#{confirmed_id}"
+    title     = f"피드백 요청 — {bid_nm}"
+    if target == "narrative":
+        msg  = f"{requester}님이 내러티브 피드백을 요청했습니다."
+        link = f"/nara/confirmed/{confirmed_id}/workspace?tab=narrative"
+    else:
+        msg  = f"{requester}님이 제안설계 피드백을 요청했습니다."
+        link = f"/nara/confirmed/{confirmed_id}?tab=proposal_design"
+    sent = 0
+    for uid in user_ids:
+        try:
+            create_notification(int(uid), title, msg, link)
+            sent += 1
+        except Exception:
+            pass
+    return jsonify({"success": True, "sent": sent})
+
 @app.route("/nara/result/<int:confirmed_id>", methods=["POST"])
 @login_required
 def nara_result_add(confirmed_id):

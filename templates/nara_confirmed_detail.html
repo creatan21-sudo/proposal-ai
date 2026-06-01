@@ -446,7 +446,7 @@ tr.sch-editing .sch-act-view{display:none !important;}
       <span>📝 전략 내러티브</span>
       <div style="display:flex;gap:6px;align-items:center;">
         {% if not narrative_empty %}
-        <button class="btn btn-ghost btn-sm" onclick="copyShareLink()">🔗 공유 링크 복사</button>
+        <button class="btn btn-ghost btn-sm" onclick="openFbModal('narrative')">📣 피드백 요청</button>
         {% endif %}
         {% if can_edit_narrative and not narrative_empty %}
         <button class="btn btn-ghost btn-sm" id="narrative-edit-btn" onclick="toggleNarrativeEdit()">✏️ 내러티브 작성</button>
@@ -565,6 +565,7 @@ tr.sch-editing .sch-act-view{display:none !important;}
     {% if can_edit %}
     <div style="display:flex;gap:6px;align-items:center;">
       <span id="pd-autosave-hint" style="font-size:11px;color:#9ca3af;"></span>
+      <button class="btn btn-ghost btn-sm" onclick="openFbModal('proposal_design')">📣 피드백 요청</button>
       <button class="btn btn-ghost btn-sm" id="pd-feedback-btn" onclick="requestPdFeedback()">🤖 AI 피드백 받기</button>
     </div>
     {% endif %}
@@ -590,6 +591,22 @@ tr.sch-editing .sch-act-view{display:none !important;}
     <div style="font-size:13px;color:#374151;white-space:pre-wrap;line-height:1.7;" id="pd-feedback-text"></div>
   </div>
   {% endif %}
+</div>
+
+<!-- 피드백 요청 모달 -->
+<div class="sch-modal-overlay" id="fb-modal" onclick="if(event.target===this)closeFbModal()">
+  <div class="sch-modal-box" style="width:360px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <div class="sch-modal-title" id="fb-modal-title" style="margin-bottom:0;">📣 피드백 요청</div>
+      <button onclick="closeFbModal()" style="background:none;border:none;font-size:18px;color:#9ca3af;cursor:pointer;line-height:1;">×</button>
+    </div>
+    <div style="font-size:12px;color:#6b7280;margin-bottom:10px;">피드백을 요청할 팀원을 선택하세요</div>
+    <div id="fb-modal-list" style="max-height:220px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;margin-bottom:14px;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="closeFbModal()" style="padding:8px 16px;background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:7px;cursor:pointer;font-size:13px;">취소</button>
+      <button id="fb-submit-btn" onclick="submitFbRequest()" style="padding:8px 18px;background:#4f46e5;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">요청 보내기</button>
+    </div>
+  </div>
 </div>
 
 <!-- 일정 추가 모달 -->
@@ -778,13 +795,44 @@ function toggleNarrativeEdit(){
   view.style.display = isEditing ? 'block' : 'none';
   btn.textContent    = isEditing ? '✏️ 내러티브 작성' : '← 보기';
 }
-function copyShareLink(){
-  const url = location.origin + `/nara/confirmed/${CID}/narrative_share`;
-  navigator.clipboard.writeText(url).then(()=>{
-    showToast('공유 링크가 복사되었습니다');
+/* ── 피드백 요청 모달 ── */
+let _fbTarget = 'narrative';
+function openFbModal(target){
+  _fbTarget = target;
+  const title = target === 'narrative' ? '내러티브 피드백 요청' : '제안설계 피드백 요청';
+  document.getElementById('fb-modal-title').textContent = '📣 ' + title;
+  document.getElementById('fb-modal-list').innerHTML = '<div style="color:#9ca3af;font-size:13px;">불러오는 중...</div>';
+  document.getElementById('fb-modal').classList.add('open');
+  fetch('/api/team_members').then(r=>r.json()).then(members=>{
+    if(!members.length){
+      document.getElementById('fb-modal-list').innerHTML='<div style="color:#9ca3af;font-size:13px;">팀원이 없습니다</div>';
+      return;
+    }
+    document.getElementById('fb-modal-list').innerHTML = members.map(m=>
+      `<label style="display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" class="fb-member-cb" value="${m.id}"> ${m.display_name}
+      </label>`
+    ).join('');
   }).catch(()=>{
-    prompt('아래 링크를 복사하세요:', url);
+    document.getElementById('fb-modal-list').innerHTML='<div style="color:#b91c1c;font-size:13px;">불러오기 실패</div>';
   });
+}
+function closeFbModal(){ document.getElementById('fb-modal').classList.remove('open'); }
+async function submitFbRequest(){
+  const ids = [...document.querySelectorAll('.fb-member-cb:checked')].map(cb=>parseInt(cb.value));
+  if(!ids.length){ showToast('팀원을 한 명 이상 선택하세요', false); return; }
+  const btn = document.getElementById('fb-submit-btn');
+  btn.disabled=true; btn.textContent='전송 중...';
+  try{
+    const r = await fetch(`/nara/confirmed/${CID}/request_feedback`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({user_ids: ids, target: _fbTarget})
+    });
+    const d = await r.json();
+    if(d.success){ closeFbModal(); showToast(`${d.sent}명에게 피드백 요청을 보냈습니다`); }
+    else showToast(d.error||'전송 실패', false);
+  }catch(e){ showToast('오류: '+e, false); }
+  btn.disabled=false; btn.textContent='요청 보내기';
 }
 async function saveNarrative(){
   const data = {};

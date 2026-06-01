@@ -430,7 +430,7 @@ tr.sch-editing .sch-act-view{display:none !important;}
         </div>
         {% endfor %}
         <div style="display:flex;justify-content:flex-end;margin-top:10px;">
-          <button id="nq-share-btn" class="btn btn-ghost btn-sm" style="display:none;" onclick="copyNarrativeLink()">🔗 공유 링크 복사</button>
+          <button id="nq-fb-btn" class="btn btn-ghost btn-sm" style="display:none;" onclick="openNarrativeFbModal()">📣 피드백 요청</button>
         </div>
       </div>
       <div id="nq-edit" style="display:{% if narrative_qa %}none{% else %}block{% endif %};">
@@ -466,6 +466,22 @@ tr.sch-editing .sch-act-view{display:none !important;}
     </div>
 
   </div><!-- /pane-narrative -->
+</div>
+
+<!-- 피드백 요청 모달 -->
+<div class="sch-modal-overlay" id="ws-fb-modal" onclick="if(event.target===this)closeWsFbModal()">
+  <div class="sch-modal-box" style="width:360px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;">
+      <div style="font-weight:700;font-size:15px;">📣 내러티브 피드백 요청</div>
+      <button onclick="closeWsFbModal()" style="background:none;border:none;font-size:18px;color:#9ca3af;cursor:pointer;line-height:1;">×</button>
+    </div>
+    <div style="font-size:12px;color:#6b7280;margin-bottom:10px;">피드백을 요청할 팀원을 선택하세요</div>
+    <div id="ws-fb-modal-list" style="max-height:220px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:8px 10px;margin-bottom:14px;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="closeWsFbModal()" style="padding:8px 16px;background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:7px;cursor:pointer;font-size:13px;">취소</button>
+      <button id="ws-fb-submit-btn" onclick="submitWsFbRequest()" style="padding:8px 18px;background:#4f46e5;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">요청 보내기</button>
+    </div>
+  </div>
 </div>
 
 <!-- 일정 추가 모달 -->
@@ -532,11 +548,11 @@ document.addEventListener('DOMContentLoaded',()=>{
     const el=document.getElementById('rs-rfp-content');
     if(el) el.innerHTML=simpleMarkdown(RS_ANALYSIS);
   }
-  // 이미 저장된 내러티브가 있으면 공유 버튼 표시
-  const shareBtn=document.getElementById('nq-share-btn');
-  if(shareBtn && document.getElementById('nq-view')?.style.display!=='none'){
+  // 이미 저장된 내러티브가 있으면 피드백 요청 버튼 표시
+  const fbBtn=document.getElementById('nq-fb-btn');
+  if(fbBtn && document.getElementById('nq-view')?.style.display!=='none'){
     const hasContent=[...document.querySelectorAll('.nq-ro')].some(el=>el.textContent.trim()&&el.textContent!=='(미작성)');
-    if(hasContent) shareBtn.style.display='inline-flex';
+    if(hasContent) fbBtn.style.display='inline-flex';
   }
 });
 
@@ -626,19 +642,44 @@ async function saveNarrative(){
     keys.forEach(k=>{const ro=document.getElementById(`nq-ro-${k}`);if(ro)ro.textContent=data[k]||'(미작성)';});
     document.getElementById('nq-view').style.display='block';
     document.getElementById('nq-edit').style.display='none';
-    const shareBtn=document.getElementById('nq-share-btn');
-    if(shareBtn) shareBtn.style.display='inline-flex';
+    const fbBtn=document.getElementById('nq-fb-btn');
+    if(fbBtn) fbBtn.style.display='inline-flex';
   } else showToast(d.error||'저장 실패',false);
 }
-function copyNarrativeLink(){
-  const url=location.origin+location.pathname+'?tab=narrative';
-  navigator.clipboard.writeText(url).then(()=>showToast('공유 링크가 복사되었습니다')).catch(()=>{
-    const ta=document.createElement('textarea');
-    ta.value=url; ta.style.position='fixed'; ta.style.opacity='0';
-    document.body.appendChild(ta); ta.select();
-    try{document.execCommand('copy');showToast('공유 링크가 복사되었습니다');}catch(e){showToast('복사 실패: '+url,false);}
-    document.body.removeChild(ta);
+/* ── 피드백 요청 모달 ── */
+function openNarrativeFbModal(){
+  document.getElementById('ws-fb-modal-list').innerHTML='<div style="color:#9ca3af;font-size:13px;">불러오는 중...</div>';
+  document.getElementById('ws-fb-modal').classList.add('open');
+  fetch('/api/team_members').then(r=>r.json()).then(members=>{
+    if(!members.length){
+      document.getElementById('ws-fb-modal-list').innerHTML='<div style="color:#9ca3af;font-size:13px;">팀원이 없습니다</div>';
+      return;
+    }
+    document.getElementById('ws-fb-modal-list').innerHTML=members.map(m=>
+      `<label style="display:flex;align-items:center;gap:8px;padding:6px 4px;font-size:13px;cursor:pointer;">
+        <input type="checkbox" class="ws-fb-cb" value="${m.id}"> ${m.display_name}
+      </label>`
+    ).join('');
+  }).catch(()=>{
+    document.getElementById('ws-fb-modal-list').innerHTML='<div style="color:#b91c1c;font-size:13px;">불러오기 실패</div>';
   });
+}
+function closeWsFbModal(){ document.getElementById('ws-fb-modal').classList.remove('open'); }
+async function submitWsFbRequest(){
+  const ids=[...document.querySelectorAll('.ws-fb-cb:checked')].map(cb=>parseInt(cb.value));
+  if(!ids.length){ showToast('팀원을 한 명 이상 선택하세요',false); return; }
+  const btn=document.getElementById('ws-fb-submit-btn');
+  btn.disabled=true; btn.textContent='전송 중...';
+  try{
+    const r=await fetch(`/nara/confirmed/${CID}/request_feedback`,{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({user_ids:ids, target:'narrative'})
+    });
+    const d=await r.json();
+    if(d.success){ closeWsFbModal(); showToast(`${d.sent}명에게 피드백 요청을 보냈습니다`); }
+    else showToast(d.error||'전송 실패',false);
+  }catch(e){ showToast('오류: '+e,false); }
+  btn.disabled=false; btn.textContent='요청 보내기';
 }
 
 /* ── RFP 업로드 ── */
