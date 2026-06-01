@@ -199,26 +199,13 @@ function openDelModal(id, nm){
   document.getElementById('del-modal').classList.add('open');
 }
 function closeDelModal(){ document.getElementById('del-modal').classList.remove('open'); _delId=null; }
-async function confirmDelete(){
+function confirmDelete(){
   if(!_delId) return;
   const cardId = _delId;
-  const btn = document.getElementById('del-confirm-btn');
-  btn.disabled=true; btn.textContent='삭제 중...';
-  const ctrl = new AbortController();
-  const timer = setTimeout(()=>ctrl.abort(), 10000);
-  try {
-    const r = await fetch(`/nara/confirmed/${cardId}/delete`,{method:'POST',signal:ctrl.signal});
-    clearTimeout(timer);
-    let d = {};
-    try{ d = await r.json(); }catch(e){}
-    if(!d.success) console.warn('[delete] 서버 응답 오류:', d.error||r.status);
-  } catch(e) {
-    clearTimeout(timer);
-    console.warn('[delete] fetch 오류:', e);
-  }
-  // 응답 성공/실패/타임아웃 무관하게 카드 제거
-  document.getElementById(`og-card-${cardId}`)?.remove();
   closeDelModal();
+  fetch(`/nara/confirmed/${cardId}/delete`,{method:'POST'})
+    .then(()=>{ location.reload(); })
+    .catch(()=>{ location.reload(); });
 }
 
 function switchTab(name){
