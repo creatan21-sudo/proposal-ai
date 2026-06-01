@@ -77,6 +77,21 @@
 .legend{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px;font-size:12px;}
 .legend-item{display:flex;align-items:center;gap:5px;}
 .legend-dot{width:10px;height:10px;border-radius:3px;}
+/* 내 과업 테이블 */
+.my-tasks-section{max-width:1200px;margin:0 auto;padding:20px 16px 32px;border-top:2px solid #e5e7eb;margin-top:0;}
+.my-tasks-title{font-size:15px;font-weight:700;color:#374151;margin-bottom:14px;}
+.my-tasks-table{width:100%;border-collapse:collapse;font-size:13px;}
+.my-tasks-table th{background:#f3f4f6;padding:9px 12px;text-align:left;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb;font-size:12px;}
+.my-tasks-table td{padding:10px 12px;border-bottom:1px solid #f3f4f6;vertical-align:middle;color:#374151;}
+.my-tasks-table tr:hover td{background:#fafafa;cursor:pointer;}
+.mt-nm{font-weight:600;color:#111827;}
+.mt-dday{font-size:11px;font-weight:700;padding:2px 6px;border-radius:4px;}
+.mt-dday.urgent{background:#dc2626;color:#fff;}
+.mt-dday.normal{background:#e0e7ff;color:#3730a3;}
+.mt-dday.past{background:#f3f4f6;color:#9ca3af;}
+.mt-check-ok{color:#059669;font-size:14px;}
+.mt-check-no{color:#d1d5db;font-size:14px;}
+.mt-empty{text-align:center;padding:32px;color:#9ca3af;font-size:13px;}
 </style>
 {% endblock %}
 {% block subnav %}
@@ -110,6 +125,66 @@
   <div id="view-cal"></div>
   <div id="view-tl" style="display:none;"></div>
   <div id="view-list" style="display:none;"></div>
+</div>
+
+<!-- 내 진행 과업 -->
+<div class="my-tasks-section">
+  <div class="my-tasks-title">📋 내 진행 과업</div>
+  {% if my_tasks %}
+  <table class="my-tasks-table">
+    <thead>
+      <tr>
+        <th style="width:36%">과업명</th>
+        <th style="width:17%">제출 마감</th>
+        <th style="width:8%">D-day</th>
+        <th style="width:10%;text-align:center;">리서치</th>
+        <th style="width:10%;text-align:center;">내러티브</th>
+        <th style="width:10%;text-align:center;">제안설계</th>
+        <th style="width:9%">발주처</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% set today_s = now[:10] if now is defined else '' %}
+      {% for t in my_tasks %}
+      {% set deadline = (t.submit_deadline or t.bid_clse_dt or '')[:10] %}
+      {% set has_narr = t.narrative_content and t.narrative_content not in ('{}','') %}
+      <tr onclick="location.href='/nara/confirmed/{{ t.id }}'">
+        <td class="mt-nm">{{ t.bid_ntce_nm or '-' }}</td>
+        <td style="font-size:12px;color:#6b7280;">{{ deadline or '-' }}</td>
+        <td>
+          {% if deadline %}
+            <span class="mt-dday" data-deadline="{{ deadline }}" id="dday-{{ loop.index }}">-</span>
+          {% else %}-{% endif %}
+        </td>
+        <td style="text-align:center;">
+          {% if t.research_status == 'done' %}
+          <span class="mt-check-ok" title="리서치 완료">✅</span>
+          {% else %}
+          <span class="mt-check-no" title="리서치 미실시">⚠️</span>
+          {% endif %}
+        </td>
+        <td style="text-align:center;">
+          {% if has_narr %}
+          <span class="mt-check-ok" title="내러티브 작성됨">✅</span>
+          {% else %}
+          <span class="mt-check-no" title="내러티브 미작성">⚠️</span>
+          {% endif %}
+        </td>
+        <td style="text-align:center;">
+          {% if t.has_proposal_design %}
+          <span class="mt-check-ok" title="제안서 설계 작성됨">✅</span>
+          {% else %}
+          <span class="mt-check-no" title="제안서 설계 미작성">⚠️</span>
+          {% endif %}
+        </td>
+        <td style="font-size:12px;color:#6b7280;">{{ (t.ntce_instt_nm or '')[:10] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="mt-empty">담당 진행 과업이 없습니다</div>
+  {% endif %}
 </div>
 
 <!-- 날짜 팝업 -->
@@ -323,5 +398,25 @@ function dayDiff(a,b){return Math.round((new Date(a)-new Date(b))/(864e5));}
 function _hesc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
 render();
+
+// D-day 계산 (내 진행 과업 테이블)
+document.querySelectorAll('.mt-dday[data-deadline]').forEach(el=>{
+  const dl = el.dataset.deadline;
+  if(!dl) return;
+  const diff = dayDiff(dl, TODAY);
+  if(diff < 0){
+    el.textContent = `D+${Math.abs(diff)}`;
+    el.className = 'mt-dday past';
+  } else if(diff === 0){
+    el.textContent = 'D-day';
+    el.className = 'mt-dday urgent';
+  } else if(diff <= 7){
+    el.textContent = `D-${diff}`;
+    el.className = 'mt-dday urgent';
+  } else {
+    el.textContent = `D-${diff}`;
+    el.className = 'mt-dday normal';
+  }
+});
 </script>
 {% endblock %}

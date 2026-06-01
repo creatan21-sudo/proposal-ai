@@ -2105,6 +2105,7 @@ def my_change_password():
 @login_required
 def schedule_page():
     from database.db import get_connection
+    username = session.get("username", "")
     with get_connection() as conn:
         confirmed = conn.execute("""
             SELECT cf.id,
@@ -2127,9 +2128,37 @@ def schedule_page():
             LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
             ORDER BY s.due_date ASC
         """).fetchall()
+        # 내 진행 과업 (담당자 = 현재 사용자, 결과 미등록)
+        my_tasks_rows = conn.execute("""
+            SELECT cf.id,
+                   COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm)       AS bid_ntce_nm,
+                   COALESCE(pk.ntce_instt_nm, ca.ntce_instt_nm)   AS ntce_instt_nm,
+                   COALESCE(pk.bid_clse_dt, ca.bid_clse_dt)       AS bid_clse_dt,
+                   cf.assignee,
+                   bi.submit_deadline,
+                   COALESCE(res.status, 'pending')                 AS research_status,
+                   n.content                                       AS narrative_content,
+                   CASE WHEN pd.confirmed_id IS NOT NULL THEN 1 ELSE 0 END AS has_proposal_design
+            FROM nara_confirmed cf
+            LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
+            LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
+            LEFT JOIN confirmed_bid_info bi ON bi.confirmed_id = cf.id
+            LEFT JOIN confirmed_research res ON res.confirmed_id = cf.id
+            LEFT JOIN confirmed_narratives n ON n.confirmed_id = cf.id
+            LEFT JOIN (SELECT confirmed_id FROM proposal_design WHERE content != '') pd
+                   ON pd.confirmed_id = cf.id
+            LEFT JOIN nara_results r ON r.confirmed_id = cf.id
+            WHERE cf.assignee = ?
+              AND r.id IS NULL
+              AND (cf.final_result IS NULL OR cf.final_result NOT IN ('won','lost'))
+            ORDER BY COALESCE(pk.bid_clse_dt, ca.bid_clse_dt) ASC
+        """, (username,)).fetchall()
+    from datetime import datetime as _sdt
     return render_template("schedule.html",
                            confirmed=[dict(r) for r in confirmed],
-                           schedules=[dict(r) for r in schedules])
+                           schedules=[dict(r) for r in schedules],
+                           my_tasks=[dict(r) for r in my_tasks_rows],
+                           now=_sdt.now().strftime("%Y-%m-%d %H:%M"))
 
 
 @app.route("/profile", methods=["GET", "POST"])
