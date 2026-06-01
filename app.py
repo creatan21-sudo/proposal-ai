@@ -4493,6 +4493,25 @@ def set_result_route(confirmed_id):
     return jsonify({"ok": True})
 
 
+@app.route("/nara/confirmed/<int:confirmed_id>/delete", methods=["POST"])
+@login_required
+def nara_confirmed_delete(confirmed_id):
+    """확정 과업 개별 삭제 (admin/operator만). FK 순서 cascade."""
+    if session.get("role") not in ("admin", "operator"):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    from database.db import get_connection as _gc
+    with _gc() as conn:
+        for table in ["proposal_design", "confirmed_research", "confirmed_narratives",
+                      "confirmed_comments", "confirmed_schedule", "confirmed_bid_info",
+                      "confirmed_rfp_files"]:
+            try:
+                conn.execute(f"DELETE FROM {table} WHERE confirmed_id=?", (confirmed_id,))
+            except Exception:
+                pass
+        conn.execute("DELETE FROM nara_confirmed WHERE id=?", (confirmed_id,))
+    return jsonify({"ok": True})
+
+
 @app.route("/nara/confirmed/<int:confirmed_id>")
 @login_required
 def nara_confirmed_detail(confirmed_id):

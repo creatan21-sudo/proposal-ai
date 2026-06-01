@@ -35,6 +35,13 @@
 .og-empty{text-align:center;padding:48px 0;color:#9ca3af;font-size:14px;}
 .badge-status{display:inline-block;font-size:11px;padding:2px 7px;border-radius:10px;margin-left:4px;font-weight:500;cursor:pointer;background:#e8f5e9;color:#2e7d32;text-decoration:none;vertical-align:middle;}
 .badge-status:hover{background:#c8e6c9;}
+.og-id{font-size:12px;color:#9ca3af;font-weight:500;margin-right:6px;flex-shrink:0;}
+.og-del-btn{background:none;border:none;cursor:pointer;font-size:15px;color:#d1d5db;padding:4px;line-height:1;flex-shrink:0;transition:color .12s;}
+.og-del-btn:hover{color:#ef4444;}
+/* 삭제 확인 모달 */
+.del-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;}
+.del-modal-overlay.open{display:flex;}
+.del-modal-box{background:#fff;border-radius:12px;padding:24px;width:400px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.25);}
 </style>
 {% endblock %}
 {% block content %}
@@ -53,7 +60,8 @@
     {% if my_tasks %}
       {% for t in my_tasks %}
       {% set clse = (t.bid_clse_dt or '')[:10] %}
-      <div class="og-card" onclick="location.href='/nara/confirmed/{{ t.id }}'">
+      <div class="og-card" id="og-card-{{ t.id }}" onclick="location.href='/nara/confirmed/{{ t.id }}'">
+        <span class="og-id">#{{ '%03d' % t.id }}</span>
         <div class="og-card-left">
           <div class="og-card-name" title="{{ t.bid_ntce_nm or '-' }}">
             {{ t.bid_ntce_nm or '-' }}
@@ -95,6 +103,10 @@
             {{ item.icon }}<span class="tip">{{ item.label }}</span>
           </a>
           {% endfor %}
+          {% if is_ops %}
+          <button class="og-del-btn" title="삭제"
+            onclick="event.stopPropagation();openDelModal({{ t.id }},'{{ t.bid_ntce_nm | e }}')">🗑️</button>
+          {% endif %}
         </div>
       </div>
       {% endfor %}
@@ -108,7 +120,8 @@
     {% if all_tasks %}
       {% for t in all_tasks %}
       {% set clse = (t.bid_clse_dt or '')[:10] %}
-      <div class="og-card" onclick="location.href='/nara/confirmed/{{ t.id }}'">
+      <div class="og-card" id="og-card-{{ t.id }}" onclick="location.href='/nara/confirmed/{{ t.id }}'">
+        <span class="og-id">#{{ '%03d' % t.id }}</span>
         <div class="og-card-left">
           <div class="og-card-name" title="{{ t.bid_ntce_nm or '-' }}">
             {{ t.bid_ntce_nm or '-' }}
@@ -150,6 +163,10 @@
             {{ item.icon }}<span class="tip">{{ item.label }}</span>
           </a>
           {% endfor %}
+          {% if is_ops %}
+          <button class="og-del-btn" title="삭제"
+            onclick="event.stopPropagation();openDelModal({{ t.id }},'{{ t.bid_ntce_nm | e }}')">🗑️</button>
+          {% endif %}
         </div>
       </div>
       {% endfor %}
@@ -159,7 +176,45 @@
   </div>
 
 </div>
+
+<!-- 삭제 확인 모달 -->
+<div class="del-modal-overlay" id="del-modal" onclick="if(event.target===this)closeDelModal()">
+  <div class="del-modal-box">
+    <div style="font-size:15px;font-weight:700;color:#111827;margin-bottom:10px;">⚠️ 과업 삭제</div>
+    <div id="del-modal-msg" style="font-size:13px;color:#374151;margin-bottom:20px;line-height:1.6;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="closeDelModal()" style="padding:8px 18px;background:#f3f4f6;border:none;border-radius:7px;cursor:pointer;font-size:13px;">취소</button>
+      <button id="del-confirm-btn" onclick="confirmDelete()" style="padding:8px 18px;background:#ef4444;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">삭제</button>
+    </div>
+  </div>
+</div>
+
 <script>
+let _delId = null;
+
+function openDelModal(id, nm){
+  _delId = id;
+  document.getElementById('del-modal-msg').innerHTML =
+    `<b>#${String(id).padStart(3,'0')} ${nm}</b>을(를) 삭제하시겠습니까?<br><span style="color:#ef4444;">연결된 모든 데이터(리서치, 내러티브, 일정, 제안설계 등)가 영구 삭제됩니다.</span>`;
+  document.getElementById('del-modal').classList.add('open');
+}
+function closeDelModal(){ document.getElementById('del-modal').classList.remove('open'); _delId=null; }
+async function confirmDelete(){
+  if(!_delId) return;
+  const btn = document.getElementById('del-confirm-btn');
+  btn.disabled=true; btn.textContent='삭제 중...';
+  const r = await fetch(`/nara/confirmed/${_delId}/delete`,{method:'POST'});
+  const d = await r.json();
+  if(d.ok){
+    // 두 탭 모두에서 카드 제거
+    document.getElementById(`og-card-${_delId}`)?.remove();
+    closeDelModal();
+  } else {
+    alert(d.error||'삭제 실패');
+    btn.disabled=false; btn.textContent='삭제';
+  }
+}
+
 function switchTab(name){
   ['my','all'].forEach(t=>{
     document.getElementById('pane-'+t).style.display=t===name?'block':'none';

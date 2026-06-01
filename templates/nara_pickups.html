@@ -91,6 +91,7 @@
             data-reason="{{ p.reason | e }}"
             data-by="{{ p.registered_by | e }}">
           <td class="bid-nm">
+            <span style="font-size:11px;color:#9ca3af;margin-right:5px;">#{{ '%03d' % p.id }}</span>
             <span class="bid-nm-link" onclick="openPickupDetail(this.closest('tr'))">
               {{ p.bid_ntce_nm or '-' }}
             </span>

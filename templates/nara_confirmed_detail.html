@@ -97,7 +97,9 @@ tr.sch-editing .sch-act-view{display:none !important;}
 
   <!-- ① 공고 기본 정보 -->
   <div class="card">
-    <div class="info-nm">{{ c.bid_ntce_nm or '-' }}</div>
+    <div class="info-nm">
+      <span style="font-size:13px;color:#9ca3af;font-weight:500;margin-right:8px;">#{{ '%03d' % c.id }}</span>{{ c.bid_ntce_nm or '-' }}
+    </div>
     <div class="info-grid">
       <div class="info-item"><div class="lbl">발주처</div><div class="val">{{ c.ntce_instt_nm or '-' }}</div></div>
       <div class="info-item"><div class="lbl">추정가격</div><div class="val">{% if c.presmpt_prce and c.presmpt_prce.isdigit() %}{{ '{:,}'.format(c.presmpt_prce|int) }}원{% else %}-{% endif %}</div></div>

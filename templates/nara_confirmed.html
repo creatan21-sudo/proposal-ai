@@ -92,7 +92,9 @@
   <div class="c-card" onclick="location.href='/nara/confirmed/{{ c.id }}'">
     <!-- 상단: 공고명 + 미완료 아이콘 -->
     <div class="c-card-head">
-      <div class="c-card-name">{{ c.bid_ntce_nm or '-' }}</div>
+      <div class="c-card-name">
+        <span style="font-size:11px;color:#9ca3af;font-weight:500;margin-right:6px;">#{{ '%03d' % c.id }}</span>{{ c.bid_ntce_nm or '-' }}
+      </div>
       <div class="c-card-flags">
         {% if miss_rfp %}
         <span class="c-flag" onclick="event.stopPropagation(); openRfpModal({{ c.id }},'{{ nm_safe }}','{{ g2b_url }}')" title="RFP 미등록">
