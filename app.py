@@ -115,6 +115,15 @@ for _d in [UPLOAD_DIR, Path(__file__).parent / "database",
 with app.app_context():
     init_db()
     init_users()
+    # 서버 재시작 시 stale 'running' 리서치 레코드 초기화
+    try:
+        from database.db import get_connection as _gc_init
+        with _gc_init() as _conn_init:
+            _conn_init.execute(
+                "UPDATE confirmed_research SET status='error', research_result='서버 재시작으로 중단됨' WHERE status='running'"
+            )
+    except Exception as _e_init:
+        print(f"[startup] stale 리서치 초기화 오류: {_e_init}")
 
 start_scheduler(app)
 
@@ -4729,9 +4738,11 @@ def upload_rfp(confirmed_id):
         save_confirmed_rfp_file(confirmed_id, f.filename, str(dest), session["username"])
         saved_paths.append(str(dest))
 
-    # 기존 리서치가 완료 상태이면 파일만 저장, 재실행 안 함
+    # 기존 리서치 상태 확인
     existing_research = get_confirmed_research(confirmed_id)
     current_status = existing_research.get("status") if existing_research else None
+    if current_status == "running":
+        return jsonify({"ok": False, "status": "already_running", "message": "이미 분석 중입니다"})
     if current_status == "done":
         return jsonify({"ok": True, "message": f"{len(saved_paths)}개 업로드 완료. (리서치 이미 완료 — 재분석은 🔄 버튼을 이용하세요)"})
 
@@ -4749,7 +4760,13 @@ def upload_rfp(confirmed_id):
 def run_rfp_research(confirmed_id: int, file_paths: list, app_context) -> None:
     """RFP 파일 분석 + 리서치 실행 후 DB 저장. 백그라운드 스레드에서 실행."""
     with app_context:
-        rfp_analysis   = ""
+        # 중복 실행 방어: 이미 running 상태이면 중단
+        existing = get_confirmed_research(confirmed_id)
+        if existing and existing.get('status') == 'running':
+            print(f"  [workspace] confirmed_id={confirmed_id} 이미 분석 중 — 중복 실행 방지")
+            return
+
+        rfp_analysis    = ""
         research_result = ""
         try:
             save_confirmed_research(confirmed_id, 'running', updated_by='system')
@@ -4769,7 +4786,7 @@ def run_rfp_research(confirmed_id: int, file_paths: list, app_context) -> None:
             except Exception as e:
                 print(f"  [workspace] rfp_parser import 오류: {e}")
 
-            # ② Claude로 RFP 분석 (일정·요구사항 추출)
+            # ② Claude Haiku — RFP 분석 (timeout=60)
             rfp_analysis = ""
             if rfp_text.strip():
                 import anthropic as _ant
@@ -4785,12 +4802,18 @@ def run_rfp_research(confirmed_id: int, file_paths: list, app_context) -> None:
                         model="claude-haiku-4-5-20251001",
                         max_tokens=2000,
                         messages=[{"role": "user", "content": analysis_prompt}],
+                        timeout=60,
                     )
                     rfp_analysis = resp.content[0].text.strip()
                 except Exception as e:
                     rfp_analysis = f"분석 오류: {e}"
+                    if "timeout" in str(e).lower() or "Timeout" in type(e).__name__:
+                        save_confirmed_research(confirmed_id, 'error',
+                                                rfp_analysis='', research_result='API 응답 시간 초과 (RFP 분석)',
+                                                updated_by='system')
+                        return
 
-            # ② 날짜 추출 → confirmed_bid_info + confirmed_schedule 자동 등재
+            # ② Claude Haiku — 날짜 추출 (timeout=30) → confirmed_bid_info + confirmed_schedule 자동 등재
             if rfp_text.strip():
                 try:
                     import re as _re2
@@ -4813,12 +4836,12 @@ RFP 텍스트:
                         model="claude-haiku-4-5-20251001",
                         max_tokens=400,
                         messages=[{"role": "user", "content": date_prompt}],
+                        timeout=30,
                     )
                     date_text = date_resp.content[0].text.strip()
                     _dm = _re2.search(r'\{[\s\S]*\}', date_text)
                     extracted = json.loads(_dm.group()) if _dm else {}
 
-                    # confirmed_bid_info 업데이트 (기존 값 보존, 빈 칸만 채우기)
                     existing_info = get_confirmed_bid_info(confirmed_id) or {}
                     merged_info = dict(existing_info)
                     for _key in ("submit_deadline", "submit_method", "pt_date", "pt_location", "price_bid_date"):
@@ -4827,7 +4850,6 @@ RFP 텍스트:
                             merged_info[_key] = _val
                     save_confirmed_bid_info(confirmed_id, merged_info, updated_by='자동추출')
 
-                    # confirmed_schedule 자동 등재 (task_name 중복 체크)
                     existing_sched = {s["task_name"]: s for s in list_confirmed_schedule(confirmed_id)}
                     bid_clse_dt = c.get("bid_clse_dt", "") or ""
 
@@ -4855,10 +4877,10 @@ RFP 텍스트:
                 except Exception as _de:
                     print(f"  [workspace] 날짜 추출 오류: {_de}")
 
-            # ③ Perplexity + Claude 리서치
+            # ③ Perplexity 병렬 검색 + Claude Sonnet 리서치 (timeout=120)
             research_result = ""
             try:
-                import os, requests as _req
+                import os, requests as _req, concurrent.futures as _cfut
                 perplexity_key = os.environ.get("PERPLEXITY_API_KEY", "")
                 queries = [
                     f"{client_name} 2025 최신 현황 주요 정책 사업",
@@ -4866,12 +4888,13 @@ RFP 텍스트:
                 ]
                 px_parts = []
                 if perplexity_key:
-                    headers = {"Authorization": f"Bearer {perplexity_key}", "Content-Type": "application/json"}
-                    for q in queries:
+                    _px_headers = {"Authorization": f"Bearer {perplexity_key}", "Content-Type": "application/json"}
+
+                    def _fetch_px(q):
                         try:
                             r = _req.post(
                                 "https://api.perplexity.ai/chat/completions",
-                                headers=headers,
+                                headers=_px_headers,
                                 json={"model": "sonar-pro",
                                       "messages": [{"role": "user", "content": q}],
                                       "max_tokens": 800},
@@ -4879,10 +4902,14 @@ RFP 텍스트:
                             )
                             r.raise_for_status()
                             answer = r.json().get("choices", [{}])[0].get("message", {}).get("content", "")
-                            if answer:
-                                px_parts.append(f"[{q}]\n{answer}")
+                            return f"[{q}]\n{answer}" if answer else None
                         except Exception:
-                            pass
+                            return None
+
+                    with _cfut.ThreadPoolExecutor(max_workers=2) as _ex:
+                        for result in _ex.map(_fetch_px, queries):
+                            if result:
+                                px_parts.append(result)
 
                 px_block = "\n\n".join(px_parts) if px_parts else "(Perplexity 검색 결과 없음)"
 
@@ -4896,12 +4923,22 @@ RFP 텍스트:
                     f"## ① 기관 특성/정책 분석\n## ② 과업 맥락 및 배경\n"
                     f"## ③ 유사사례 및 시장 트렌드\n## ④ 경쟁 환경 분석\n## ⑤ 전략 방향 제언"
                 )
-                resp2 = _c2.messages.create(
-                    model="claude-sonnet-4-6",
-                    max_tokens=4000,
-                    messages=[{"role": "user", "content": research_prompt}],
-                )
-                research_result = resp2.content[0].text.strip()
+                try:
+                    resp2 = _c2.messages.create(
+                        model="claude-sonnet-4-6",
+                        max_tokens=4000,
+                        messages=[{"role": "user", "content": research_prompt}],
+                        timeout=120,
+                    )
+                    research_result = resp2.content[0].text.strip()
+                except Exception as e:
+                    research_result = f"리서치 오류: {e}"
+                    if "timeout" in str(e).lower() or "Timeout" in type(e).__name__:
+                        save_confirmed_research(confirmed_id, 'error',
+                                                rfp_analysis=rfp_analysis,
+                                                research_result='API 응답 시간 초과 (리서치 종합)',
+                                                updated_by='system')
+                        return
             except Exception as e:
                 research_result = f"리서치 오류: {e}"
 
@@ -4918,7 +4955,7 @@ RFP 텍스트:
             try:
                 save_confirmed_research(confirmed_id, 'error',
                                         rfp_analysis=rfp_analysis,
-                                        research_result=research_result,
+                                        research_result=research_result or str(e),
                                         updated_by='system')
             except Exception:
                 pass
