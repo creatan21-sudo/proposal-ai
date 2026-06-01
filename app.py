@@ -4669,6 +4669,10 @@ def nara_proposal_design(confirmed_id):
     if request.method == "GET":
         pd = get_proposal_design(confirmed_id)
         return jsonify({"ok": True, "proposal_design": pd})
+    is_ops      = session.get("role") in ("admin", "operator")
+    is_assignee = session.get("username") == c.get("assignee")
+    if not (is_ops or is_assignee):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
     data    = request.get_json(force=True) or {}
     content = (data.get("content") or "")
     save_proposal_design(confirmed_id, content)

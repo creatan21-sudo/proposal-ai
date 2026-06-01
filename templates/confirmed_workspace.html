@@ -105,6 +105,11 @@ tr.sch-editing .sch-act-view{display:none !important;}
 .toast.show{opacity:1}
 .field-label{font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;}
 .field-input{width:100%;box-sizing:border-box;padding:7px 9px;border:1px solid #d1d5db;border-radius:7px;font-size:13px;}
+/* 제안설계 아코디언 */
+.pd-accord-hdr{display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:10px 0;font-size:13px;font-weight:700;color:#374151;border-top:1px solid #e5e7eb;margin-top:16px;user-select:none;}
+.pd-accord-hdr:hover{color:#4f46e5;}
+.pd-accord-body{display:none;padding-top:12px;}
+.pd-accord-body.open{display:block;}
 </style>
 {% endblock %}
 {% block content %}
@@ -480,6 +485,33 @@ tr.sch-editing .sch-act-view{display:none !important;}
         </div>
       {% endif %}
       {% endif %}
+
+      <!-- 제안설계 아코디언 -->
+      <div id="pd-accordion-wrap">
+        <div class="pd-accord-hdr" onclick="togglePdAccordion()">
+          <span>✏️ 제안설계 작성</span>
+          <span id="pd-accord-arrow">▼</span>
+        </div>
+        <div id="pd-accord-body" class="pd-accord-body">
+          {% if can_edit %}
+          <div style="display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:8px;">
+            <span id="pd-autosave-hint" style="font-size:11px;color:#9ca3af;"></span>
+            <button class="btn btn-ghost btn-sm" onclick="savePd()">💾 저장</button>
+            <button class="btn btn-ghost btn-sm" id="pd-feedback-btn" onclick="requestPdFeedback()">🤖 AI 피드백 받기</button>
+          </div>
+          <textarea id="pd-content" class="nq-ta" rows="10"
+            placeholder="제안서 구성, 차별화 전략, 핵심 메시지, 슬라이드 구성안 등 자유롭게 작성하세요"
+            oninput="schedulePdSave()"
+            style="min-height:180px;"></textarea>
+          {% else %}
+          <div id="pd-content-ro" class="nq-ro" style="min-height:60px;white-space:pre-wrap;">제안설계 내용이 없습니다.</div>
+          {% endif %}
+          <div id="pd-feedback-area" style="display:none;margin-top:16px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:14px 16px;">
+            <div style="font-size:12px;font-weight:600;color:#15803d;margin-bottom:8px;">🤖 AI 피드백</div>
+            <div style="font-size:13px;color:#374151;white-space:pre-wrap;line-height:1.7;" id="pd-feedback-text"></div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- 코멘트 -->
@@ -818,6 +850,71 @@ async function delSchedule(id, tr){
   const d=await r.json();
   if(d.ok){tr.remove();showToast('삭제되었습니다');}
   else showToast(d.error||'삭제 실패',false);
+}
+
+/* ── 제안설계 아코디언 ── */
+let _pdLoaded = false;
+let _pdTimer = null;
+function togglePdAccordion(){
+  const body=document.getElementById('pd-accord-body');
+  const arrow=document.getElementById('pd-accord-arrow');
+  const isOpen=body.classList.contains('open');
+  body.classList.toggle('open');
+  if(arrow) arrow.textContent=isOpen?'▼':'▲';
+  if(!isOpen&&!_pdLoaded) loadPdContent();
+}
+async function loadPdContent(){
+  _pdLoaded=true;
+  try{
+    const r=await fetch(`/nara/confirmed/${CID}/proposal_design`);
+    const d=await r.json();
+    if(!d.ok) return;
+    const pd=d.proposal_design;
+    if(CAN_EDIT){
+      const ta=document.getElementById('pd-content');
+      if(ta) ta.value=(pd&&pd.content)?pd.content:'';
+    }else{
+      const ro=document.getElementById('pd-content-ro');
+      if(ro) ro.textContent=(pd&&pd.content)?pd.content:'제안설계 내용이 없습니다.';
+    }
+    if(pd&&pd.ai_feedback){
+      document.getElementById('pd-feedback-text').textContent=pd.ai_feedback;
+      document.getElementById('pd-feedback-area').style.display='block';
+    }
+  }catch(e){ console.warn('제안설계 로드 실패:',e); }
+}
+function schedulePdSave(){
+  clearTimeout(_pdTimer);
+  const hint=document.getElementById('pd-autosave-hint');
+  if(hint) hint.textContent='입력 중...';
+  _pdTimer=setTimeout(savePd,3000);
+}
+async function savePd(){
+  clearTimeout(_pdTimer);
+  const ta=document.getElementById('pd-content');
+  if(!ta) return;
+  const r=await fetch(`/nara/confirmed/${CID}/proposal_design`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:ta.value})});
+  const d=await r.json();
+  const hint=document.getElementById('pd-autosave-hint');
+  if(d.ok){if(hint){hint.textContent='저장됨 ✓';setTimeout(()=>{if(hint.textContent==='저장됨 ✓')hint.textContent='';},3000);}}
+  else if(hint) hint.textContent='저장 실패';
+}
+async function requestPdFeedback(){
+  await savePd();
+  const btn=document.getElementById('pd-feedback-btn');
+  btn.disabled=true;btn.textContent='⏳ 분석 중...';
+  try{
+    const r=await fetch(`/nara/confirmed/${CID}/proposal_design/feedback`,{method:'POST'});
+    const d=await r.json();
+    if(d.ok){
+      document.getElementById('pd-feedback-text').textContent=d.feedback;
+      const area=document.getElementById('pd-feedback-area');
+      area.style.display='block';
+      area.scrollIntoView({behavior:'smooth',block:'nearest'});
+      showToast('AI 피드백이 생성되었습니다');
+    }else showToast(d.error||'피드백 생성 실패',false);
+  }catch(e){showToast('오류: '+e,false);}
+  btn.disabled=false;btn.textContent='🤖 AI 피드백 받기';
 }
 
 /* ── 일정 추가 모달 ── */
