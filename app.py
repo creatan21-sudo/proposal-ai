@@ -761,7 +761,7 @@ def ongoing():
             LEFT JOIN nara_results r ON r.confirmed_id = cf.id
             WHERE r.id IS NULL
               AND (cf.final_result IS NULL OR cf.final_result NOT IN ('won','lost'))
-            ORDER BY COALESCE(pk.bid_clse_dt, ca.bid_clse_dt) ASC
+            ORDER BY cf.created_at DESC
         """).fetchall()
 
     tasks = []
@@ -4372,16 +4372,14 @@ def nara_pickups_page():
 @app.route("/nara/confirmed")
 @login_required
 def nara_confirmed_page():
-    page     = max(1, int(request.args.get("page", 1)))
-    per_page = 20
-    offset   = (page - 1) * per_page
-    is_ops   = session.get("role") in ("admin", "operator")
+    username = session.get("username")
+    role     = session.get("role", "user")
+    is_admin = session.get("is_admin", False)
+    is_ops   = is_admin or role == "operator"
 
     with get_connection() as conn:
-        total = conn.execute("SELECT COUNT(*) FROM nara_confirmed").fetchone()[0]
         rows = conn.execute("""
-            SELECT cf.id, cf.candidate_id, cf.pickup_id, cf.confirmed_by,
-                   cf.notes, cf.assignee, cf.created_at,
+            SELECT cf.id, cf.confirmed_by, cf.notes, cf.assignee, cf.created_at,
                    cf.completion_status, cf.final_result,
                    COALESCE(pk.bid_ntce_no, ca.bid_ntce_no) AS bid_ntce_no,
                    COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm) AS bid_ntce_nm,
@@ -4390,50 +4388,62 @@ def nara_confirmed_page():
                    COALESCE(pk.bid_clse_dt, ca.bid_clse_dt) AS bid_clse_dt,
                    COALESCE(pk.ntce_url, ca.ntce_url) AS ntce_url,
                    COALESCE(rfp.cnt, 0) AS rfp_count,
-                   bi.submit_deadline, bi.submit_method,
-                   bi.pt_date, bi.pt_location, bi.price_bid_date,
                    COALESCE(res.status, 'pending') AS research_status,
                    n.content AS narrative_content,
-                   COALESCE(sch_bm.due_date, '') AS sched_bid,
-                   COALESCE(sch_ps.due_date, '') AS sched_proposal,
-                   COALESCE(sch_pt.due_date, '') AS sched_pt,
-                   COALESCE(sch_pb.due_date, '') AS sched_price
+                   COALESCE(sch.cnt, 0) AS schedule_count,
+                   CASE WHEN pd.confirmed_id IS NOT NULL THEN 1 ELSE 0 END AS has_proposal_design
             FROM nara_confirmed cf
             LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
             LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
             LEFT JOIN (SELECT confirmed_id, COUNT(*) AS cnt
                        FROM confirmed_rfp_files GROUP BY confirmed_id) rfp
                    ON rfp.confirmed_id = cf.id
-            LEFT JOIN confirmed_bid_info bi ON bi.confirmed_id = cf.id
             LEFT JOIN confirmed_narratives n ON n.confirmed_id = cf.id
             LEFT JOIN confirmed_research res ON res.confirmed_id = cf.id
-            LEFT JOIN (SELECT confirmed_id, MAX(due_date) AS due_date
-                       FROM confirmed_schedule WHERE task_name LIKE '입찰 마감%'
-                       GROUP BY confirmed_id) sch_bm ON sch_bm.confirmed_id = cf.id
-            LEFT JOIN (SELECT confirmed_id, MAX(due_date) AS due_date
-                       FROM confirmed_schedule WHERE task_name LIKE '제안서 제출%'
-                       GROUP BY confirmed_id) sch_ps ON sch_ps.confirmed_id = cf.id
-            LEFT JOIN (SELECT confirmed_id, MAX(due_date) AS due_date
-                       FROM confirmed_schedule WHERE task_name LIKE 'PT 발표%'
-                       GROUP BY confirmed_id) sch_pt ON sch_pt.confirmed_id = cf.id
-            LEFT JOIN (SELECT confirmed_id, MAX(due_date) AS due_date
-                       FROM confirmed_schedule WHERE task_name LIKE '가격투찰%'
-                       GROUP BY confirmed_id) sch_pb ON sch_pb.confirmed_id = cf.id
-            ORDER BY cf.created_at DESC LIMIT ? OFFSET ?
-        """, (per_page, offset)).fetchall()
+            LEFT JOIN (SELECT confirmed_id, COUNT(*) AS cnt
+                       FROM confirmed_schedule GROUP BY confirmed_id) sch
+                   ON sch.confirmed_id = cf.id
+            LEFT JOIN (SELECT confirmed_id FROM proposal_design WHERE content != '') pd
+                   ON pd.confirmed_id = cf.id
+            ORDER BY cf.created_at DESC LIMIT 200
+        """).fetchall()
 
-    confirmed_items = [dict(r) for r in rows]
-    pagination = {
-        "items":    confirmed_items,
-        "total":    total,
-        "page":     page,
-        "per_page": per_page,
-        "pages":    max(1, -(-total // per_page)),
-    }
+    confirmed_all = []
+    for row in rows:
+        c = dict(row)
+        is_assignee = (c.get("assignee") == username)
+        can_edit = is_ops or is_assignee
+        incomplete = []
+        if c["rfp_count"] == 0:
+            incomplete.append({"icon": "📄", "label": "RFP 미등록",
+                                "link": f"/nara/confirmed/{c['id']}/workspace?tab=research"})
+        if c.get("research_status") not in ("done",):
+            incomplete.append({"icon": "🔍", "label": "리서치 미실시",
+                                "link": f"/nara/confirmed/{c['id']}/workspace?tab=research"})
+        if c.get("schedule_count", 0) <= 1:
+            incomplete.append({"icon": "📅", "label": "일정 미등록",
+                                "link": f"/nara/confirmed/{c['id']}/workspace?tab=narrative"})
+        if not c["narrative_content"] or c["narrative_content"] in ("{}", ""):
+            incomplete.append({"icon": "✍️", "label": "내러티브 미작성",
+                                "link": f"/nara/confirmed/{c['id']}/workspace?tab=narrative"})
+        c["incomplete"]      = incomplete
+        c["can_edit"]        = can_edit
+        c["is_assignee"]     = is_assignee
+        c["badge_rfp"]       = c["rfp_count"] > 0
+        c["badge_research"]  = c.get("research_status") == "done"
+        c["badge_narrative"] = bool(c.get("narrative_content") and
+                                    c["narrative_content"] not in ("{}", ""))
+        c["badge_proposal"]  = bool(c.get("has_proposal_design"))
+        confirmed_all.append(c)
+
+    my_confirmed  = [c for c in confirmed_all if c.get("assignee") == username]
+    from datetime import datetime as _dt, timedelta as _td
+    _now = _dt.now()
     return render_template("nara_confirmed.html",
-                           confirmed=confirmed_items,
-                           pagination=pagination,
-                           is_ops=is_ops)
+                           my_confirmed=my_confirmed,
+                           all_confirmed=confirmed_all,
+                           is_ops=is_ops,
+                           cutoff_d3=(_now + _td(days=3)).strftime("%Y-%m-%d"))
 
 
 @app.route("/nara/archive")

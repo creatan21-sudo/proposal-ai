@@ -2,65 +2,42 @@
 {% block title %}입찰 확정 — Prointerz{% endblock %}
 {% block head %}
 <style>
-.nara-wrap{max-width:1100px;margin:0 auto;padding:24px 16px}
+.og-wrap{max-width:900px;margin:0 auto;padding:24px 16px}
 /* 탭 */
+.og-tabs{display:flex;gap:2px;margin-bottom:24px;border-bottom:2px solid #e5e7eb;}
+.og-tab{padding:9px 20px;font-size:13px;font-weight:600;color:#6b7280;text-decoration:none;border-radius:6px 6px 0 0;border-bottom:2px solid transparent;margin-bottom:-2px;cursor:pointer;transition:all .15s;}
+.og-tab:hover{color:#4f46e5;background:#f5f3ff;}
+.og-tab.active{color:#4f46e5;border-bottom-color:#4f46e5;background:#fff;}
 /* 카드 */
-.c-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:0;margin-bottom:14px;overflow:hidden;transition:box-shadow .15s,border-color .15s;cursor:pointer;}
-.c-card:hover{box-shadow:0 2px 12px rgba(0,0,0,.08);border-color:#c7d2fe;}
-.c-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 18px 10px;}
-.c-card-name{font-size:15px;font-weight:700;color:#111827;line-height:1.3;flex:1;min-width:0;}
-.c-card-flags{display:flex;gap:6px;flex-shrink:0;}
-.c-flag{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:6px;background:#fff5f5;border:1px solid #fca5a5;font-size:14px;cursor:default;position:relative;}
-.c-flag .tip{display:none;position:absolute;bottom:calc(100%+5px);right:0;background:#1f2937;color:#fff;white-space:nowrap;font-size:11px;padding:3px 7px;border-radius:5px;pointer-events:none;z-index:10;}
-.c-flag:hover .tip{display:block;}
-.c-card-meta{display:flex;gap:10px;flex-wrap:wrap;align-items:center;padding:0 18px 10px;font-size:12px;color:#6b7280;}
-.c-meta-org{font-weight:500;color:#374151;}
-.c-meta-prce{font-weight:600;color:#059669;}
-.c-meta-due{color:#6b7280;}
-.c-meta-due.urgent{color:#dc2626;font-weight:700;}
-.c-assignee{background:#ede9fe;color:#5b21b6;border-radius:99px;padding:1px 8px;font-size:11px;font-weight:600;}
-/* 카드 섹션 행 */
-.c-row{display:flex;gap:8px;align-items:flex-start;padding:8px 18px;border-top:1px solid #f3f4f6;font-size:12px;color:#374151;}
-.c-row-label{font-size:11px;font-weight:600;color:#9ca3af;white-space:nowrap;min-width:54px;margin-top:1px;}
-.c-row-val{flex:1;line-height:1.5;}
-.c-warn{color:#ef4444;font-weight:600;}
-/* 일정 아이콘 */
-.sched-dot{display:inline-flex;align-items:center;gap:3px;margin-right:10px;font-size:12px;}
-.sched-dot .ico{font-size:13px;}
-/* 카드 하단 액션 */
-.c-card-foot{padding:10px 18px;border-top:1px solid #f3f4f6;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
-.c-card-foot-actions{display:flex;gap:6px;}
-/* 버튼 */
-.btn{display:inline-flex;align-items:center;gap:3px;padding:6px 12px;border:none;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;text-decoration:none;}
-.btn-ws{background:#4f46e5;color:#fff;}
-.btn-ws:hover{background:#4338ca;}
-.btn-ghost{background:#fff;color:#374151;border:1px solid #d1d5db;}
-.btn-ghost:hover{background:#f3f4f6;}
-.btn-win{background:#059669;color:#fff;}
-.btn-win:hover{background:#047857;}
-.btn-lose{background:#ef4444;color:#fff;}
-.btn-lose:hover{background:#dc2626;}
-.btn-rfp{background:#fff7ed;color:#c2410c;border:1px solid #fed7aa;}
-.btn-rfp:hover{background:#ffedd5;}
-/* 페이지네이션 */
-.pagination{display:flex;gap:4px;justify-content:center;margin-top:20px;flex-wrap:wrap;}
-.page-btn{padding:6px 12px;border:1px solid #e5e7eb;border-radius:6px;font-size:13px;color:#374151;background:#fff;cursor:pointer;text-decoration:none;transition:all .15s;}
-.page-btn:hover{background:#f3f4f6;}
-.page-btn.active{background:#4f46e5;color:#fff;border-color:#4f46e5;font-weight:700;}
-.page-btn.disabled{color:#d1d5db;cursor:default;pointer-events:none;}
-/* 모달 */
-.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;}
-.modal-overlay.open{display:flex;}
-.modal-box{background:#fff;border-radius:14px;padding:28px;width:440px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.25);}
-.modal-title{font-weight:700;font-size:16px;margin-bottom:4px;}
-.modal-nm{font-size:13px;color:#2563eb;font-weight:600;margin-bottom:16px;line-height:1.4;}
-.modal-label{font-size:12px;font-weight:600;color:#6b7280;margin-bottom:5px;}
-.modal-textarea{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:vertical;font-family:inherit;}
-.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;}
+.og-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 20px;margin-bottom:10px;cursor:pointer;transition:box-shadow .15s,border-color .15s;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.og-card:hover{box-shadow:0 2px 12px rgba(0,0,0,.08);border-color:#c7d2fe;}
+.og-card-left{flex:1;min-width:0;}
+.og-card-name{font-size:14px;font-weight:700;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px;}
+.og-card-meta{font-size:12px;color:#6b7280;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.og-card-meta .org{color:#374151;font-weight:500;}
+.og-card-meta .due.urgent{color:#dc2626;font-weight:700;}
+.og-card-meta .assignee{background:#ede9fe;color:#5b21b6;border-radius:99px;padding:1px 8px;font-size:11px;font-weight:600;}
+.og-card-meta .cs-badge{border-radius:99px;padding:1px 8px;font-size:11px;font-weight:600;}
+.og-card-meta .cs-requested{background:#fef3c7;color:#92400e;}
+.og-card-meta .cs-approved{background:#d1fae5;color:#065f46;}
+.og-card-icons{display:flex;gap:6px;flex-shrink:0;}
+.og-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;background:#f9fafb;border:1px solid #e5e7eb;font-size:16px;cursor:pointer;text-decoration:none;transition:background .12s,border-color .12s;position:relative;}
+.og-icon-btn:hover{background:#eff6ff;border-color:#bfdbfe;}
+.og-icon-btn .tip{display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;white-space:nowrap;font-size:11px;padding:4px 8px;border-radius:6px;pointer-events:none;z-index:10;}
+.og-icon-btn:hover .tip{display:block;}
+.og-empty{text-align:center;padding:48px 0;color:#9ca3af;font-size:14px;}
+.badge-status{display:inline-block;font-size:11px;padding:2px 7px;border-radius:10px;margin-left:4px;font-weight:500;cursor:pointer;background:#e8f5e9;color:#2e7d32;text-decoration:none;vertical-align:middle;}
+.badge-status:hover{background:#c8e6c9;}
+.og-id{font-size:12px;color:#999;font-weight:400;margin-right:8px;flex-shrink:0;}
+.og-del-btn{background:none;border:none;cursor:pointer;font-size:12px;color:#ef4444;padding:3px 7px;line-height:1;flex-shrink:0;font-weight:600;border-radius:4px;transition:background .12s;}
+.og-del-btn:hover{background:#fee2e2;}
+/* 삭제 확인 모달 */
+.del-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;}
+.del-modal-overlay.open{display:flex;}
+.del-modal-box{background:#fff;border-radius:12px;padding:24px;width:400px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.25);}
 /* 토스트 */
 .toast{position:fixed;bottom:28px;right:28px;background:#1f2937;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;z-index:9999;pointer-events:none}
 .toast.show{opacity:1}
-.bid-empty{text-align:center;padding:60px;color:#9ca3af;font-size:14px;}
 </style>
 {% endblock %}
 {% block subnav %}
@@ -75,264 +52,187 @@
 </div>
 {% endblock %}
 {% block content %}
-<div class="nara-wrap">
+<div class="og-wrap">
 
-  {% if confirmed %}
-  {% for c in confirmed %}
-  {% set nm_safe = c.bid_ntce_nm | replace("'","\\'")|e %}
-  {% set g2b_url = 'https://www.g2b.go.kr/link/PNPE027_01/?bidPbancNo=' ~ (c.bid_ntce_no or '') ~ '&bidPbancOrd=000' %}
-  {# 미완료 플래그 #}
-  {% set miss_rfp  = c.rfp_count == 0 %}
-  {% set miss_research = c.research_status not in ('done',) %}
-  {% set miss_sched = not c.sched_bid and not c.sched_proposal and not c.sched_pt and not c.sched_price %}
-  {% set miss_narr = not c.narrative_content or c.narrative_content in ('{}','') %}
-  {# 입찰정보 등록 여부 #}
-  {% set has_bi = c.submit_deadline or c.pt_date or c.price_bid_date %}
+  {% set now_str = '' %}
 
-  <div class="c-card" onclick="location.href='/nara/confirmed/{{ c.id }}'">
-    <!-- 상단: 공고명 + 미완료 아이콘 -->
-    <div class="c-card-head">
-      <div class="c-card-name">
-        <span style="font-size:12px;color:#999;font-weight:400;margin-right:8px;">{{ c.id }}</span>{{ c.bid_ntce_nm or '-' }}
-      </div>
-      <div class="c-card-flags">
-        {% if miss_rfp %}
-        <span class="c-flag" onclick="event.stopPropagation(); openRfpModal({{ c.id }},'{{ nm_safe }}','{{ g2b_url }}')" title="RFP 미등록">
-          📄<span class="tip">RFP 미등록</span>
-        </span>
-        {% endif %}
-        {% if miss_research %}
-        <span class="c-flag" onclick="event.stopPropagation(); location.href='/nara/confirmed/{{ c.id }}/workspace?tab=research'" title="리서치 미실시">
-          🔍<span class="tip">리서치 미실시</span>
-        </span>
-        {% endif %}
-        {% if miss_sched %}
-        <span class="c-flag" onclick="event.stopPropagation(); location.href='/nara/confirmed/{{ c.id }}/workspace?tab=narrative'" title="일정 미등록">
-          📅<span class="tip">일정 미등록</span>
-        </span>
-        {% endif %}
-        {% if miss_narr %}
-        <span class="c-flag" onclick="event.stopPropagation(); location.href='/nara/confirmed/{{ c.id }}/workspace?tab=narrative'" title="내러티브 미작성">
-          ✍️<span class="tip">내러티브 미작성</span>
-        </span>
-        {% endif %}
-      </div>
-    </div>
-
-    <!-- 메타: 발주처·추정가격·마감일·담당자 -->
-    <div class="c-card-meta">
-      <span class="c-meta-org">{{ c.ntce_instt_nm or '-' }}</span>
-      {% if c.presmpt_prce and c.presmpt_prce.isdigit() %}
-      <span class="c-meta-prce">{{ '{:,}'.format(c.presmpt_prce|int) }}원</span>
-      {% endif %}
-      {% if c.bid_clse_dt %}
-      <span class="c-meta-due">마감 {{ (c.bid_clse_dt or '')[:10] }}</span>
-      {% endif %}
-      {% if c.assignee %}<span class="c-assignee">{{ c.assignee }}</span>{% endif %}
-      <span style="color:#d1d5db;">·</span>
-      <span style="color:#9ca3af;font-size:11px;">확정 {{ (c.created_at or '')[:10] }}</span>
-    </div>
-
-    <!-- 입찰정보 행 -->
-    <div class="c-row">
-      <div class="c-row-label">입찰정보</div>
-      <div class="c-row-val">
-        {% if has_bi %}
-          {% if c.submit_deadline %}
-          <span>제출마감: {{ c.submit_deadline[:16] }}</span>
-          {% if c.submit_method %} · 방법: <strong>{{ c.submit_method }}</strong>{% endif %}
-          {% endif %}
-          {% if c.pt_date %}
-          <span style="margin-left:8px;">PT: {{ c.pt_date[:16] }}{% if c.pt_location %} @ {{ c.pt_location }}{% endif %}</span>
-          {% endif %}
-          {% if c.price_bid_date %}
-          <span style="margin-left:8px;">투찰: {{ c.price_bid_date[:16] }}</span>
-          {% endif %}
-        {% else %}
-          <span class="c-warn">⚠️ 입찰정보 미등록</span>
-        {% endif %}
-      </div>
-    </div>
-
-    <!-- 진행일정 행 -->
-    <div class="c-row">
-      <div class="c-row-label">진행일정</div>
-      <div class="c-row-val">
-        <span class="sched-dot">
-          <span class="ico">{% if c.sched_bid %}✅{% else %}⬜{% endif %}</span> 입찰마감
-        </span>
-        <span class="sched-dot">
-          <span class="ico">{% if c.sched_proposal %}✅{% else %}⬜{% endif %}</span> 제안서제출
-        </span>
-        <span class="sched-dot">
-          <span class="ico">{% if c.sched_pt %}✅{% else %}⬜{% endif %}</span> PT
-        </span>
-        <span class="sched-dot">
-          <span class="ico">{% if c.sched_price %}✅{% else %}⬜{% endif %}</span> 투찰
-        </span>
-      </div>
-    </div>
-
-    <!-- 리서치·내러티브 행 -->
-    <div class="c-row">
-      <div class="c-row-label">분석/전략</div>
-      <div class="c-row-val">
-        <span style="margin-right:14px;">
-          리서치:
-          {% if c.research_status == 'done' %}
-          <span style="color:#059669;font-weight:600;">✅ 완료</span>
-          {% elif c.research_status == 'running' %}
-          <span style="color:#1d4ed8;font-weight:600;">🔄 분석중</span>
-          {% else %}
-          <span class="c-warn">⚠️ 미실행</span>
-          {% endif %}
-        </span>
-        <span>
-          내러티브:
-          {% if c.narrative_content and c.narrative_content not in ('{}','') %}
-          <span style="color:#059669;font-weight:600;">✅ 작성완료</span>
-          {% else %}
-          <span class="c-warn">⚠️ 미작성</span>
-          {% endif %}
-        </span>
-      </div>
-    </div>
-
-    <!-- 하단 액션 -->
-    <div class="c-card-foot" onclick="event.stopPropagation()">
-      <a href="/nara/confirmed/{{ c.id }}/workspace" class="btn btn-ws">작업하기 →</a>
-      <div class="c-card-foot-actions">
-        <a href="{{ g2b_url }}" target="_blank" class="btn btn-ghost">나라장터 →</a>
-        {% if miss_rfp %}
-        <button class="btn btn-rfp" onclick="openRfpModal({{ c.id }},'{{ nm_safe }}','{{ g2b_url }}')">📎 RFP 등록</button>
-        {% endif %}
-        {% if c.completion_status == 'approved' %}
-          {% if is_ops %}
-          <button class="btn btn-win" onclick="confirmResult({{ c.id }},'won')">🏆 수주 확정</button>
-          <button class="btn btn-lose" onclick="confirmResult({{ c.id }},'lost')">💔 낙주 확정</button>
-          {% else %}
-          <span style="font-size:12px;color:#059669;font-weight:600;">✅ 완료 승인됨</span>
-          {% endif %}
-        {% elif c.completion_status == 'requested' %}
-          <span style="font-size:12px;color:#d97706;font-weight:600;">⏳ 승인 대기</span>
-          {% if is_ops %}
-          <button class="btn" style="background:#059669;color:#fff;" onclick="approveCompletion({{ c.id }})">승인</button>
-          {% endif %}
-        {% else %}
-          <button class="btn btn-ghost" onclick="requestCompletion({{ c.id }})">완료 요청</button>
-        {% endif %}
-      </div>
-    </div>
+  <!-- 탭 -->
+  <div class="og-tabs">
+    <a class="og-tab active" id="tab-my" href="javascript:void(0)" onclick="switchTab('my')">👤 내 확정 <span style="background:#f3f4f6;color:#6b7280;border-radius:99px;padding:1px 7px;font-size:11px;font-weight:600;margin-left:4px;" id="cnt-my">{{ my_confirmed|length }}</span></a>
+    <a class="og-tab" id="tab-all" href="javascript:void(0)" onclick="switchTab('all')">🏢 전체 확정 <span style="background:#f3f4f6;color:#6b7280;border-radius:99px;padding:1px 7px;font-size:11px;font-weight:600;margin-left:4px;" id="cnt-all">{{ all_confirmed|length }}</span></a>
   </div>
-  {% endfor %}
 
-  {% if pagination.pages > 1 %}
-  <div class="pagination">
-    <a href="?page={{ pagination.page - 1 }}" class="page-btn {% if pagination.page <= 1 %}disabled{% endif %}">이전</a>
-    {% for p in range(1, pagination.pages + 1) %}
-    <a href="?page={{ p }}" class="page-btn {% if p == pagination.page %}active{% endif %}">{{ p }}</a>
-    {% endfor %}
-    <a href="?page={{ pagination.page + 1 }}" class="page-btn {% if pagination.page >= pagination.pages %}disabled{% endif %}">다음</a>
+  <!-- 내 확정 탭 -->
+  <div id="pane-my">
+    {% if my_confirmed %}
+      {% for t in my_confirmed %}
+      {% set clse = (t.bid_clse_dt or '')[:10] %}
+      <div class="og-card" id="og-card-my-{{ t.id }}" onclick="location.href='/nara/confirmed/{{ t.id }}'">
+        <span class="og-id">{{ t.id }}</span>
+        <div class="og-card-left">
+          <div class="og-card-name" title="{{ t.bid_ntce_nm or '-' }}">
+            {{ t.bid_ntce_nm or '-' }}
+            {% if t.badge_rfp %}
+            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=research"
+               onclick="event.stopPropagation();" title="RFP 등록됨">RFP분석</a>
+            {% endif %}
+            {% if t.badge_research %}
+            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=research"
+               onclick="event.stopPropagation();" title="리서치 완료">리서치</a>
+            {% endif %}
+            {% if t.badge_narrative %}
+            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=narrative"
+               onclick="event.stopPropagation();" title="내러티브 작성됨">내러티브</a>
+            {% endif %}
+            {% if t.badge_proposal %}
+            <a class="badge-status" href="/nara/confirmed/{{ t.id }}?tab=proposal_design"
+               onclick="event.stopPropagation();" title="제안설계 작성됨">제안설계</a>
+            {% endif %}
+          </div>
+          <div class="og-card-meta">
+            <span class="org">{{ t.ntce_instt_nm or '-' }}</span>
+            {% if clse %}
+            <span class="due{% if clse <= cutoff_d3 %} urgent{% endif %}">마감 {{ clse }}</span>
+            {% endif %}
+            {% if t.assignee %}
+            <span class="assignee">{{ t.assignee }}</span>
+            {% endif %}
+            {% if t.completion_status == 'requested' %}
+            <span class="cs-badge cs-requested">⏳ 승인 대기</span>
+            {% elif t.completion_status == 'approved' %}
+            <span class="cs-badge cs-approved">✅ 완료 승인</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="og-card-icons">
+          {% for item in t.incomplete %}
+          <a class="og-icon-btn" href="{{ item.link }}" onclick="event.stopPropagation();" title="{{ item.label }}">
+            {{ item.icon }}<span class="tip">{{ item.label }}</span>
+          </a>
+          {% endfor %}
+          {% if is_ops %}
+          <button class="og-del-btn"
+            onclick="event.stopPropagation();openDelModal({{ t.id }},'{{ t.bid_ntce_nm | e }}')">[삭제]</button>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="og-empty">담당 확정 과업이 없습니다</div>
+    {% endif %}
   </div>
-  {% endif %}
 
-  {% else %}
-  <div class="bid-empty">확정된 공고가 없습니다</div>
-  {% endif %}
+  <!-- 전체 확정 탭 -->
+  <div id="pane-all" style="display:none;">
+    {% if all_confirmed %}
+      {% for t in all_confirmed %}
+      {% set clse = (t.bid_clse_dt or '')[:10] %}
+      <div class="og-card" id="og-card-all-{{ t.id }}" onclick="location.href='/nara/confirmed/{{ t.id }}'">
+        <span class="og-id">{{ t.id }}</span>
+        <div class="og-card-left">
+          <div class="og-card-name" title="{{ t.bid_ntce_nm or '-' }}">
+            {{ t.bid_ntce_nm or '-' }}
+            {% if t.badge_rfp %}
+            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=research"
+               onclick="event.stopPropagation();" title="RFP 등록됨">RFP분석</a>
+            {% endif %}
+            {% if t.badge_research %}
+            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=research"
+               onclick="event.stopPropagation();" title="리서치 완료">리서치</a>
+            {% endif %}
+            {% if t.badge_narrative %}
+            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=narrative"
+               onclick="event.stopPropagation();" title="내러티브 작성됨">내러티브</a>
+            {% endif %}
+            {% if t.badge_proposal %}
+            <a class="badge-status" href="/nara/confirmed/{{ t.id }}?tab=proposal_design"
+               onclick="event.stopPropagation();" title="제안설계 작성됨">제안설계</a>
+            {% endif %}
+          </div>
+          <div class="og-card-meta">
+            <span class="org">{{ t.ntce_instt_nm or '-' }}</span>
+            {% if clse %}
+            <span class="due{% if clse <= cutoff_d3 %} urgent{% endif %}">마감 {{ clse }}</span>
+            {% endif %}
+            {% if t.assignee %}
+            <span class="assignee">{{ t.assignee }}</span>
+            {% endif %}
+            {% if t.completion_status == 'requested' %}
+            <span class="cs-badge cs-requested">⏳ 승인 대기</span>
+            {% elif t.completion_status == 'approved' %}
+            <span class="cs-badge cs-approved">✅ 완료 승인</span>
+            {% endif %}
+          </div>
+        </div>
+        <div class="og-card-icons">
+          {% for item in t.incomplete %}
+          <a class="og-icon-btn" href="{{ item.link }}" onclick="event.stopPropagation();" title="{{ item.label }}">
+            {{ item.icon }}<span class="tip">{{ item.label }}</span>
+          </a>
+          {% endfor %}
+          {% if is_ops %}
+          <button class="og-del-btn"
+            onclick="event.stopPropagation();openDelModal({{ t.id }},'{{ t.bid_ntce_nm | e }}')">[삭제]</button>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="og-empty">확정된 과업이 없습니다</div>
+    {% endif %}
+  </div>
+
 </div>
 
-<!-- RFP 업로드 모달 -->
-<div class="modal-overlay" id="rfp-upload-modal" onclick="if(event.target===this)closeRfpModal()">
-  <div class="modal-box">
-    <div class="modal-title">📎 RFP 파일 등록</div>
-    <div class="modal-nm" id="rfp-modal-nm"></div>
-    <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:12px 14px;font-size:13px;color:#92400e;margin-bottom:16px;line-height:1.6;">
-      1. 나라장터 원문에서 첨부파일을 다운로드해주세요<br>
-      2. 아래에서 파일을 업로드하면 자동 분석이 시작됩니다
-      <div style="margin-top:8px;">
-        <a id="rfp-modal-g2b-link" href="#" target="_blank"
-           style="font-size:12px;font-weight:600;color:#2563eb;text-decoration:underline;">나라장터 원문 바로가기 →</a>
-      </div>
-    </div>
-    <div class="modal-label">파일 선택 (PDF / HWP / HWPX / DOCX)</div>
-    <input type="file" id="rfp-file-input" multiple accept=".pdf,.hwp,.hwpx,.docx,.txt"
-           style="display:block;width:100%;box-sizing:border-box;padding:8px;border:1px solid #d1d5db;border-radius:7px;font-size:13px;margin-bottom:6px;">
-    <div style="font-size:11px;color:#9ca3af;margin-bottom:16px;">여러 파일 동시 업로드 가능</div>
-    <div class="modal-btns">
-      <button onclick="closeRfpModal()" style="padding:8px 18px;background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:7px;cursor:pointer;font-size:13px;">취소</button>
-      <button id="rfp-upload-btn" onclick="submitRfpUpload()" style="padding:8px 20px;background:#059669;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">등록</button>
+<!-- 삭제 확인 모달 -->
+<div class="del-modal-overlay" id="del-modal" onclick="if(event.target===this)closeDelModal()">
+  <div class="del-modal-box">
+    <div style="font-size:15px;font-weight:700;color:#111827;margin-bottom:10px;">⚠️ 과업 삭제</div>
+    <div id="del-modal-msg" style="font-size:13px;color:#374151;margin-bottom:20px;line-height:1.6;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="closeDelModal()" style="padding:8px 18px;background:#f3f4f6;border:none;border-radius:7px;cursor:pointer;font-size:13px;">취소</button>
+      <button id="del-confirm-btn" onclick="confirmDelete()" style="padding:8px 18px;background:#ef4444;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">삭제</button>
     </div>
   </div>
 </div>
-
 
 <div class="toast" id="toast"></div>
 <script>
-function showToast(msg,ok=true){
+let _delId = null;
+
+function showToast(msg, ok=true){
   const t=document.getElementById('toast');
-  t.textContent=msg;t.style.background=ok?'#1f2937':'#b91c1c';
-  t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800);
+  t.textContent=msg; t.style.background=ok?'#1f2937':'#b91c1c';
+  t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2800);
 }
 
-/* RFP 업로드 모달 */
-let _rfpCid=null;
-function openRfpModal(id,nm,g2bUrl){
-  _rfpCid=id;
-  document.getElementById('rfp-modal-nm').textContent=nm;
-  document.getElementById('rfp-modal-g2b-link').href=g2bUrl;
-  document.getElementById('rfp-file-input').value='';
-  document.getElementById('rfp-upload-modal').classList.add('open');
+function openDelModal(id, nm){
+  _delId = id;
+  document.getElementById('del-modal-msg').innerHTML =
+    `[${id}번] <b>${nm}</b>을(를) 삭제하시겠습니까?<br><span style="color:#ef4444;">모든 관련 데이터가 함께 삭제됩니다.</span>`;
+  document.getElementById('del-modal').classList.add('open');
 }
-function closeRfpModal(){document.getElementById('rfp-upload-modal').classList.remove('open');_rfpCid=null;}
-
-async function submitRfpUpload(){
-  if(!_rfpCid) return;
-  const input=document.getElementById('rfp-file-input');
-  if(!input.files.length){showToast('파일을 선택해주세요',false);return;}
-  const fd=new FormData();
-  Array.from(input.files).forEach(f=>fd.append('files',f));
-  const btn=document.getElementById('rfp-upload-btn');
-  btn.disabled=true;btn.textContent='등록 중...';
-  try{
-    const r=await fetch(`/nara/confirmed/${_rfpCid}/upload_rfp`,{method:'POST',body:fd});
-    const d=await r.json();
-    if(d.ok){closeRfpModal();showToast('등록 완료. 분석을 시작합니다 🚀');setTimeout(()=>location.reload(),1200);}
-    else showToast(d.error||'등록 실패',false);
-  }catch(e){showToast('오류: '+e,false);}
-  btn.disabled=false;btn.textContent='등록';
+function closeDelModal(){ document.getElementById('del-modal').classList.remove('open'); _delId=null; }
+function confirmDelete(){
+  if(!_delId) return;
+  const cardId = _delId;
+  const activeTab = document.getElementById('tab-my')?.classList.contains('active') ? 'mine' : 'all';
+  closeDelModal();
+  fetch(`/nara/confirmed/${cardId}/delete`,{method:'POST'})
+    .then(()=>{ location.href = location.pathname + '?tab=' + activeTab; })
+    .catch(()=>{ location.href = location.pathname + '?tab=' + activeTab; });
 }
 
-/* 완료 요청 */
-async function requestCompletion(id){
-  try{
-    const r=await fetch(`/nara/confirmed/${id}/request_completion`,{method:'POST'});
-    const d=await r.json();
-    if(d.ok){showToast('완료 요청이 전송되었습니다');setTimeout(()=>location.reload(),800);}
-    else showToast(d.error||'오류',false);
-  }catch(e){showToast('오류: '+e,false);}
+function switchTab(name){
+  ['my','all'].forEach(t=>{
+    document.getElementById('pane-'+t).style.display=t===name?'block':'none';
+    document.getElementById('tab-'+t).classList.toggle('active',t===name);
+  });
 }
 
-/* 완료 승인 */
-async function approveCompletion(id){
-  if(!confirm('완료를 승인하시겠습니까?')) return;
-  try{
-    const r=await fetch(`/nara/confirmed/${id}/approve_completion`,{method:'POST'});
-    const d=await r.json();
-    if(d.ok){showToast('완료가 승인되었습니다');setTimeout(()=>location.reload(),800);}
-    else showToast(d.error||'오류',false);
-  }catch(e){showToast('오류: '+e,false);}
-}
-
-/* 최종 결과 (수주/낙주) */
-async function confirmResult(id,result){
-  const label=result==='won'?'수주':'낙주';
-  if(!confirm(`${label} 확정하시겠습니까?`)) return;
-  try{
-    const r=await fetch(`/nara/confirmed/${id}/set_result`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({result})});
-    const d=await r.json();
-    if(d.ok){showToast(`${label} 결과가 등록되었습니다`);setTimeout(()=>location.href='/nara/archive',800);}
-    else showToast(d.error||'오류',false);
-  }catch(e){showToast('오류: '+e,false);}
-}
+(function(){
+  const tab = new URLSearchParams(location.search).get('tab');
+  if(tab === 'all') switchTab('all');
+})();
 </script>
 {% endblock %}
