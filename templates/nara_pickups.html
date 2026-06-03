@@ -95,6 +95,9 @@
             <span class="bid-nm-link" onclick="openPickupDetail(this.closest('tr'))">
               {{ p.bid_ntce_nm or '-' }}
             </span>
+            <br>
+            <button onclick="openPickupDetail(this.closest('tr'))"
+              style="margin-top:4px;display:inline-block;font-size:11px;padding:2px 7px;border-radius:10px;font-weight:500;cursor:pointer;background:#e8f5e9;color:#2e7d32;border:none;line-height:1.5;">픽업 이유</button>
           </td>
           <td>{{ p.ntce_instt_nm or '-' }}</td>
           <td class="bid-prce">{% if p.presmpt_prce and p.presmpt_prce.isdigit() %}{{ '{:,}'.format(p.presmpt_prce|int) }}원{% else %}-{% endif %}</td>
