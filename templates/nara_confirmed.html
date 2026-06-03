@@ -3,12 +3,6 @@
 {% block head %}
 <style>
 .og-wrap{max-width:900px;margin:0 auto;padding:24px 16px}
-/* 탭 */
-.og-tabs{display:flex;gap:2px;margin-bottom:24px;border-bottom:2px solid #e5e7eb;}
-.og-tab{padding:9px 20px;font-size:13px;font-weight:600;color:#6b7280;text-decoration:none;border-radius:6px 6px 0 0;border-bottom:2px solid transparent;margin-bottom:-2px;cursor:pointer;transition:all .15s;}
-.og-tab:hover{color:#4f46e5;background:#f5f3ff;}
-.og-tab.active{color:#4f46e5;border-bottom-color:#4f46e5;background:#fff;}
-/* 카드 */
 .og-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 20px;margin-bottom:10px;cursor:pointer;transition:box-shadow .15s,border-color .15s;display:flex;align-items:center;justify-content:space-between;gap:12px;}
 .og-card:hover{box-shadow:0 2px 12px rgba(0,0,0,.08);border-color:#c7d2fe;}
 .og-card-left{flex:1;min-width:0;}
@@ -31,11 +25,9 @@
 .og-id{font-size:12px;color:#999;font-weight:400;margin-right:8px;flex-shrink:0;}
 .og-del-btn{background:none;border:none;cursor:pointer;font-size:12px;color:#ef4444;padding:3px 7px;line-height:1;flex-shrink:0;font-weight:600;border-radius:4px;transition:background .12s;}
 .og-del-btn:hover{background:#fee2e2;}
-/* 삭제 확인 모달 */
 .del-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;}
 .del-modal-overlay.open{display:flex;}
 .del-modal-box{background:#fff;border-radius:12px;padding:24px;width:400px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.25);}
-/* 토스트 */
 .toast{position:fixed;bottom:28px;right:28px;background:#1f2937;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;z-index:9999;pointer-events:none}
 .toast.show{opacity:1}
 </style>
@@ -54,133 +46,62 @@
 {% block content %}
 <div class="og-wrap">
 
-  {% set now_str = '' %}
-
-  <!-- 탭 -->
-  <div class="og-tabs">
-    <a class="og-tab active" id="tab-my" href="javascript:void(0)" onclick="switchTab('my')">👤 내 확정 <span style="background:#f3f4f6;color:#6b7280;border-radius:99px;padding:1px 7px;font-size:11px;font-weight:600;margin-left:4px;" id="cnt-my">{{ my_confirmed|length }}</span></a>
-    <a class="og-tab" id="tab-all" href="javascript:void(0)" onclick="switchTab('all')">🏢 전체 확정 <span style="background:#f3f4f6;color:#6b7280;border-radius:99px;padding:1px 7px;font-size:11px;font-weight:600;margin-left:4px;" id="cnt-all">{{ all_confirmed|length }}</span></a>
-  </div>
-
-  <!-- 내 확정 탭 -->
-  <div id="pane-my">
-    {% if my_confirmed %}
-      {% for t in my_confirmed %}
-      {% set clse = (t.bid_clse_dt or '')[:10] %}
-      <div class="og-card" id="og-card-my-{{ t.id }}" onclick="location.href='/nara/confirmed/{{ t.id }}'">
-        <span class="og-id">{{ t.id }}</span>
-        <div class="og-card-left">
-          <div class="og-card-name" title="{{ t.bid_ntce_nm or '-' }}">
-            {{ t.bid_ntce_nm or '-' }}
-            {% if t.badge_rfp %}
-            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=research"
-               onclick="event.stopPropagation();" title="RFP 등록됨">RFP분석</a>
-            {% endif %}
-            {% if t.badge_research %}
-            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=research"
-               onclick="event.stopPropagation();" title="리서치 완료">리서치</a>
-            {% endif %}
-            {% if t.badge_narrative %}
-            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=narrative"
-               onclick="event.stopPropagation();" title="내러티브 작성됨">내러티브</a>
-            {% endif %}
-            {% if t.badge_proposal %}
-            <a class="badge-status" href="/nara/confirmed/{{ t.id }}?tab=proposal_design"
-               onclick="event.stopPropagation();" title="제안설계 작성됨">제안설계</a>
-            {% endif %}
-          </div>
-          <div class="og-card-meta">
-            <span class="org">{{ t.ntce_instt_nm or '-' }}</span>
-            {% if clse %}
-            <span class="due{% if clse <= cutoff_d3 %} urgent{% endif %}">마감 {{ clse }}</span>
-            {% endif %}
-            {% if t.assignee %}
-            <span class="assignee">{{ t.assignee }}</span>
-            {% endif %}
-            {% if t.completion_status == 'requested' %}
-            <span class="cs-badge cs-requested">⏳ 승인 대기</span>
-            {% elif t.completion_status == 'approved' %}
-            <span class="cs-badge cs-approved">✅ 완료 승인</span>
-            {% endif %}
-          </div>
+  {% if confirmed %}
+    {% for t in confirmed %}
+    {% set clse = (t.bid_clse_dt or '')[:10] %}
+    <div class="og-card" onclick="location.href='/nara/confirmed/{{ t.id }}'">
+      <span class="og-id">{{ t.id }}</span>
+      <div class="og-card-left">
+        <div class="og-card-name" title="{{ t.bid_ntce_nm or '-' }}">
+          {{ t.bid_ntce_nm or '-' }}
+          {% if t.badge_rfp %}
+          <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=research"
+             onclick="event.stopPropagation();" title="RFP 등록됨">RFP분석</a>
+          {% endif %}
+          {% if t.badge_research %}
+          <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=research"
+             onclick="event.stopPropagation();" title="리서치 완료">리서치</a>
+          {% endif %}
+          {% if t.badge_narrative %}
+          <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=narrative"
+             onclick="event.stopPropagation();" title="내러티브 작성됨">내러티브</a>
+          {% endif %}
+          {% if t.badge_proposal %}
+          <a class="badge-status" href="/nara/confirmed/{{ t.id }}?tab=proposal_design"
+             onclick="event.stopPropagation();" title="제안설계 작성됨">제안설계</a>
+          {% endif %}
         </div>
-        <div class="og-card-icons">
-          {% for item in t.incomplete %}
-          <a class="og-icon-btn" href="{{ item.link }}" onclick="event.stopPropagation();" title="{{ item.label }}">
-            {{ item.icon }}<span class="tip">{{ item.label }}</span>
-          </a>
-          {% endfor %}
-          {% if is_ops %}
-          <button class="og-del-btn"
-            onclick="event.stopPropagation();openDelModal({{ t.id }},'{{ t.bid_ntce_nm | e }}')">[삭제]</button>
+        <div class="og-card-meta">
+          <span class="org">{{ t.ntce_instt_nm or '-' }}</span>
+          {% if clse %}
+          <span class="due{% if clse <= cutoff_d3 %} urgent{% endif %}">마감 {{ clse }}</span>
+          {% endif %}
+          {% if t.assignee %}
+          <span class="assignee">{{ t.assignee }}</span>
+          {% endif %}
+          {% if t.completion_status == 'requested' %}
+          <span class="cs-badge cs-requested">⏳ 승인 대기</span>
+          {% elif t.completion_status == 'approved' %}
+          <span class="cs-badge cs-approved">✅ 완료 승인</span>
           {% endif %}
         </div>
       </div>
-      {% endfor %}
-    {% else %}
-      <div class="og-empty">담당 확정 과업이 없습니다</div>
-    {% endif %}
-  </div>
-
-  <!-- 전체 확정 탭 -->
-  <div id="pane-all" style="display:none;">
-    {% if all_confirmed %}
-      {% for t in all_confirmed %}
-      {% set clse = (t.bid_clse_dt or '')[:10] %}
-      <div class="og-card" id="og-card-all-{{ t.id }}" onclick="location.href='/nara/confirmed/{{ t.id }}'">
-        <span class="og-id">{{ t.id }}</span>
-        <div class="og-card-left">
-          <div class="og-card-name" title="{{ t.bid_ntce_nm or '-' }}">
-            {{ t.bid_ntce_nm or '-' }}
-            {% if t.badge_rfp %}
-            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=research"
-               onclick="event.stopPropagation();" title="RFP 등록됨">RFP분석</a>
-            {% endif %}
-            {% if t.badge_research %}
-            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=research"
-               onclick="event.stopPropagation();" title="리서치 완료">리서치</a>
-            {% endif %}
-            {% if t.badge_narrative %}
-            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=narrative"
-               onclick="event.stopPropagation();" title="내러티브 작성됨">내러티브</a>
-            {% endif %}
-            {% if t.badge_proposal %}
-            <a class="badge-status" href="/nara/confirmed/{{ t.id }}?tab=proposal_design"
-               onclick="event.stopPropagation();" title="제안설계 작성됨">제안설계</a>
-            {% endif %}
-          </div>
-          <div class="og-card-meta">
-            <span class="org">{{ t.ntce_instt_nm or '-' }}</span>
-            {% if clse %}
-            <span class="due{% if clse <= cutoff_d3 %} urgent{% endif %}">마감 {{ clse }}</span>
-            {% endif %}
-            {% if t.assignee %}
-            <span class="assignee">{{ t.assignee }}</span>
-            {% endif %}
-            {% if t.completion_status == 'requested' %}
-            <span class="cs-badge cs-requested">⏳ 승인 대기</span>
-            {% elif t.completion_status == 'approved' %}
-            <span class="cs-badge cs-approved">✅ 완료 승인</span>
-            {% endif %}
-          </div>
-        </div>
-        <div class="og-card-icons">
-          {% for item in t.incomplete %}
-          <a class="og-icon-btn" href="{{ item.link }}" onclick="event.stopPropagation();" title="{{ item.label }}">
-            {{ item.icon }}<span class="tip">{{ item.label }}</span>
-          </a>
-          {% endfor %}
-          {% if is_ops %}
-          <button class="og-del-btn"
-            onclick="event.stopPropagation();openDelModal({{ t.id }},'{{ t.bid_ntce_nm | e }}')">[삭제]</button>
-          {% endif %}
-        </div>
+      <div class="og-card-icons">
+        {% for item in t.incomplete %}
+        <a class="og-icon-btn" href="{{ item.link }}" onclick="event.stopPropagation();" title="{{ item.label }}">
+          {{ item.icon }}<span class="tip">{{ item.label }}</span>
+        </a>
+        {% endfor %}
+        {% if is_ops %}
+        <button class="og-del-btn"
+          onclick="event.stopPropagation();openDelModal({{ t.id }},'{{ t.bid_ntce_nm | e }}')">[삭제]</button>
+        {% endif %}
       </div>
-      {% endfor %}
-    {% else %}
-      <div class="og-empty">확정된 과업이 없습니다</div>
-    {% endif %}
-  </div>
+    </div>
+    {% endfor %}
+  {% else %}
+    <div class="og-empty">확정된 과업이 없습니다</div>
+  {% endif %}
 
 </div>
 
@@ -191,7 +112,7 @@
     <div id="del-modal-msg" style="font-size:13px;color:#374151;margin-bottom:20px;line-height:1.6;"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
       <button onclick="closeDelModal()" style="padding:8px 18px;background:#f3f4f6;border:none;border-radius:7px;cursor:pointer;font-size:13px;">취소</button>
-      <button id="del-confirm-btn" onclick="confirmDelete()" style="padding:8px 18px;background:#ef4444;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">삭제</button>
+      <button onclick="confirmDelete()" style="padding:8px 18px;background:#ef4444;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">삭제</button>
     </div>
   </div>
 </div>
@@ -199,13 +120,6 @@
 <div class="toast" id="toast"></div>
 <script>
 let _delId = null;
-
-function showToast(msg, ok=true){
-  const t=document.getElementById('toast');
-  t.textContent=msg; t.style.background=ok?'#1f2937':'#b91c1c';
-  t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2800);
-}
-
 function openDelModal(id, nm){
   _delId = id;
   document.getElementById('del-modal-msg').innerHTML =
@@ -215,24 +129,11 @@ function openDelModal(id, nm){
 function closeDelModal(){ document.getElementById('del-modal').classList.remove('open'); _delId=null; }
 function confirmDelete(){
   if(!_delId) return;
-  const cardId = _delId;
-  const activeTab = document.getElementById('tab-my')?.classList.contains('active') ? 'mine' : 'all';
+  const id = _delId;
   closeDelModal();
-  fetch(`/nara/confirmed/${cardId}/delete`,{method:'POST'})
-    .then(()=>{ location.href = location.pathname + '?tab=' + activeTab; })
-    .catch(()=>{ location.href = location.pathname + '?tab=' + activeTab; });
+  fetch(`/nara/confirmed/${id}/delete`,{method:'POST'})
+    .then(()=>location.reload())
+    .catch(()=>location.reload());
 }
-
-function switchTab(name){
-  ['my','all'].forEach(t=>{
-    document.getElementById('pane-'+t).style.display=t===name?'block':'none';
-    document.getElementById('tab-'+t).classList.toggle('active',t===name);
-  });
-}
-
-(function(){
-  const tab = new URLSearchParams(location.search).get('tab');
-  if(tab === 'all') switchTab('all');
-})();
 </script>
 {% endblock %}

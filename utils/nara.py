@@ -681,9 +681,10 @@ def collect_all_bids(target_date: str = None) -> int:
                     diff    = (clse_dt - today).days
                     if diff in (3, 1):
                         nm = r["nm"] or f"확정#{r['id']}"
+                        _tnm = nm[:15] + ('...' if len(nm) > 15 else '')
                         targets = set(deadline_uids)
                         for uid in targets:
-                            create_notification(uid, f"마감 D-{diff} 알림",
+                            create_notification(uid, f"마감 D-{diff}일 — {_tnm}",
                                                 f"{nm} 마감이 {diff}일 남았습니다.",
                                                 f"/nara/confirmed/{r['id']}")
                 except Exception:

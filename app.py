@@ -4436,12 +4436,10 @@ def nara_confirmed_page():
         c["badge_proposal"]  = bool(c.get("has_proposal_design"))
         confirmed_all.append(c)
 
-    my_confirmed  = [c for c in confirmed_all if c.get("assignee") == username]
     from datetime import datetime as _dt, timedelta as _td
     _now = _dt.now()
     return render_template("nara_confirmed.html",
-                           my_confirmed=my_confirmed,
-                           all_confirmed=confirmed_all,
+                           confirmed=confirmed_all,
                            is_ops=is_ops,
                            cutoff_d3=(_now + _td(days=3)).strftime("%Y-%m-%d"))
 
@@ -4476,9 +4474,10 @@ def request_completion_route(confirmed_id):
     c = get_confirmed_by_id(confirmed_id)
     nm = (c.get("bid_ntce_nm") or "-") if c else "-"
     settings = get_notification_settings()
+    _tnm = nm[:15] + ('...' if len(nm) > 15 else '')
     for uid in settings.get("completion_approval", []):
         create_notification(
-            uid, "완료 승인 요청",
+            uid, f"완료 승인 요청 — {_tnm}",
             f"{nm} — {username}님이 완료 승인을 요청했습니다.",
             f"/nara/confirmed/{confirmed_id}",
         )
@@ -4813,8 +4812,9 @@ def nara_confirmed_comment_add(confirmed_id):
         targets = set(notif_ids) | related
         targets.discard(session.get("user_id"))
         nm = (c or {}).get("bid_ntce_nm", "") or f"확정#{confirmed_id}"
+        _tnm = nm[:15] + ('...' if len(nm) > 15 else '')
         for uid in targets:
-            create_notification(uid, "새 댓글", f"{author}: {content[:50]}", f"/nara/confirmed/{confirmed_id}")
+            create_notification(uid, f"새 댓글 — {_tnm}", f"{author}: {content[:50]}", f"/nara/confirmed/{confirmed_id}")
     except Exception:
         pass
     return jsonify({"ok": True, "id": cid})
@@ -5064,8 +5064,9 @@ def nara_pickup_add():
             notif_ids = settings.get("pickup_auto", [])
             prce_str  = f"{int(prce):,}원" if prce.isdigit() else (prce + "원" if prce else "-")
             notif_msg = f"공고명: {bid_nm}\n발주처: {instt_nm or '-'}\n추정가격: {prce_str}"
+            _tnm = bid_nm[:15] + ('...' if len(bid_nm) > 15 else '')
             for uid in notif_ids:
-                create_notification(uid, "📌 픽업 공고 등록", notif_msg, "/nara/pickups")
+                create_notification(uid, f"📌 픽업 등록 — {_tnm}", notif_msg, "/nara/pickups")
         except Exception:
             pass
         return jsonify({"ok": True, "id": new_id})
@@ -5097,13 +5098,14 @@ def nara_confirm_from_pickup(pickup_id):
         try:
             c = get_confirmed_by_id(new_id)
             nm = (c or {}).get("bid_ntce_nm", "") or f"확정#{new_id}"
+            _tnm = nm[:15] + ('...' if len(nm) > 15 else '')
             from database.db import get_connection as _gc
             with _gc() as conn:
                 row = conn.execute("SELECT id FROM users WHERE username=?", (assignee,)).fetchone()
                 if row:
                     create_notification(
                         row["id"],
-                        "과업 확정",
+                        f"확정 처리 — {_tnm}",
                         f"[{nm}] 과업이 확정되었습니다. 나라장터에서 RFP 파일을 다운받아 프로인터즈에 등록해주세요.",
                         f"/nara/confirmed/{new_id}/workspace",
                     )
@@ -5552,7 +5554,8 @@ def nara_request_feedback(confirmed_id):
     target    = data.get("target", "narrative")
     requester = session.get("username", "")
     bid_nm    = c.get("bid_ntce_nm") or f"확정#{confirmed_id}"
-    title     = f"피드백 요청 — {bid_nm}"
+    _tnm      = bid_nm[:15] + ('...' if len(bid_nm) > 15 else '')
+    title     = f"피드백 요청 — {_tnm}"
     if target == "narrative":
         msg  = f"{requester}님이 내러티브 피드백을 요청했습니다."
         link = f"/nara/confirmed/{confirmed_id}/workspace?tab=narrative"
