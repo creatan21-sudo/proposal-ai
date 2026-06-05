@@ -2415,6 +2415,7 @@ def get_confirmed_by_id(confirmed_id: int) -> dict | None:
         row = conn.execute(
             """SELECT cf.id, cf.candidate_id, cf.pickup_id, cf.confirmed_by,
                       cf.notes, cf.assignee, cf.created_at,
+                      cf.completion_status, cf.final_result,
                       COALESCE(pk.bid_ntce_no, ca.bid_ntce_no) as bid_ntce_no,
                       COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm) as bid_ntce_nm,
                       COALESCE(pk.ntce_instt_nm, ca.ntce_instt_nm) as ntce_instt_nm,
@@ -2620,12 +2621,22 @@ def confirm_nara_pickup(pickup_id: int, confirmed_by: str,
         return cur.lastrowid or 0
 
 
-def add_nara_result(confirmed_id: int, result: str, notes: str) -> None:
+def add_nara_result(confirmed_id: int, result: str = "", notes: str = "") -> None:
     with get_connection() as conn:
-        conn.execute(
-            "INSERT INTO nara_results (confirmed_id, result, notes) VALUES (?,?,?)",
-            (confirmed_id, result, notes),
-        )
+        existing = conn.execute(
+            "SELECT id, result FROM nara_results WHERE confirmed_id=?", (confirmed_id,)
+        ).fetchone()
+        if existing:
+            use_result = result if result else existing["result"]
+            conn.execute(
+                "UPDATE nara_results SET result=?, notes=? WHERE confirmed_id=?",
+                (use_result, notes, confirmed_id),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO nara_results (confirmed_id, result, notes) VALUES (?,?,?)",
+                (confirmed_id, result or "미정", notes),
+            )
 
 
 def list_nara_results(page: int = 1, per_page: int = 50) -> dict:

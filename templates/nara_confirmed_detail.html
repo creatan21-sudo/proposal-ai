@@ -607,6 +607,45 @@ tr.sch-editing .sch-act-view{display:none !important;}
     </div>
   </div>
 
+  {% if is_ops %}
+  <!-- 결과 처리 -->
+  <div class="card" style="margin-top:20px;">
+    <div class="section-title">📊 결과 처리</div>
+    {% if c.final_result in ('won','lost','stopped') %}
+    {% set _rl = {'won':'🏆 수주','lost':'❌ 낙주','stopped':'⏹ 중단'} %}
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="font-size:15px;font-weight:700;">
+        {{ _rl.get(c.final_result, c.final_result) }}
+        <span style="font-size:12px;font-weight:400;color:#9ca3af;margin-left:6px;">처리 완료</span>
+      </span>
+    </div>
+    {% else %}
+    <div style="font-size:13px;color:#6b7280;margin-bottom:12px;">이 과업의 최종 결과를 처리합니다.</div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn" style="background:#d1fae5;color:#065f46;border:1px solid #86efac;" onclick="openResultModal('won')">🏆 수주</button>
+      <button class="btn" style="background:#fee2e2;color:#991b1b;border:1px solid #fca5a5;" onclick="openResultModal('lost')">❌ 낙주</button>
+      <button class="btn" style="background:#f3f4f6;color:#6b7280;border:1px solid #d1d5db;" onclick="openResultModal('stopped')">⏹ 중단</button>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+</div>
+
+<!-- 결과 처리 모달 -->
+<div class="sch-modal-overlay" id="result-modal" onclick="if(event.target===this)closeResultModal()">
+  <div class="sch-modal-box" style="width:400px;">
+    <div style="font-weight:700;font-size:15px;margin-bottom:4px;" id="result-modal-title"></div>
+    <div style="font-size:13px;color:#6b7280;margin-bottom:14px;" id="result-modal-desc"></div>
+    <div class="field-label" style="font-size:12px;font-weight:600;color:#374151;margin-bottom:6px;">결과 평가/이유 <span style="color:#9ca3af;font-weight:400;">(선택)</span></div>
+    <textarea id="result-notes-ta" rows="3"
+      style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:vertical;font-family:inherit;margin-bottom:14px;"
+      placeholder="예: 가격 경쟁력 부족, 제안서 완성도 높음 등"></textarea>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button onclick="closeResultModal()" style="padding:8px 18px;background:#fff;color:#374151;border:1px solid #d1d5db;border-radius:7px;cursor:pointer;font-size:13px;">취소</button>
+      <button id="result-submit-btn" onclick="submitResult()" style="padding:8px 20px;background:#4f46e5;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:13px;font-weight:600;">확인</button>
+    </div>
+  </div>
 </div>
 
 <!-- 피드백 요청 모달 -->
@@ -1131,6 +1170,40 @@ async function addComment(){
   list.scrollTop=list.scrollHeight;
   ta.value='';
   showToast('등록되었습니다');
+}
+
+/* ── 결과 처리 ── */
+let _resultType = null;
+const _resultLabels = {won:'🏆 수주', lost:'❌ 낙주', stopped:'⏹ 중단'};
+function openResultModal(type){
+  _resultType = type;
+  document.getElementById('result-modal-title').textContent = _resultLabels[type] + ' 처리';
+  document.getElementById('result-modal-desc').textContent = `이 과업을 ${_resultLabels[type]} 처리하시겠습니까?`;
+  document.getElementById('result-notes-ta').value = '';
+  document.getElementById('result-modal').classList.add('open');
+}
+function closeResultModal(){
+  document.getElementById('result-modal').classList.remove('open');
+  _resultType = null;
+}
+async function submitResult(){
+  if(!_resultType) return;
+  const notes = document.getElementById('result-notes-ta').value.trim();
+  const btn = document.getElementById('result-submit-btn');
+  btn.disabled = true; btn.textContent = '처리 중...';
+  try{
+    const r = await fetch(`/nara/confirmed/${CID}/set_result`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({result: _resultType, notes})
+    });
+    const d = await r.json();
+    if(d.ok){
+      closeResultModal();
+      showToast(`${_resultLabels[_resultType]} 처리되었습니다`);
+      setTimeout(()=>location.href='/nara/archive', 1000);
+    } else showToast(d.error||'처리 실패', false);
+  }catch(e){ showToast('오류: '+e, false); }
+  btn.disabled = false; btn.textContent = '확인';
 }
 </script>
 {% endblock %}

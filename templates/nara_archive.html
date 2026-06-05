@@ -47,6 +47,8 @@
         <td>
           {% if item.final_result == 'won' %}
           <span class="arc-badge arc-won">🏆 수주</span>
+          {% elif item.final_result == 'stopped' %}
+          <span class="arc-badge" style="background:#f3f4f6;color:#6b7280;">⏹ 중단</span>
           {% else %}
           <span class="arc-badge arc-lost">💔 낙주</span>
           {% endif %}

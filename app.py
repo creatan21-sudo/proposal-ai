@@ -760,7 +760,7 @@ def ongoing():
                    ON pd.confirmed_id = cf.id
             LEFT JOIN nara_results r ON r.confirmed_id = cf.id
             WHERE r.id IS NULL
-              AND (cf.final_result IS NULL OR cf.final_result NOT IN ('won','lost'))
+              AND (cf.final_result IS NULL OR cf.final_result NOT IN ('won','lost','stopped'))
             ORDER BY cf.created_at DESC
         """).fetchall()
 
@@ -2339,7 +2339,7 @@ def schedule_page():
             LEFT JOIN nara_results r ON r.confirmed_id = cf.id
             WHERE cf.assignee = ?
               AND r.id IS NULL
-              AND (cf.final_result IS NULL OR cf.final_result NOT IN ('won','lost'))
+              AND (cf.final_result IS NULL OR cf.final_result NOT IN ('won','lost','stopped'))
             ORDER BY COALESCE(pk.bid_clse_dt, ca.bid_clse_dt) ASC
         """, (username,)).fetchall()
     from datetime import datetime as _sdt
@@ -4464,7 +4464,7 @@ def nara_archive():
             FROM nara_confirmed cf
             LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
             LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
-            WHERE cf.final_result IN ('won', 'lost')
+            WHERE cf.final_result IN ('won', 'lost', 'stopped')
             ORDER BY cf.completion_approved_at DESC
         """).fetchall()
     items = [dict(r) for r in rows]
@@ -4503,11 +4503,14 @@ def approve_completion_route(confirmed_id):
 def set_result_route(confirmed_id):
     if not session.get("is_admin") and session.get("role") != "operator":
         return jsonify({"ok": False, "error": "권한 없음"}), 403
-    data = request.get_json(force=True) or {}
+    data   = request.get_json(force=True) or {}
     result = data.get("result", "")
-    if result not in ("won", "lost"):
+    notes  = str(data.get("notes", ""))
+    if result not in ("won", "lost", "stopped"):
         return jsonify({"ok": False, "error": "결과값 오류"}), 400
     set_final_result(confirmed_id, result, session.get("username"))
+    label = {"won": "수주", "lost": "낙주", "stopped": "중단"}.get(result, result)
+    add_nara_result(confirmed_id, label, notes)
     return jsonify({"ok": True})
 
 
@@ -4929,8 +4932,9 @@ def narrative_summarize():
 @login_required
 def nara_results_page():
     page  = max(1, int(request.args.get("page", 1)))
-    paged = list_nara_results(page=page, per_page=50)
-    return render_template("nara_results.html", results=paged["items"], pagination=paged)
+    paged  = list_nara_results(page=page, per_page=50)
+    is_ops = session.get("role") in ("admin", "operator")
+    return render_template("nara_results.html", results=paged["items"], pagination=paged, is_ops=is_ops)
 
 @app.route("/nara/keyword", methods=["POST"])
 @login_required
@@ -5582,13 +5586,13 @@ def nara_request_feedback(confirmed_id):
 @app.route("/nara/result/<int:confirmed_id>", methods=["POST"])
 @login_required
 def nara_result_add(confirmed_id):
-    data = request.get_json(force=True) or {}
+    if not session.get("is_admin") and session.get("role") != "operator":
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    data  = request.get_json(force=True) or {}
+    notes = str(data.get("notes", ""))
+    result = str(data.get("result", ""))
     try:
-        add_nara_result(
-            confirmed_id = confirmed_id,
-            result       = str(data.get("result", "미정")),
-            notes        = str(data.get("notes", "")),
-        )
+        add_nara_result(confirmed_id, result, notes)
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})

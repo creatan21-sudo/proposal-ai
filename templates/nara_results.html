@@ -10,6 +10,7 @@
 .filter-tab.active{background:#4f46e5;color:#fff;border-color:#4f46e5;}
 .filter-tab.win.active{background:#059669;border-color:#059669;}
 .filter-tab.lose.active{background:#ef4444;border-color:#ef4444;}
+.filter-tab.stop.active{background:#6b7280;border-color:#6b7280;}
 .bid-table{width:100%;border-collapse:collapse;font-size:13px}
 .bid-table th{background:#f3f4f6;padding:10px 12px;text-align:left;font-weight:600;color:#374151;border-bottom:1px solid #e5e7eb}
 .bid-table td{padding:11px 12px;border-bottom:1px solid #f3f4f6;vertical-align:top;color:#374151}
@@ -20,7 +21,16 @@
 .bid-empty{text-align:center;padding:48px;color:#9ca3af;font-size:14px}
 .badge-win{display:inline-block;background:#dcfce7;color:#166534;border-radius:99px;padding:3px 12px;font-size:12px;font-weight:700;}
 .badge-lose{display:inline-block;background:#fee2e2;color:#991b1b;border-radius:99px;padding:3px 12px;font-size:12px;font-weight:700;}
+.badge-stop{display:inline-block;background:#f3f4f6;color:#6b7280;border-radius:99px;padding:3px 12px;font-size:12px;font-weight:700;}
 .badge-etc{display:inline-block;background:#f3f4f6;color:#6b7280;border-radius:99px;padding:3px 12px;font-size:12px;font-weight:600;}
+.notes-text{font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5;white-space:pre-wrap;}
+.notes-edit-wrap{margin-top:6px;display:none;}
+.notes-edit-wrap textarea{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:12px;resize:vertical;font-family:inherit;}
+.notes-edit-wrap textarea:focus{outline:none;border-color:#6366f1;}
+.btn-notes-edit{background:none;border:1px solid #e5e7eb;border-radius:5px;font-size:11px;color:#9ca3af;padding:2px 7px;cursor:pointer;}
+.btn-notes-edit:hover{background:#f3f4f6;color:#374151;}
+.toast{position:fixed;bottom:28px;right:28px;background:#1f2937;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;z-index:9999;pointer-events:none}
+.toast.show{opacity:1}
 </style>
 {% endblock %}
 {% block content %}
@@ -33,24 +43,25 @@
     <button class="filter-tab active" id="ft-all" onclick="filterResult('all')">전체 ({{ results|length }})</button>
     <button class="filter-tab win" id="ft-win" onclick="filterResult('수주')">🏆 수주 ({{ results|selectattr('result','equalto','수주')|list|length }})</button>
     <button class="filter-tab lose" id="ft-lose" onclick="filterResult('낙주')">❌ 낙주 ({{ results|selectattr('result','equalto','낙주')|list|length }})</button>
+    <button class="filter-tab stop" id="ft-stop" onclick="filterResult('중단')">⏹ 중단 ({{ results|selectattr('result','equalto','중단')|list|length }})</button>
   </div>
 
   <table class="bid-table" id="results-table">
     <thead>
       <tr>
         <th style="width:30%">공고명</th>
-        <th style="width:14%">발주처</th>
-        <th style="width:10%">추정가격</th>
-        <th style="width:10%">마감일</th>
-        <th style="width:9%">결과</th>
-        <th style="width:18%">메모</th>
+        <th style="width:13%">발주처</th>
+        <th style="width:9%">추정가격</th>
+        <th style="width:9%">마감일</th>
+        <th style="width:8%">결과</th>
+        <th style="width:22%">결과 평가</th>
         <th style="width:9%">등록일</th>
       </tr>
     </thead>
     <tbody id="result-tbody">
       {% if results %}
         {% for r in results %}
-        <tr data-result="{{ r.result }}">
+        <tr data-result="{{ r.result }}" data-cid="{{ r.confirmed_id }}">
           <td class="bid-nm">
             <span style="font-size:12px;color:#999;font-weight:400;margin-right:8px;">{{ r.confirmed_id }}</span>
             <a href="{{ r.ntce_url if r.ntce_url else '#' }}" target="_blank">{{ r.bid_ntce_nm or '-' }}</a>
@@ -61,9 +72,28 @@
           <td>
             {% if r.result == '수주' %}<span class="badge-win">🏆 수주</span>
             {% elif r.result == '낙주' %}<span class="badge-lose">❌ 낙주</span>
+            {% elif r.result == '중단' %}<span class="badge-stop">⏹ 중단</span>
             {% else %}<span class="badge-etc">{{ r.result }}</span>{% endif %}
           </td>
-          <td style="font-size:12px;color:#6b7280;">{{ r.notes or '-' }}</td>
+          <td>
+            {% if r.notes %}
+            <div class="notes-text" id="notes-text-{{ r.confirmed_id }}">{{ r.notes }}</div>
+            {% else %}
+            <div class="notes-text" id="notes-text-{{ r.confirmed_id }}" style="color:#d1d5db;">—</div>
+            {% endif %}
+            {% if is_ops %}
+            <div style="margin-top:4px;">
+              <button class="btn-notes-edit" onclick="toggleNotesEdit({{ r.confirmed_id }}, '{{ r.notes | e }}')">✏️ 평가 수정</button>
+            </div>
+            <div class="notes-edit-wrap" id="notes-edit-{{ r.confirmed_id }}">
+              <textarea rows="2" id="notes-ta-{{ r.confirmed_id }}" placeholder="결과 평가/이유 입력...">{{ r.notes or '' }}</textarea>
+              <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:4px;">
+                <button class="btn-notes-edit" onclick="cancelNotesEdit({{ r.confirmed_id }})">취소</button>
+                <button class="btn-notes-edit" style="background:#4f46e5;color:#fff;border-color:#4f46e5;" onclick="saveNotes({{ r.confirmed_id }})">저장</button>
+              </div>
+            </div>
+            {% endif %}
+          </td>
           <td class="bid-date">{{ (r.created_at or '-')[:10] }}</td>
         </tr>
         {% endfor %}
@@ -73,16 +103,51 @@
     </tbody>
   </table>
 </div>
+<div class="toast" id="toast"></div>
 <script>
+function showToast(msg,ok=true){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.style.background=ok?'#1f2937':'#b91c1c';
+  t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800);
+}
+
 function filterResult(type){
-  ['all','win','lose'].forEach(k=>{
-    const el=document.getElementById(`ft-${k}`);
-    el.classList.remove('active');
+  const map = {'수주':'win','낙주':'lose','중단':'stop','all':'all'};
+  ['all','win','lose','stop'].forEach(k=>{
+    document.getElementById(`ft-${k}`).classList.remove('active');
   });
-  document.getElementById(`ft-${type==='수주'?'win':type==='낙주'?'lose':'all'}`).classList.add('active');
+  document.getElementById(`ft-${map[type]||'all'}`).classList.add('active');
   document.querySelectorAll('#result-tbody tr[data-result]').forEach(tr=>{
     tr.style.display = (type==='all' || tr.dataset.result===type) ? '' : 'none';
   });
+}
+
+function toggleNotesEdit(cid, current){
+  const wrap = document.getElementById(`notes-edit-${cid}`);
+  const ta   = document.getElementById(`notes-ta-${cid}`);
+  wrap.style.display = 'block';
+  ta.value = current;
+  ta.focus();
+}
+function cancelNotesEdit(cid){
+  document.getElementById(`notes-edit-${cid}`).style.display = 'none';
+}
+async function saveNotes(cid){
+  const notes = document.getElementById(`notes-ta-${cid}`).value.trim();
+  try{
+    const r = await fetch(`/nara/result/${cid}`, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({notes})
+    });
+    const d = await r.json();
+    if(d.ok){
+      const el = document.getElementById(`notes-text-${cid}`);
+      el.textContent = notes || '—';
+      el.style.color = notes ? '' : '#d1d5db';
+      cancelNotesEdit(cid);
+      showToast('저장되었습니다');
+    } else showToast(d.error||'저장 실패', false);
+  }catch(e){ showToast('오류: '+e, false); }
 }
 </script>
 {% endblock %}
