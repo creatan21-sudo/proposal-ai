@@ -69,11 +69,11 @@
           <td>{{ r.ntce_instt_nm or '-' }}</td>
           <td class="bid-prce">{% if r.presmpt_prce and r.presmpt_prce.isdigit() %}{{ '{:,}'.format(r.presmpt_prce|int) }}원{% else %}-{% endif %}</td>
           <td class="bid-date">{{ (r.bid_clse_dt or '-')[:10] }}</td>
-          <td>
-            {% if r.result == '수주' %}<span class="badge-win">🏆 수주</span>
-            {% elif r.result == '낙주' %}<span class="badge-lose">❌ 낙주</span>
-            {% elif r.result == '중단' %}<span class="badge-stop">⏹ 중단</span>
-            {% else %}<span class="badge-etc">{{ r.result }}</span>{% endif %}
+          <td style="text-align:center;font-size:18px;">
+            {% if r.result == '수주' %}<span title="수주">🏆</span>
+            {% elif r.result == '낙주' %}<span title="낙주">❌</span>
+            {% elif r.result == '중단' %}<span title="중단">⏹</span>
+            {% else %}<span class="badge-etc" style="font-size:12px;">{{ r.result }}</span>{% endif %}
           </td>
           <td>
             {% if r.notes %}
