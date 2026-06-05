@@ -4356,9 +4356,14 @@ def nara_candidates_page():
     is_ops = session.get("role") in ("admin", "operator")
     is_adm = bool(session.get("is_admin"))
     pickup_cand_ids = get_pickup_candidate_ids()
+    with get_connection() as conn:
+        confirmed_cand_ids = {r[0] for r in conn.execute(
+            "SELECT candidate_id FROM nara_confirmed WHERE pickup_id = 0 AND candidate_id IS NOT NULL"
+        ).fetchall()}
     return render_template("nara_candidates.html", candidates=paged["items"],
                            pagination=paged, is_ops=is_ops, is_adm=is_adm,
-                           pickup_cand_ids=pickup_cand_ids)
+                           pickup_cand_ids=pickup_cand_ids,
+                           confirmed_cand_ids=confirmed_cand_ids)
 
 @app.route("/nara/pickups")
 @login_required
