@@ -199,6 +199,12 @@
 </div>
 
 <script>
+function toLocalDateStr(d) {
+  return d.getFullYear() + '-' +
+    String(d.getMonth()+1).padStart(2,'0') + '-' +
+    String(d.getDate()).padStart(2,'0');
+}
+
 const CONFIRMED = {{ confirmed | tojson }};
 const SCHEDULES = {{ schedules | tojson }};
 
@@ -214,7 +220,7 @@ SCHEDULES.forEach(s => {
   if(d) EVENTS.push({date:d,type:s.status==='완료'?'done':'schedule',title:`${s.task_name} (${s.bid_ntce_nm||''})`,confirmed_id:s.confirmed_id,assignee:s.assignee||'',instt:'',status:s.status||''});
 });
 
-const TODAY   = new Date().toISOString().slice(0,10);
+const TODAY   = toLocalDateStr(new Date());
 let curYear   = new Date().getFullYear();
 let curMonth  = new Date().getMonth();
 let curView   = 'cal';
@@ -257,7 +263,7 @@ function renderCal(){
     const dayNum  = i - startWd + 1;
     const isThis  = dayNum >= 1 && dayNum <= last.getDate();
     const dateObj = new Date(curYear, curMonth, dayNum);
-    const ds      = dateObj.toISOString().slice(0,10);
+    const ds      = toLocalDateStr(dateObj);
     const isToday = ds === TODAY;
     const evs     = EVENTS.filter(e=>e.date===ds);
     const show    = evs.slice(0,2);

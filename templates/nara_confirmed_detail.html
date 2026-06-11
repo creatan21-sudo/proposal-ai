@@ -727,9 +727,15 @@ tr.sch-editing .sch-act-view{display:none !important;}
 
 <div class="toast" id="toast"></div>
 <script>
+function toLocalDateStr(d) {
+  return d.getFullYear() + '-' +
+    String(d.getMonth()+1).padStart(2,'0') + '-' +
+    String(d.getDate()).padStart(2,'0');
+}
+
 const CID    = {{ c.id }};
 const USERS  = {{ users | tojson }};
-const TODAY  = new Date().toISOString().slice(0,10);
+const TODAY  = toLocalDateStr(new Date());
 const CAN_EDIT = {{ 'true' if can_edit else 'false' }};
 const CAN_EDIT_NARRATIVE = {{ 'true' if can_edit_narrative else 'false' }};
 
