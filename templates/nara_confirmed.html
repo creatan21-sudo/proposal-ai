@@ -74,7 +74,7 @@
         <div class="og-card-meta">
           <span class="org">{{ t.ntce_instt_nm or '-' }}</span>
           {% if clse %}
-          <span class="due{% if clse <= cutoff_d3 %} urgent{% endif %}">마감 {{ clse }}</span>
+          <span class="due{% if clse <= cutoff_d3 %} urgent{% endif %}" data-due="{{ clse }}">마감 {{ clse }}</span>
           {% endif %}
           {% if t.assignee %}
           <span class="assignee">{{ t.assignee }}</span>
@@ -135,5 +135,13 @@ function confirmDelete(){
     .then(()=>location.reload())
     .catch(()=>location.reload());
 }
+function toLocalDateStr(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; }
+document.querySelectorAll('[data-due]').forEach(el => {
+  const due = el.dataset.due;
+  if (due && due < toLocalDateStr(new Date())) {
+    el.style.textDecoration = 'line-through';
+    el.style.color = '#aaa';
+  }
+});
 </script>
 {% endblock %}
