@@ -1363,6 +1363,82 @@ def db_my_work():
     return render_template("db_my_work.html", narratives=[dict(r) for r in rows])
 
 
+@app.route("/db/works")
+@login_required
+def db_works():
+    q = request.args.get("q", "").strip()
+    with get_connection() as conn:
+        if q:
+            rows = conn.execute(
+                "SELECT * FROM company_works WHERE client LIKE ? OR project LIKE ? "
+                "ORDER BY work_year DESC, work_date DESC",
+                (f"%{q}%", f"%{q}%"),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM company_works ORDER BY work_year DESC, work_date DESC"
+            ).fetchall()
+    works = [dict(r) for r in rows]
+    groups: dict = {}
+    for w in works:
+        yr = w["work_year"] or 0
+        groups.setdefault(yr, []).append(w)
+    years = sorted(groups.keys(), reverse=True)
+    is_ops = session.get("is_admin") or session.get("role") in ("admin", "operator")
+    return render_template("db_works.html", groups=groups, years=years, q=q, total=len(works), is_ops=is_ops)
+
+
+@app.route("/db/works/add", methods=["POST"])
+@login_required
+def db_works_add():
+    if not (session.get("is_admin") or session.get("role") in ("admin", "operator")):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    data     = request.json or {}
+    hdd_no   = (data.get("hdd_no") or "").strip()
+    client   = (data.get("client") or "").strip()
+    project  = (data.get("project") or "").strip()
+    work_date = (data.get("work_date") or "").strip()
+    notes    = (data.get("notes") or "").strip()
+    work_year = int(work_date[:4]) if work_date and len(work_date) >= 4 and work_date[:4].isdigit() else 0
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO company_works (hdd_no, client, project, work_date, work_year, notes) VALUES (?,?,?,?,?,?)",
+            (hdd_no, client, project, work_date, work_year, notes),
+        )
+        new_id = cur.lastrowid
+    return jsonify({"ok": True, "id": new_id})
+
+
+@app.route("/db/works/<int:work_id>", methods=["PATCH"])
+@login_required
+def db_works_update(work_id):
+    if not (session.get("is_admin") or session.get("role") in ("admin", "operator")):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    data     = request.json or {}
+    hdd_no   = (data.get("hdd_no") or "").strip()
+    client   = (data.get("client") or "").strip()
+    project  = (data.get("project") or "").strip()
+    work_date = (data.get("work_date") or "").strip()
+    notes    = (data.get("notes") or "").strip()
+    work_year = int(work_date[:4]) if work_date and len(work_date) >= 4 and work_date[:4].isdigit() else 0
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE company_works SET hdd_no=?, client=?, project=?, work_date=?, work_year=?, notes=? WHERE id=?",
+            (hdd_no, client, project, work_date, work_year, notes, work_id),
+        )
+    return jsonify({"ok": True})
+
+
+@app.route("/db/works/<int:work_id>", methods=["DELETE"])
+@login_required
+def db_works_delete(work_id):
+    if not (session.get("is_admin") or session.get("role") in ("admin", "operator")):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    with get_connection() as conn:
+        conn.execute("DELETE FROM company_works WHERE id=?", (work_id,))
+    return jsonify({"ok": True})
+
+
 # 이력 페이지
 # ─────────────────────────────────────────────
 
