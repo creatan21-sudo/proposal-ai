@@ -30,8 +30,6 @@
 .del-modal-box{background:#fff;border-radius:12px;padding:24px;width:400px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.25);}
 .toast{position:fixed;bottom:28px;right:28px;background:#1f2937;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;z-index:9999;pointer-events:none}
 .toast.show{opacity:1}
-.rel-stars{cursor:pointer;font-size:12px;margin-left:4px;vertical-align:middle;}
-.rel-popup{position:fixed;background:#1f2937;color:#fff;padding:8px 12px;border-radius:8px;font-size:12px;max-width:260px;line-height:1.5;z-index:9999;pointer-events:none;white-space:pre-wrap;}
 </style>
 {% endblock %}
 {% block subnav %}
@@ -85,9 +83,6 @@
           <span class="cs-badge cs-requested">⏳ 승인 대기</span>
           {% elif t.completion_status == 'approved' %}
           <span class="cs-badge cs-approved">✅ 완료 승인</span>
-          {% endif %}
-          {% if t.relevance_stars and t.relevance_stars > 0 %}
-          <span class="rel-stars" data-reason="{{ t.relevance_reason | e }}" onclick="showReasonPopup(this,event);event.stopPropagation();">{{ '⭐' * t.relevance_stars }}</span>
           {% endif %}
         </div>
       </div>
@@ -148,20 +143,5 @@ document.querySelectorAll('[data-due]').forEach(el => {
     el.style.color = '#aaa';
   }
 });
-let _relPopup=null;
-function showReasonPopup(el,ev){
-  ev.stopPropagation();
-  if(_relPopup){_relPopup.remove();_relPopup=null;}
-  const reason=el.dataset.reason||'';
-  if(!reason)return;
-  const p=document.createElement('div');
-  p.className='rel-popup';
-  p.textContent=reason;
-  p.style.left=(ev.clientX+10)+'px';
-  p.style.top=(ev.clientY+10)+'px';
-  document.body.appendChild(p);
-  _relPopup=p;
-}
-document.addEventListener('click',()=>{if(_relPopup){_relPopup.remove();_relPopup=null;}});
 </script>
 {% endblock %}

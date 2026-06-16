@@ -296,8 +296,6 @@ def init_db() -> None:
                 bid_clse_dt TEXT,
                 ntce_url TEXT,
                 matched_keyword TEXT,
-                relevance_stars INTEGER DEFAULT 0,
-                relevance_reason TEXT DEFAULT '',
                 created_at TEXT DEFAULT (datetime('now','localtime'))
             );
 
@@ -329,8 +327,6 @@ def init_db() -> None:
                 matched_keyword TEXT DEFAULT '',
                 reason        TEXT DEFAULT '',
                 registered_by TEXT DEFAULT '',
-                relevance_stars INTEGER DEFAULT 0,
-                relevance_reason TEXT DEFAULT '',
                 created_at    TEXT DEFAULT (datetime('now','localtime'))
             );
 
@@ -339,8 +335,6 @@ def init_db() -> None:
                 candidate_id INTEGER NOT NULL,
                 confirmed_by TEXT DEFAULT '',
                 notes        TEXT DEFAULT '',
-                relevance_stars INTEGER DEFAULT 0,
-                relevance_reason TEXT DEFAULT '',
                 created_at   TEXT DEFAULT (datetime('now','localtime'))
             );
 
@@ -364,8 +358,6 @@ def init_db() -> None:
                 matched_keyword TEXT DEFAULT '',
                 reason        TEXT DEFAULT '',
                 registered_by TEXT DEFAULT '',
-                relevance_stars INTEGER DEFAULT 0,
-                relevance_reason TEXT DEFAULT '',
                 created_at    TEXT DEFAULT (datetime('now','localtime'))
             );
 
@@ -482,167 +474,7 @@ def init_db() -> None:
                 created_at   TEXT DEFAULT (datetime('now','localtime')),
                 updated_at   TEXT DEFAULT (datetime('now','localtime'))
             );
-
-            CREATE TABLE IF NOT EXISTS company_works (
-                id         INTEGER PRIMARY KEY AUTOINCREMENT,
-                hdd_no     TEXT DEFAULT '',
-                client     TEXT DEFAULT '',
-                project    TEXT DEFAULT '',
-                work_date  TEXT DEFAULT '',
-                work_year  INTEGER DEFAULT 0,
-                notes      TEXT DEFAULT '',
-                created_at TEXT DEFAULT (datetime('now','localtime'))
-            );
         """)
-        # ── company_works 초기 데이터 삽입 ──
-        if conn.execute("SELECT COUNT(*) FROM company_works").fetchone()[0] == 0:
-            _WORKS = [
-                ("N001","육군본부","장병 정신전력 영상교재 제작 용역","2020.02.28"),
-                ("N002","한국교육학술정보원","2020년 초중등학교 정보공시 시스템 입력방법 동영상 매뉴얼","2020.03.02"),
-                ("N003","한국건강증진개발원","한국건강증진/2020년 금연정책 및 사업 홍보 강화를 위한 콘텐츠 제작 및 확산","2020.08.05"),
-                ("N004","경찰청","전화금융사기 피해 예방 영상콘텐츠","2020.06.01"),
-                ("N005","공군제18전투비행단","공군제18전투비행단/ 18비 부대소개 영상제작","2020.05.26"),
-                ("N006","육군본부","육군본부/ 군종 영상교재 제작","2020.04.22"),
-                ("N007","한국수자원공사","K-water/ 국제교육 사이버 학습 영상물 제작","2020.09.29"),
-                ("N008","(사)낙농진흥회","우유교육,홍보 애니메이션 제작","2020.07.06"),
-                ("N009","국립암센터","호스피스 완화 영상제작","2021.08.13"),
-                ("N010","육군본부","육군 장병정신전력교육(2020)","2020.07.27"),
-                ("N011","육군인사사령부","나라사랑 계룡대 견학 안보영상","2020.06.17"),
-                ("N012","지상작전사령부","제1311부대 00부대 부대소개영상 제작 용역","2020.10.14"),
-                ("N013","육군본부(전투준비안전단)","2021년 간부 안전교육 콘텐츠 제작 용역","2021.11.10"),
-                ("N014","육군본부","육군 영상콘텐츠 제작 용역","2020.04.13"),
-                ("N015","국군1068부대","대테러 교육 콘텐츠 /안보사","2020.05.15"),
-                ("N016","국방부근무지원단","부대소개영상 제작","2020.07.31"),
-                ("N017","행정안전부","2021년 범정부 행정한류 홍보동영상 제작","2021.09.10"),
-                ("N018","국가보안기술연구소","국본연 복사본","2019.05.27"),
-                ("N019","광주과학기술원","창업탐색지원사업 및 소속 탐색팀 홍보영상","2020.11.16"),
-                ("N020","아리랑TV","태권도원","2020.11.03"),
-                ("N021","한국환경공단","한국환경공단 홍보영상 제작","2020.09.23"),
-                ("N022","국군1068부대 군사안보지원사령부","대테러 교육 (모션그래픽) 콘텐츠 제작 용역","2020.05.15"),
-                ("N023","한국교직원공제회","50주년 기념 홍보영상","2020.12.14"),
-                ("N024","한국인터넷진흥원","2020년도 인터넷 내정보 지킴이 캠페인 운영 및 홍보콘텐츠 개발","2020.07.31"),
-                ("N025","중앙경찰학교","신입경찰 296기 졸업식 영상","2021.01.19"),
-                ("N026","한국건설기술연구원","하천-호소 지역의 유해화학물질 유출대응 긴급방제장치 운영안내","2021.12.02"),
-                ("N027","한국해양과학기술원 부설 극지연구소","남극세종과학기지 안전 및 생활예절 준수 안내 영상(2020)","2020.01.16"),
-                ("N028","한국해양과학기술원 부설 극지연구소","남극세종과학기지 안전 및 생활예절 준수 안내 영상(2020) +proxy","2020.01.16"),
-                ("N029","극지연구소","극지연구소","2020.01.16"),
-                ("N030","한국수자원공사","20년 국제 사이버 교육","2020.05.07"),
-                ("N031","국군1068부대 군사안보지원사령부","방첩 교육 동영상 제작","2019.05.07"),
-                ("N032","경찰대학","2019.02 경찰대학","2019.03.07"),
-                ("N033","정부제5163부대","방첩 교육 영상","2018.09.17"),
-                ("N034","해병대사령부","해병대리더십센터 교육 동영상","2020.03.20"),
-                ("N035","육군본부(전투준비안전단)","2021년 간부 안전교육 콘텐츠 제작 용역","2021.11.10"),
-                ("N036","육군본부","예비군 완료","2020.11.18"),
-                ("N037","해양재단","2020해양직업의 세계 동영상 제작","2020.08.10"),
-                ("N038","사이버 작전 사령부","4284부대 부대소개 영상 제작","2020.09.28"),
-                ("N039","경찰대학","21년 신임경찰 임용식 영상","2021.01.19"),
-                ("N040","행정안전부","코로나19 한국 대응사례 홍보동영상 제작","2020.10.08"),
-                ("N041","동신대학교","학과소개 홍보영상","2021.01.11"),
-                ("N042","공군 제8전투비행단","공군 제53특수비행전대 블랙이글스 홍보영상 제작용역","2021.08.02"),
-                ("N043","국립암센터","호스피스 신관소개 vr360","2021.08.02"),
-                ("N044","행정안전부","비상대비 홍보 3D 영상물 제작","2021.08.18"),
-                ("N045","국군재정관리단","21-전술데이터링크 기본과정 온라인교육용 콘텐츠 제작","2021.09.23"),
-                ("N046","육군본부","2020년 육군본부 군인정신함양교육 웹드라마","2021.02.26"),
-                ("N047","한국인터넷진흥원","전자서명법 개정에 따른 대국민 홍보활동 지원","2021.06.16"),
-                ("N048","한국항로표지기술원","등대 해양교육 영상 제작용역","2021.05.21"),
-                ("N049","한국인터넷진흥원","21년 정보보호 인식제고 홍보 콘텐츠 개발 및 운영","2021.03.05"),
-                ("N050","해병대사령부","해병대 항공단 창설 기념영상 제작","2021.04.12"),
-                ("N051","한국인터넷진흥원","블록체인사업 홍보물 제작 내부 산출물","2021.08.18"),
-                ("N052","한국인터넷진흥원","개인정보보호 행사 및 캠페인 콘텐츠 개발","2021.08.02"),
-                ("N053","한국인터넷진흥원","한국인터넷진흥원 주요사업 홍보를 위한 소셜영상 제작 등 용역","2021.03.24"),
-                ("N054","국군간호사관학교","2021년 국군간호사관학교 홍보 영상","2021.05.14"),
-                ("N055","육군본부","군종 영상교재 제작 용역","2021.04.14"),
-                ("N056","육군본부(국군재정관리단)","장병 정신전력 영상교재(M시사칼럼) 제작용역","2021.04.16"),
-                ("N057","국가보훈처","21년 이달의 독립운동가 온라인 홍보","2021.01.12"),
-                ("N058","공군본부","군종병과 홍보 동영상 제작","2021.09.09"),
-                ("N059","국무조정실","대테러센터 대국민 홍보 영상물 제작","2021.06.21"),
-                ("N060","공군본부","공군 수사단 부대소개영상 제작","2021.08.02"),
-                ("N061","공군본부","VR기반 사고예방 콘텐츠제작 용역","2021.06.09"),
-                ("N062","광주과학기술원","창업탐색지원사업 및 소속 탐색팀 홍보영상","2020.11.16"),
-                ("N063","국방부본부","국방우주력 발전 홍보영상 제작","2021.10.22"),
-                ("N064","국립암센터","자문형 호스피스 비대면 실습교육 영상제작","2021.09.08"),
-                ("N065","한국전기연구원","시험인증부분 영상 및 홍보물 제작 용역","2021.02.25"),
-                ("N066","경찰대학","2020 경찰대학 합동임용식 영상","2020.01.16"),
-                ("N067","지상작전사령부","한미연합사단 부대소개영상","2020.08.14"),
-                ("N068","해군본부","해군 정책홍보영상 등 정책 이미지 홍보영상","2020.07.01"),
-                ("N069","국립중앙의료원","2021년 소아 야간휴일 진료센터 운영 홍보 사업","2021.11.01"),
-                ("N070","국립중앙의료원","2020년 중증외상환자 진료체계 홍보 위탁사업","2020.07.13"),
-                ("N071","육군본부(전투준비안전단)","2021년 간부 안전교육 콘텐츠 제작 용역","2021.12.20"),
-                ("N072","행정안전부","2021년 범정부 행정한류 홍보동영상 제작","2021.12.06"),
-                ("N073","육군본부(국군재정관리단)","(21F107-A)안전교육 영상 콘텐츠 제작 용역","2021.10.13"),
-                ("N074","육군본부","육군수사단 소개영상 제작 용역","2022.08.31"),
-                ("N074","국가보안기술연구소","암호모듈 검증기술 과학대중화 영상자료 제작","2022.09.27"),
-                ("N075","육군제56사단","2022 부대소개영상제작","2022.10.31"),
-                ("N076","육군정보통신학교","22년 부대소개영화 제작 용역","2022.10.31"),
-                ("N077","국군재정관리단-육군본부","(22F015-I)22년 육군 장병 정신전력 영상교재(M시사칼럼) 제작 용역","2022.12.09"),
-                ("N078","국군재정관리단-육군본부","(22F020-A)육군장병 군인정신 영상교재 제작용역","2022.12.16"),
-                ("N079","제3182부대-9보병사단","22년 부대소개영상 제작 용역","2022.12.28"),
-                ("N080","한국광해광업공단","2022년 한국광해광업공단 홍보영상 및 광고제작 용역","2022.11.10"),
-                ("N081","육군본부","육군참모총장시사/제1회국제 과학화 전투훈련 707특임단 등","2022.08.10"),
-                ("N082","수소융합얼라이언스","수소에너지 수소경제 홍보영상 제작용역","2022.12.12"),
-                ("N083","공군본부","22년 범죄사고예방 영상콘텐츠(MCPO)제작 용역","2022.12.05"),
-                ("N084","해군본부","22-성폭력 예방 교육 영상 제작 용역","2022.12.09"),
-                ("N085","국립부산과학관","2022년 국립부산과학관 홍보영상 제작 용역","2022.12.27"),
-                ("N086","인천국제공항공사","인천공항 차세대 공항보안 및 운영시스템 홍보영상 제작 용역","2022.12.12"),
-                ("N087","공군미사일방어사령부","22-미-부대홍보영상 제작용역","2022.12.26"),
-                ("N088","국방과학연구소","표적공격 상황인식 및 분석 홍보자료 제작","2022.12.30"),
-                ("N089","국군제1068부대","22년 군방첩교육 모션그래픽 동영상 제작 용역","2022.11.30"),
-                ("N090","국립과천과학관","2022 국립과천과학관 어린이날 행사","2022.05.10"),
-                ("N090","한국승강기안전공단","2022 승강기 안전주간 행사 용역","2022.11.25"),
-                ("N090","문화체육관광부 국립국어원","2022년 인공지능 언어 능력 평가 홍보 운영","2022.12.15"),
-                ("N090","문화체육관광부 국립국어원","모두의 말뭉치 활용 지원 자료 구축","2022.11.30"),
-                ("N090","국립과천과학관","브랜드 기획전 연계 과학문화행사","2022.08.20"),
-                ("N090","과학기술정보통신부 국립과천과학관","제9회 SF어워드 기획 및 운영","2022.11.14"),
-                ("N090","건설근로자공제회","제13회 건설기능인의 날 기념식 및 부대행사 용역","2022.12.15"),
-                ("N091","국회-국회사무처","2022년 국회 SNS영상 제작 및 운영계약","2022.12.31"),
-                ("N092","한국광해광업공단","2022년 한국광해광업공단 영상 콘텐츠 제작 및 유튜브 채널 홍보용역","2022.12.31"),
-                ("N093","한국산업인력공단-글로벌숙련기술진흥원","2022년 개도국 기능경기 역량강화사업 홍보영상","2023.01.23"),
-                ("N094","외교부","2022년 공공외교 글로벌 디지털 커뮤니케이션 강화 및 인지도 제고사업 -1","2022.12.31"),
-                ("N095","외교부","2022년 공공외교 글로벌 디지털 커뮤니케이션 강화 및 인지도 제고사업 -2","2022.12.31"),
-                ("N096","KBS","코로나19 이후 대한민국 길을 묻다 시즌2",""),
-                ("N097","KBS","코로나19 이후 대한민국 길을 묻다 시즌3",""),
-                ("N098","국립문화재연구원 건축문화재연구실","2022 돌 나무 흙 학술세미나 행사 대행","2022.10.31"),
-                ("N098","국립중앙도서관","2022년 인문학 프로그램 운영 사업대행용역","2022.12.31"),
-                ("N098","한아프리카재단","제5회 서울아프리카대화 운영용역","2022.12.31"),
-                ("N098","(재)국립현대미술관문화재단","국립현대미술관 국제심포지엄 나의 백남준 행사 영상 용역","2022.12.15"),
-                ("N099","제1군수지원사령부","21년 부대소개영화 제작",""),
-                ("N100","한국산업인력공단 글로벌숙련기술진흥원","개도국 기능경기 역량강화사업 디지털 아카이브 구축 및 사업영상 제작","2023.01.23"),
-                ("N101","문화체육관광부 국립민속박물관","국립민속박물관 이전개관 30주년 기념 홍보영상 제작","2023.01.31"),
-                ("N102","국군재정관리단-육군본부","(22F181-A) 예비군 안보교육 영상교재 제작용역","2023.02.01"),
-                ("N103","국방과학연구소","무기체계 안티탬퍼링 기술 홍보 자료 제작","2023.02.28"),
-                ("N104","국방과학연구소","2023년 미래도전국방기술 홍보영상 제작","2023.04.21"),
-                ("N105","육군본부(전투준비안전단)","(22F128-A) 22년 안전교육 영상콘텐츠 제작 용역","2023.03.18"),
-                ("N106","제5738부대","22년 해군 안전콘텐츠(동영상) 제작 용역","2023.03.31"),
-                ("N107","국방과학연구소","2023 국방과학연구소 사업화 유망기술 소개 홍보영상 제작 용역","2023.04.30"),
-                ("N108","국군제1068부대","00부대 소개영상 제작 용역","2023.06.30"),
-                ("N109","일동제약(유니기획)","일동제약 홍보영상",""),
-                ("N110","제9691부대","23년 해병대 홍보영상(숏츠) 제작 용역","2023.06.30"),
-                ("N111","국립중앙도서관","2023년 인문학 프로그램 운영 사업대행용역","2023.11.30"),
-                ("N112","제9691부대","23년 해병대 정신전력 영상교재 제작 용역","2023.10.20"),
-                ("N113","(재)국제방송교류재단","2023 국제방송교류재단 사업운영 대행 용역 - 트립스타그램","2024.02.29"),
-                ("N115","스마트안전보건기술원","직종별 플랫폼 종사자 재해예방 콘텐츠(영상) 제작","2023.09.30"),
-                ("N116","한국승강기안전공단","2023 승강기 안전주간 행사 용역","2023.12.25"),
-                ("N117","KBS","다큐 온- 대학로의 꿈 세계로 비상하다","2023.10.15"),
-                ("N118","(재)국제방송교류재단","2023 세종학당재단 한국어교육 해외홍보 콘텐츠제작","2023.12.31"),
-                ("N119","국군재정관리단-육군본부","(23F159-A) 안전교육 VR 콘텐츠 제작 용역","2023.12.08"),
-                ("N120","국립부산과학관","국립부산과학관 2023년 헬로메이커 행사 대행 용역","2023.12.01"),
-                ("N121","공군본부","23년 사고예방 영상콘텐츠","2023.12.18"),
-                ("N122","(주)YSK파트너스","2023 블록체인 진흥주관 성과확산사업 소개영상","2023.12.31"),
-                ("N123","육군인사사령부","(22F127-I) 육군 간부모집 홍보영상 및 CF제작 용역",""),
-                ("N124","한국환경공단","가축매몰지 환경관리 교육영상 및 간행물제작",""),
-                ("N125","해병대사령부","22년 리더십 교육용 드라마 제작 용역",""),
-                ("N126","9공수특전여단","21년 7851부대 부대소개영상 제작 계약",""),
-                ("N127","육군본부","(24F228-I) 안전교육 영상콘텐츠","2024.11.29"),
-                ("N128","육군인사사령부","(2F062-A) 육군인재선발 홍보 영상콘텐츠 제작","2024.11.01"),
-                ("N129-1","육군특수전사령부","부대소개영화 제작(특-24-용-20)","2024.11.22"),
-                ("N129-2","충남문화관광재단","월간충남여행 제작","2024.12.20"),
-                ("N130","강원특별자치도경제진흥원","2024 중소기업 맞춤형 토털마케팅 지원사업 홍보영상물 제작 대행 용역","2024.11.29"),
-            ]
-            conn.executemany(
-                "INSERT INTO company_works (hdd_no, client, project, work_date, work_year) VALUES (?,?,?,?,?)",
-                [(hdd, client, proj, wd, int(wd[:4]) if wd and len(wd) >= 4 and wd[:4].isdigit() else 0)
-                 for hdd, client, proj, wd in _WORKS]
-            )
         # ── 기본 키워드 삽입 (최초 실행 시 또는 누락 시) ──
         _DEFAULT_KEYWORDS = [
             '홍보영상', '영상제작', '방송프로그램', '방송제작', '유튜브', 'SNS',
@@ -713,14 +545,6 @@ def init_db() -> None:
             "ALTER TABLE nara_confirmed ADD COLUMN completion_approved_at TEXT DEFAULT ''",
             "ALTER TABLE nara_confirmed ADD COLUMN final_result TEXT DEFAULT ''",
             "ALTER TABLE confirmed_narratives ADD COLUMN ai_feedback TEXT DEFAULT ''",
-            "ALTER TABLE nara_bids       ADD COLUMN relevance_stars  INTEGER DEFAULT 0",
-            "ALTER TABLE nara_bids       ADD COLUMN relevance_reason TEXT    DEFAULT ''",
-            "ALTER TABLE nara_candidates ADD COLUMN relevance_stars  INTEGER DEFAULT 0",
-            "ALTER TABLE nara_candidates ADD COLUMN relevance_reason TEXT    DEFAULT ''",
-            "ALTER TABLE nara_pickups    ADD COLUMN relevance_stars  INTEGER DEFAULT 0",
-            "ALTER TABLE nara_pickups    ADD COLUMN relevance_reason TEXT    DEFAULT ''",
-            "ALTER TABLE nara_confirmed  ADD COLUMN relevance_stars  INTEGER DEFAULT 0",
-            "ALTER TABLE nara_confirmed  ADD COLUMN relevance_reason TEXT    DEFAULT ''",
         ]:
             try:
                 conn.execute(migration)
@@ -2388,25 +2212,6 @@ def delete_nara_keyword(keyword_id: int):
     with get_connection() as conn:
         conn.execute("DELETE FROM nara_keywords WHERE id=?", (keyword_id,))
 
-def get_all_company_works() -> list:
-    with get_connection() as conn:
-        rows = conn.execute(
-            "SELECT hdd_no, client, project, work_date FROM company_works ORDER BY work_year DESC, work_date DESC"
-        ).fetchall()
-    return [dict(r) for r in rows]
-
-
-def update_relevance_stars(table: str, record_id: int, stars: int, reason: str) -> None:
-    allowed = {"nara_bids", "nara_candidates", "nara_pickups", "nara_confirmed"}
-    if table not in allowed:
-        return
-    with get_connection() as conn:
-        conn.execute(
-            f"UPDATE {table} SET relevance_stars=?, relevance_reason=? WHERE id=?",
-            (stars, reason, record_id),
-        )
-
-
 def save_nara_bid(bid: dict, matched_keyword: str = ""):
     try:
         with get_connection() as conn:
@@ -2516,18 +2321,15 @@ def save_nara_settings(min_budget: int, max_budget: int, period_days: int, regio
 
 def add_nara_candidate(bid_ntce_no: str, bid_ntce_nm: str, ntce_instt_nm: str,
                        presmpt_prce: str, bid_clse_dt: str, ntce_url: str,
-                       matched_keyword: str, reason: str, registered_by: str,
-                       relevance_stars: int = 0, relevance_reason: str = "") -> int:
+                       matched_keyword: str, reason: str, registered_by: str) -> int:
     with get_connection() as conn:
         cur = conn.execute(
             """INSERT OR IGNORE INTO nara_candidates
                (bid_ntce_no, bid_ntce_nm, ntce_instt_nm, presmpt_prce,
-                bid_clse_dt, ntce_url, matched_keyword, reason, registered_by,
-                relevance_stars, relevance_reason)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                bid_clse_dt, ntce_url, matched_keyword, reason, registered_by)
+               VALUES (?,?,?,?,?,?,?,?,?)""",
             (bid_ntce_no, bid_ntce_nm, ntce_instt_nm, presmpt_prce,
-             bid_clse_dt, ntce_url, matched_keyword, reason, registered_by,
-             relevance_stars, relevance_reason),
+             bid_clse_dt, ntce_url, matched_keyword, reason, registered_by),
         )
         return cur.lastrowid or 0
 
@@ -2564,18 +2366,11 @@ def delete_nara_candidate(candidate_id: int) -> None:
 def confirm_nara_candidate(candidate_id: int, confirmed_by: str,
                            notes: str, assignee: str = "") -> int:
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT bid_ntce_no, relevance_stars, relevance_reason FROM nara_candidates WHERE id=?",
-            (candidate_id,),
-        ).fetchone()
-        bid_no = row["bid_ntce_no"] if row else ''
-        stars  = row["relevance_stars"] if row else 0
-        rsn    = row["relevance_reason"] if row else ''
+        row = conn.execute("SELECT bid_ntce_no FROM nara_candidates WHERE id=?", (candidate_id,)).fetchone()
+        bid_no = row[0] if row else ''
         cur = conn.execute(
-            "INSERT OR IGNORE INTO nara_confirmed "
-            "(candidate_id, confirmed_by, notes, assignee, bid_ntce_no, relevance_stars, relevance_reason) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (candidate_id, confirmed_by, notes, assignee, bid_no, stars, rsn),
+            "INSERT OR IGNORE INTO nara_confirmed (candidate_id, confirmed_by, notes, assignee, bid_ntce_no) VALUES (?,?,?,?,?)",
+            (candidate_id, confirmed_by, notes, assignee, bid_no),
         )
         return cur.lastrowid or 0
 
@@ -2817,18 +2612,11 @@ def save_confirmed_bid_info(confirmed_id: int, data: dict, updated_by: str) -> N
 def confirm_nara_pickup(pickup_id: int, confirmed_by: str,
                         notes: str = "", assignee: str = "") -> int:
     with get_connection() as conn:
-        row = conn.execute(
-            "SELECT bid_ntce_no, relevance_stars, relevance_reason FROM nara_pickups WHERE id=?",
-            (pickup_id,),
-        ).fetchone()
-        bid_no = row["bid_ntce_no"] if row else ''
-        stars  = row["relevance_stars"] if row else 0
-        rsn    = row["relevance_reason"] if row else ''
+        row = conn.execute("SELECT bid_ntce_no FROM nara_pickups WHERE id=?", (pickup_id,)).fetchone()
+        bid_no = row[0] if row else ''
         cur = conn.execute(
-            "INSERT OR IGNORE INTO nara_confirmed "
-            "(pickup_id, candidate_id, confirmed_by, notes, assignee, bid_ntce_no, relevance_stars, relevance_reason) "
-            "VALUES (?,0,?,?,?,?,?,?)",
-            (pickup_id, confirmed_by, notes, assignee, bid_no, stars, rsn),
+            "INSERT OR IGNORE INTO nara_confirmed (pickup_id, candidate_id, confirmed_by, notes, assignee, bid_ntce_no) VALUES (?,0,?,?,?,?)",
+            (pickup_id, confirmed_by, notes, assignee, bid_no),
         )
         return cur.lastrowid or 0
 
@@ -2889,18 +2677,15 @@ def get_pickup_candidate_ids() -> set:
 def add_nara_pickup(candidate_id: int, bid_ntce_no: str, bid_ntce_nm: str,
                     ntce_instt_nm: str, presmpt_prce: str, bid_clse_dt: str,
                     ntce_url: str, matched_keyword: str, reason: str,
-                    registered_by: str,
-                    relevance_stars: int = 0, relevance_reason: str = "") -> int:
+                    registered_by: str) -> int:
     with get_connection() as conn:
         cur = conn.execute(
             """INSERT INTO nara_pickups
                (candidate_id, bid_ntce_no, bid_ntce_nm, ntce_instt_nm, presmpt_prce,
-                bid_clse_dt, ntce_url, matched_keyword, reason, registered_by,
-                relevance_stars, relevance_reason)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                bid_clse_dt, ntce_url, matched_keyword, reason, registered_by)
+               VALUES (?,?,?,?,?,?,?,?,?,?)""",
             (candidate_id, bid_ntce_no, bid_ntce_nm, ntce_instt_nm, presmpt_prce,
-             bid_clse_dt, ntce_url, matched_keyword, reason, registered_by,
-             relevance_stars, relevance_reason),
+             bid_clse_dt, ntce_url, matched_keyword, reason, registered_by),
         )
         return cur.lastrowid or 0
 

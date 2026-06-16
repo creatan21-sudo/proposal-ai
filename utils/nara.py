@@ -351,17 +351,6 @@ def _run_scan():
                 continue
             save_nara_bid(bid, matched_keyword=keyword)
             new_count += 1
-            # 별점 분석 (저장 후 업데이트)
-            try:
-                from database.db import get_connection as _gc, update_relevance_stars
-                stars, rsn = analyze_relevance(bid.get("ntce_instt_nm",""), bid.get("bid_ntce_nm",""))
-                if stars > 0:
-                    with _gc() as _conn:
-                        row = _conn.execute("SELECT id FROM nara_bids WHERE bid_ntce_no=?", (bid_no,)).fetchone()
-                        if row:
-                            update_relevance_stars("nara_bids", row[0], stars, rsn)
-            except Exception as _e:
-                print(f"[nara 별점] 저장 오류: {_e}")
             msg = _format_msg(bid, keyword)
             for chat_id in get_admin_telegram_ids():
                 send_telegram(chat_id, msg)
@@ -509,50 +498,6 @@ def filter_bids_with_ai(bids: list, source: str = 'keyword') -> list:
 
 
 # ─────────────────────────────────────────────
-# 연관성 별점 분석
-# ─────────────────────────────────────────────
-
-def analyze_relevance(ntce_instt_nm: str, bid_ntce_nm: str) -> tuple:
-    """실적 목록 기반으로 공고 연관성을 Claude Haiku로 분석.
-
-    Returns:
-        (stars: int 0~3, reason: str)
-    """
-    try:
-        from database.db import get_all_company_works
-        import anthropic as _ant
-        works = get_all_company_works()
-        if not works:
-            return 0, ''
-        works_summary = "\n".join(
-            f"- {w['client']}: {w['project']}" for w in works[:100]
-        )
-        prompt = (
-            f"우리 회사 영상 제작 수주 실적:\n{works_summary}\n\n"
-            f"신규 공고:\n발주처: {ntce_instt_nm}\n공고명: {bid_ntce_nm}\n\n"
-            "연관성 분석 후 JSON만 응답:\n"
-            '{"stars": 0~3, "reason": "1~2줄 이유"}\n'
-            "별점 기준: 3=동일/유사 발주처 또는 동일 유형 다수 실적, "
-            "2=유사 분야 실적, 1=간접 연관, 0=무관"
-        )
-        client = _ant.Anthropic()
-        resp = client.messages.create(
-            model="claude-haiku-4-5-20251001",
-            max_tokens=200,
-            messages=[{"role": "user", "content": prompt}],
-        )
-        text = resp.content[0].text.strip()
-        m = re.search(r'\{.*\}', text, re.DOTALL)
-        if not m:
-            return 0, ''
-        result = json.loads(m.group())
-        return int(result.get('stars', 0)), str(result.get('reason', ''))
-    except Exception as e:
-        print(f"[nara 별점분석] 오류: {e}")
-        return 0, ''
-
-
-# ─────────────────────────────────────────────
 # 공고번호 직접 조회
 # ─────────────────────────────────────────────
 
@@ -681,16 +626,6 @@ def collect_all_bids(target_date: str = None) -> int:
             for bid in filtered:
                 save_nara_bid(bid, matched_keyword="전체수집")
                 new_count += 1
-                try:
-                    from database.db import get_connection as _gc2, update_relevance_stars
-                    _stars, _rsn = analyze_relevance(bid.get("ntce_instt_nm",""), bid.get("bid_ntce_nm",""))
-                    if _stars > 0:
-                        with _gc2() as _conn2:
-                            _row = _conn2.execute("SELECT id FROM nara_bids WHERE bid_ntce_no=?", (bid.get("bid_ntce_no",""),)).fetchone()
-                            if _row:
-                                update_relevance_stars("nara_bids", _row[0], _stars, _rsn)
-                except Exception as _e2:
-                    print(f"[nara 별점] 저장 오류: {_e2}")
             print(f"[nara 전체수집] 페이지{page}: {len(items)}건 → 신규 {len(new_items)}건 → AI필터 {len(filtered)}건 저장")
 
         time.sleep(0.5)
