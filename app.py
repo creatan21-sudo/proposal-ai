@@ -4336,17 +4336,20 @@ def nara_dashboard():
     hide_expired = request.args.get("hide_expired", "0") == "1"
     search_nm    = request.args.get("search_nm", "").strip()
     search_instt = request.args.get("search_instt", "").strip()
+    search_no    = request.args.get("search_no", "").strip()
     keywords     = get_nara_keywords()
     paged        = list_nara_bids_paged(keyword=keyword, page=page, per_page=50,
                                         hide_expired=hide_expired,
-                                        search_nm=search_nm, search_instt=search_instt)
+                                        search_nm=search_nm, search_instt=search_instt,
+                                        search_no=search_no)
     settings     = get_nara_settings()
     candidate_nos = get_candidate_bid_nos()
     return render_template("nara.html", keywords=keywords,
                            bids=paged["items"], pagination=paged,
                            settings=settings, candidate_nos=candidate_nos,
                            kw_filter=keyword, hide_expired=hide_expired,
-                           search_nm=search_nm, search_instt=search_instt)
+                           search_nm=search_nm, search_instt=search_instt,
+                           search_no=search_no)
 
 @app.route("/nara/candidates")
 @login_required
@@ -4996,9 +4999,10 @@ def nara_list_bids():
     hide_expired = request.args.get("hide_expired", "0") == "1"
     search_nm    = request.args.get("search_nm", "").strip()
     search_instt = request.args.get("search_instt", "").strip()
+    search_no    = request.args.get("search_no", "").strip()
     page         = max(1, int(request.args.get("page", 1)))
     paged        = list_nara_bids(keyword=keyword, search_nm=search_nm,
-                                   search_instt=search_instt,
+                                   search_instt=search_instt, search_no=search_no,
                                    hide_expired=hide_expired, page=page, per_page=50)
     return jsonify({"ok": True, **paged})
 

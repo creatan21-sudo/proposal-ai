@@ -2236,6 +2236,7 @@ def is_nara_bid_seen(bid_ntce_no: str) -> bool:
     return row is not None
 
 def list_nara_bids(keyword: str = "", search_nm: str = "", search_instt: str = "",
+                   search_no: str = "",
                    hide_expired: bool = True, page: int = 1, per_page: int = 50) -> dict:
     conditions, params = [], []
     if keyword:
@@ -2247,6 +2248,9 @@ def list_nara_bids(keyword: str = "", search_nm: str = "", search_instt: str = "
     if search_instt:
         conditions.append("ntce_instt_nm LIKE ?")
         params.append(f"%{search_instt}%")
+    if search_no:
+        conditions.append("bid_ntce_no LIKE ?")
+        params.append(f"%{search_no}%")
     if hide_expired:
         conditions.append("(bid_clse_dt IS NULL OR bid_clse_dt = '' OR bid_clse_dt >= date('now'))")
     where  = ("WHERE " + " AND ".join(conditions)) if conditions else ""
@@ -2714,7 +2718,8 @@ def delete_nara_pickup(pickup_id: int) -> None:
 
 def list_nara_bids_paged(keyword: str = "", page: int = 1, per_page: int = 50,
                          hide_expired: bool = True,
-                         search_nm: str = "", search_instt: str = "") -> dict:
+                         search_nm: str = "", search_instt: str = "",
+                         search_no: str = "") -> dict:
     offset = (page - 1) * per_page
     conditions, base_params = [], []
     if keyword:
@@ -2726,6 +2731,9 @@ def list_nara_bids_paged(keyword: str = "", page: int = 1, per_page: int = 50,
     if search_instt:
         conditions.append("ntce_instt_nm LIKE ?")
         base_params.append(f"%{search_instt}%")
+    if search_no:
+        conditions.append("bid_ntce_no LIKE ?")
+        base_params.append(f"%{search_no}%")
     if hide_expired:
         conditions.append("(bid_clse_dt IS NULL OR bid_clse_dt = '' OR bid_clse_dt >= date('now'))")
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""

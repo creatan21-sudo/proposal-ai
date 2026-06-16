@@ -189,6 +189,10 @@
            oninput="applySearch()" value="{{ search_instt or '' }}"
            style="flex:1;min-width:120px;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;outline:none;"
            onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#d1d5db'">
+    <input type="text" id="search-no" placeholder="공고번호 검색"
+           oninput="applySearch()" value="{{ search_no or '' }}"
+           style="flex:1;min-width:120px;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;outline:none;"
+           onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#d1d5db'">
     <button class="btn btn-primary" onclick="applySearch()" style="padding:8px 16px;font-size:13px;">🔍 검색</button>
     <button onclick="clearSearch()" style="padding:8px 14px;font-size:13px;background:#fff;border:1px solid #d1d5db;border-radius:8px;cursor:pointer;color:#6b7280;">초기화</button>
   </div>
@@ -207,7 +211,7 @@
     <tbody id="bid-tbody">
       {% if bids %}
         {% for b in bids %}
-        <tr data-nm="{{ b.bid_ntce_nm | e }}" data-instt="{{ b.ntce_instt_nm | e }}" data-kw="{{ b.matched_keyword | e }}" data-clse="{{ (b.bid_clse_dt or '')[:8] }}" data-prce="{{ b.presmpt_prce or '0' }}" data-created="{{ (b.created_at or '')[:10] }}">
+        <tr data-nm="{{ b.bid_ntce_nm | e }}" data-instt="{{ b.ntce_instt_nm | e }}" data-kw="{{ b.matched_keyword | e }}" data-clse="{{ (b.bid_clse_dt or '')[:8] }}" data-prce="{{ b.presmpt_prce or '0' }}" data-created="{{ (b.created_at or '')[:10] }}" data-no="{{ b.bid_ntce_no | e }}">
           <td>
             <div class="bid-nm">
               <a href="{{ b.ntce_url if b.ntce_url else 'https://www.g2b.go.kr/index.jsp?bidNtceNo=' + b.bid_ntce_no }}"
@@ -504,6 +508,7 @@ function setCatFilter(btn, cat){
 function applySearch(){
   const nm          = (document.getElementById('search-nm')?.value||'').toLowerCase();
   const instt       = (document.getElementById('search-instt')?.value||'').toLowerCase();
+  const no          = (document.getElementById('search-no')?.value||'').toLowerCase();
   const kw          = document.getElementById('kw-filter')?.value||'';
   const hideExpired = document.getElementById('hide-expired')?.checked;
   const clseUntil   = (document.getElementById('clse-until')?.value||'').replace(/-/g,'');
@@ -512,12 +517,14 @@ function applySearch(){
   document.querySelectorAll('#bid-tbody tr[data-nm]').forEach(tr=>{
     const trNm    = (tr.dataset.nm||'').toLowerCase();
     const trInstt = (tr.dataset.instt||'').toLowerCase();
+    const trNo    = (tr.dataset.no||'').toLowerCase();
     const trKw    = tr.dataset.kw||'';
     const trClse  = tr.dataset.clse||'';
     const expired = trClse && trClse < today;
     const withinUntil = !clseUntil || !trClse || trClse <= clseUntil;
     const match = (!nm || trNm.includes(nm))
                && (!instt || trInstt.includes(instt))
+               && (!no || trNo.includes(no))
                && (!kw || trKw === kw)
                && (!_activeCat || trNm.includes(_activeCat.toLowerCase()))
                && (!hideExpired || !expired)
@@ -531,6 +538,7 @@ function applySearch(){
 function clearSearch(){
   document.getElementById('search-nm').value='';
   document.getElementById('search-instt').value='';
+  document.getElementById('search-no').value='';
   document.getElementById('kw-filter').value='';
   document.getElementById('clse-until').value='';
   _activeCat = '';
