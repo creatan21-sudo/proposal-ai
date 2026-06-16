@@ -49,6 +49,8 @@
 .page-btn.disabled{color:#d1d5db;cursor:default;pointer-events:none;}
 .toast{position:fixed;bottom:28px;right:28px;background:#1f2937;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;z-index:9998;pointer-events:none}
 .toast.show{opacity:1}
+.rel-stars{cursor:pointer;font-size:12px;margin-left:4px;vertical-align:middle;}
+.rel-popup{position:fixed;background:#1f2937;color:#fff;padding:8px 12px;border-radius:8px;font-size:12px;max-width:260px;line-height:1.5;z-index:9999;pointer-events:none;white-space:pre-wrap;}
 </style>
 {% endblock %}
 {% block subnav %}
@@ -95,6 +97,9 @@
           <td class="bid-nm">
             <span style="font-size:12px;color:#999;font-weight:400;margin-right:8px;">{{ p.id }}</span>
             <span class="bid-nm-link">{{ p.bid_ntce_nm or '-' }}</span>
+            {% if p.relevance_stars and p.relevance_stars > 0 %}
+            <span class="rel-stars" data-reason="{{ p.relevance_reason | e }}" onclick="showReasonPopup(this,event)">{{ '⭐' * p.relevance_stars }}</span>
+            {% endif %}
           </td>
           <td>{{ p.ntce_instt_nm or '-' }}</td>
           <td class="bid-prce">{% if p.presmpt_prce and p.presmpt_prce.isdigit() %}{{ '{:,}'.format(p.presmpt_prce|int) }}원{% else %}-{% endif %}</td>
@@ -242,5 +247,20 @@ async function deletePickup(id){
   if(d.ok){ document.getElementById(`pickup-row-${id}`)?.remove(); showToast('삭제되었습니다'); }
   else showToast(d.error||'삭제 실패',false);
 }
+let _relPopup=null;
+function showReasonPopup(el,ev){
+  ev.stopPropagation();
+  if(_relPopup){_relPopup.remove();_relPopup=null;}
+  const reason=el.dataset.reason||'';
+  if(!reason)return;
+  const p=document.createElement('div');
+  p.className='rel-popup';
+  p.textContent=reason;
+  p.style.left=(ev.clientX+10)+'px';
+  p.style.top=(ev.clientY+10)+'px';
+  document.body.appendChild(p);
+  _relPopup=p;
+}
+document.addEventListener('click',()=>{if(_relPopup){_relPopup.remove();_relPopup=null;}});
 </script>
 {% endblock %}

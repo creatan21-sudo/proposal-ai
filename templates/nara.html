@@ -58,6 +58,8 @@
 .cat-btn{padding:5px 13px;font-size:12px;font-weight:600;border:1px solid #d1d5db;border-radius:20px;background:#fff;color:#6b7280;cursor:pointer;transition:all .15s;}
 .cat-btn:hover{background:#f3f4f6;border-color:#9ca3af;}
 .cat-btn.active{background:#4f46e5;color:#fff;border-color:#4f46e5;}
+.rel-stars{cursor:pointer;font-size:12px;margin-left:4px;vertical-align:middle;}
+.rel-popup{position:fixed;background:#1f2937;color:#fff;padding:8px 12px;border-radius:8px;font-size:12px;max-width:260px;line-height:1.5;z-index:9999;pointer-events:none;white-space:pre-wrap;}
 </style>
 {% endblock %}
 {% block subnav %}
@@ -216,6 +218,9 @@
               </a>
             </div>
             <span class="bid-kw">{{ b.matched_keyword }}</span>
+            {% if b.relevance_stars and b.relevance_stars > 0 %}
+            <span class="rel-stars" data-reason="{{ b.relevance_reason | e }}" onclick="showReasonPopup(this,event)">{{ '⭐' * b.relevance_stars }}</span>
+            {% endif %}
           </td>
           <td>{{ b.ntce_instt_nm or '-' }}</td>
           <td class="bid-prce">{% if b.presmpt_prce and b.presmpt_prce.isdigit() %}{{ '{:,}'.format(b.presmpt_prce|int) }}원{% else %}-{% endif %}</td>
@@ -579,5 +584,20 @@ function toggleExpired(cb){
   const inp=document.getElementById('clse-until');
   if(inp&&!inp.value) inp.value=new Date().toISOString().slice(0,10);
 })();
+let _relPopup=null;
+function showReasonPopup(el,ev){
+  ev.stopPropagation();
+  if(_relPopup){_relPopup.remove();_relPopup=null;}
+  const reason=el.dataset.reason||'';
+  if(!reason)return;
+  const p=document.createElement('div');
+  p.className='rel-popup';
+  p.textContent=reason;
+  p.style.left=(ev.clientX+10)+'px';
+  p.style.top=(ev.clientY+10)+'px';
+  document.body.appendChild(p);
+  _relPopup=p;
+}
+document.addEventListener('click',()=>{if(_relPopup){_relPopup.remove();_relPopup=null;}});
 </script>
 {% endblock %}

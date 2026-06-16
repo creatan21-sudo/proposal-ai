@@ -78,7 +78,7 @@ from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           add_candidate_comment, list_candidate_comments,
                           add_nara_pickup, list_nara_pickups, delete_nara_pickup,
                           get_pickup_candidate_ids, confirm_nara_pickup,
-                          get_confirmed_by_id,
+                          get_confirmed_by_id, update_relevance_stars,
                           get_confirmed_narrative, save_confirmed_narrative,
                           save_narrative_ai_feedback,
                           add_confirmed_comment, list_confirmed_comments,
@@ -2227,6 +2227,47 @@ def purge_user():
 
     return jsonify({"ok": True, "dry_run": True, "counts": counts,
                     "message": f"{username} 영향 데이터 미리보기 (실제 삭제 안 됨)"})
+
+
+@app.route("/admin/analyze_all_bids", methods=["GET"])
+@login_required
+def admin_analyze_all_bids():
+    """nara_bids/candidates/pickups/confirmed 중 별점 0인 항목 일괄 분석."""
+    if not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "admin 전용"}), 403
+    from utils.nara import analyze_relevance
+    analyzed = 0
+    tasks = [
+        ("nara_bids",       "ntce_instt_nm", "bid_ntce_nm"),
+        ("nara_candidates", "ntce_instt_nm", "bid_ntce_nm"),
+        ("nara_pickups",    "ntce_instt_nm", "bid_ntce_nm"),
+        ("nara_confirmed",  None,            None),
+    ]
+    with get_connection() as conn:
+        for table, instt_col, nm_col in tasks:
+            if table == "nara_confirmed":
+                rows = conn.execute(
+                    """SELECT cf.id,
+                              COALESCE(pk.ntce_instt_nm, ca.ntce_instt_nm) AS ntce_instt_nm,
+                              COALESCE(pk.bid_ntce_nm,   ca.bid_ntce_nm)   AS bid_ntce_nm
+                       FROM nara_confirmed cf
+                       LEFT JOIN nara_pickups   pk ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
+                       LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
+                       WHERE cf.relevance_stars = 0"""
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    f"SELECT id, {instt_col}, {nm_col} FROM {table} WHERE relevance_stars = 0"
+                ).fetchall()
+            for row in rows:
+                try:
+                    stars, rsn = analyze_relevance(row["ntce_instt_nm"] or "", row["bid_ntce_nm"] or "")
+                    if stars > 0:
+                        update_relevance_stars(table, row["id"], stars, rsn)
+                        analyzed += 1
+                except Exception:
+                    pass
+    return jsonify({"ok": True, "analyzed": analyzed})
 
 
 @app.route("/admin/delete_test", methods=["GET"])
@@ -5097,17 +5138,36 @@ def nara_save_settings():
 @login_required
 def nara_candidate_add():
     data = request.get_json(force=True) or {}
+    bid_no    = str(data.get("bid_ntce_no",    ""))
+    instt_nm  = str(data.get("ntce_instt_nm",  ""))
+    bid_nm    = str(data.get("bid_ntce_nm",    ""))
     try:
+        # nara_bids에 이미 분석된 별점이 있으면 복사, 없으면 즉시 분석
+        stars, rsn = 0, ''
+        with get_connection() as _conn:
+            _row = _conn.execute(
+                "SELECT relevance_stars, relevance_reason FROM nara_bids WHERE bid_ntce_no=?", (bid_no,)
+            ).fetchone()
+        if _row and _row["relevance_stars"] > 0:
+            stars, rsn = _row["relevance_stars"], _row["relevance_reason"]
+        else:
+            try:
+                from utils.nara import analyze_relevance
+                stars, rsn = analyze_relevance(instt_nm, bid_nm)
+            except Exception:
+                pass
         new_id = add_nara_candidate(
-            bid_ntce_no    = str(data.get("bid_ntce_no",    "")),
-            bid_ntce_nm    = str(data.get("bid_ntce_nm",    "")),
-            ntce_instt_nm  = str(data.get("ntce_instt_nm",  "")),
+            bid_ntce_no    = bid_no,
+            bid_ntce_nm    = bid_nm,
+            ntce_instt_nm  = instt_nm,
             presmpt_prce   = str(data.get("presmpt_prce",   "")),
             bid_clse_dt    = str(data.get("bid_clse_dt",    "")),
             ntce_url       = str(data.get("ntce_url",       "")),
             matched_keyword= str(data.get("matched_keyword","")),
             reason         = str(data.get("reason",         "")),
             registered_by  = session.get("username", ""),
+            relevance_stars = stars,
+            relevance_reason = rsn,
         )
         if not new_id:
             return jsonify({"ok": False, "error": "이미 후보에 등록된 공고입니다"})
@@ -5129,11 +5189,21 @@ def nara_candidate_delete(candidate_id):
 def nara_pickup_add():
     data = request.get_json(force=True) or {}
     try:
-        bid_nm   = str(data.get("bid_ntce_nm",   ""))
-        instt_nm = str(data.get("ntce_instt_nm", ""))
-        prce     = str(data.get("presmpt_prce",  ""))
+        bid_nm      = str(data.get("bid_ntce_nm",   ""))
+        instt_nm    = str(data.get("ntce_instt_nm", ""))
+        prce        = str(data.get("presmpt_prce",  ""))
+        cand_id     = int(data.get("candidate_id", 0))
+        # candidate의 별점 복사
+        stars, rsn = 0, ''
+        if cand_id:
+            with get_connection() as _conn:
+                _crow = _conn.execute(
+                    "SELECT relevance_stars, relevance_reason FROM nara_candidates WHERE id=?", (cand_id,)
+                ).fetchone()
+            if _crow:
+                stars, rsn = _crow["relevance_stars"] or 0, _crow["relevance_reason"] or ''
         new_id = add_nara_pickup(
-            candidate_id   = int(data.get("candidate_id", 0)),
+            candidate_id   = cand_id,
             bid_ntce_no    = str(data.get("bid_ntce_no",    "")),
             bid_ntce_nm    = bid_nm,
             ntce_instt_nm  = instt_nm,
@@ -5143,6 +5213,8 @@ def nara_pickup_add():
             matched_keyword= str(data.get("matched_keyword","")),
             reason         = str(data.get("reason",         "")),
             registered_by  = session.get("username", ""),
+            relevance_stars = stars,
+            relevance_reason = rsn,
         )
         try:
             settings  = get_notification_settings()

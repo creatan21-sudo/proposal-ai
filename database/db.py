@@ -296,6 +296,8 @@ def init_db() -> None:
                 bid_clse_dt TEXT,
                 ntce_url TEXT,
                 matched_keyword TEXT,
+                relevance_stars INTEGER DEFAULT 0,
+                relevance_reason TEXT DEFAULT '',
                 created_at TEXT DEFAULT (datetime('now','localtime'))
             );
 
@@ -327,6 +329,8 @@ def init_db() -> None:
                 matched_keyword TEXT DEFAULT '',
                 reason        TEXT DEFAULT '',
                 registered_by TEXT DEFAULT '',
+                relevance_stars INTEGER DEFAULT 0,
+                relevance_reason TEXT DEFAULT '',
                 created_at    TEXT DEFAULT (datetime('now','localtime'))
             );
 
@@ -335,6 +339,8 @@ def init_db() -> None:
                 candidate_id INTEGER NOT NULL,
                 confirmed_by TEXT DEFAULT '',
                 notes        TEXT DEFAULT '',
+                relevance_stars INTEGER DEFAULT 0,
+                relevance_reason TEXT DEFAULT '',
                 created_at   TEXT DEFAULT (datetime('now','localtime'))
             );
 
@@ -358,6 +364,8 @@ def init_db() -> None:
                 matched_keyword TEXT DEFAULT '',
                 reason        TEXT DEFAULT '',
                 registered_by TEXT DEFAULT '',
+                relevance_stars INTEGER DEFAULT 0,
+                relevance_reason TEXT DEFAULT '',
                 created_at    TEXT DEFAULT (datetime('now','localtime'))
             );
 
@@ -705,6 +713,14 @@ def init_db() -> None:
             "ALTER TABLE nara_confirmed ADD COLUMN completion_approved_at TEXT DEFAULT ''",
             "ALTER TABLE nara_confirmed ADD COLUMN final_result TEXT DEFAULT ''",
             "ALTER TABLE confirmed_narratives ADD COLUMN ai_feedback TEXT DEFAULT ''",
+            "ALTER TABLE nara_bids       ADD COLUMN relevance_stars  INTEGER DEFAULT 0",
+            "ALTER TABLE nara_bids       ADD COLUMN relevance_reason TEXT    DEFAULT ''",
+            "ALTER TABLE nara_candidates ADD COLUMN relevance_stars  INTEGER DEFAULT 0",
+            "ALTER TABLE nara_candidates ADD COLUMN relevance_reason TEXT    DEFAULT ''",
+            "ALTER TABLE nara_pickups    ADD COLUMN relevance_stars  INTEGER DEFAULT 0",
+            "ALTER TABLE nara_pickups    ADD COLUMN relevance_reason TEXT    DEFAULT ''",
+            "ALTER TABLE nara_confirmed  ADD COLUMN relevance_stars  INTEGER DEFAULT 0",
+            "ALTER TABLE nara_confirmed  ADD COLUMN relevance_reason TEXT    DEFAULT ''",
         ]:
             try:
                 conn.execute(migration)
@@ -2372,6 +2388,25 @@ def delete_nara_keyword(keyword_id: int):
     with get_connection() as conn:
         conn.execute("DELETE FROM nara_keywords WHERE id=?", (keyword_id,))
 
+def get_all_company_works() -> list:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT hdd_no, client, project, work_date FROM company_works ORDER BY work_year DESC, work_date DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_relevance_stars(table: str, record_id: int, stars: int, reason: str) -> None:
+    allowed = {"nara_bids", "nara_candidates", "nara_pickups", "nara_confirmed"}
+    if table not in allowed:
+        return
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE {table} SET relevance_stars=?, relevance_reason=? WHERE id=?",
+            (stars, reason, record_id),
+        )
+
+
 def save_nara_bid(bid: dict, matched_keyword: str = ""):
     try:
         with get_connection() as conn:
@@ -2481,15 +2516,18 @@ def save_nara_settings(min_budget: int, max_budget: int, period_days: int, regio
 
 def add_nara_candidate(bid_ntce_no: str, bid_ntce_nm: str, ntce_instt_nm: str,
                        presmpt_prce: str, bid_clse_dt: str, ntce_url: str,
-                       matched_keyword: str, reason: str, registered_by: str) -> int:
+                       matched_keyword: str, reason: str, registered_by: str,
+                       relevance_stars: int = 0, relevance_reason: str = "") -> int:
     with get_connection() as conn:
         cur = conn.execute(
             """INSERT OR IGNORE INTO nara_candidates
                (bid_ntce_no, bid_ntce_nm, ntce_instt_nm, presmpt_prce,
-                bid_clse_dt, ntce_url, matched_keyword, reason, registered_by)
-               VALUES (?,?,?,?,?,?,?,?,?)""",
+                bid_clse_dt, ntce_url, matched_keyword, reason, registered_by,
+                relevance_stars, relevance_reason)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
             (bid_ntce_no, bid_ntce_nm, ntce_instt_nm, presmpt_prce,
-             bid_clse_dt, ntce_url, matched_keyword, reason, registered_by),
+             bid_clse_dt, ntce_url, matched_keyword, reason, registered_by,
+             relevance_stars, relevance_reason),
         )
         return cur.lastrowid or 0
 
@@ -2526,11 +2564,18 @@ def delete_nara_candidate(candidate_id: int) -> None:
 def confirm_nara_candidate(candidate_id: int, confirmed_by: str,
                            notes: str, assignee: str = "") -> int:
     with get_connection() as conn:
-        row = conn.execute("SELECT bid_ntce_no FROM nara_candidates WHERE id=?", (candidate_id,)).fetchone()
-        bid_no = row[0] if row else ''
+        row = conn.execute(
+            "SELECT bid_ntce_no, relevance_stars, relevance_reason FROM nara_candidates WHERE id=?",
+            (candidate_id,),
+        ).fetchone()
+        bid_no = row["bid_ntce_no"] if row else ''
+        stars  = row["relevance_stars"] if row else 0
+        rsn    = row["relevance_reason"] if row else ''
         cur = conn.execute(
-            "INSERT OR IGNORE INTO nara_confirmed (candidate_id, confirmed_by, notes, assignee, bid_ntce_no) VALUES (?,?,?,?,?)",
-            (candidate_id, confirmed_by, notes, assignee, bid_no),
+            "INSERT OR IGNORE INTO nara_confirmed "
+            "(candidate_id, confirmed_by, notes, assignee, bid_ntce_no, relevance_stars, relevance_reason) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (candidate_id, confirmed_by, notes, assignee, bid_no, stars, rsn),
         )
         return cur.lastrowid or 0
 
@@ -2772,11 +2817,18 @@ def save_confirmed_bid_info(confirmed_id: int, data: dict, updated_by: str) -> N
 def confirm_nara_pickup(pickup_id: int, confirmed_by: str,
                         notes: str = "", assignee: str = "") -> int:
     with get_connection() as conn:
-        row = conn.execute("SELECT bid_ntce_no FROM nara_pickups WHERE id=?", (pickup_id,)).fetchone()
-        bid_no = row[0] if row else ''
+        row = conn.execute(
+            "SELECT bid_ntce_no, relevance_stars, relevance_reason FROM nara_pickups WHERE id=?",
+            (pickup_id,),
+        ).fetchone()
+        bid_no = row["bid_ntce_no"] if row else ''
+        stars  = row["relevance_stars"] if row else 0
+        rsn    = row["relevance_reason"] if row else ''
         cur = conn.execute(
-            "INSERT OR IGNORE INTO nara_confirmed (pickup_id, candidate_id, confirmed_by, notes, assignee, bid_ntce_no) VALUES (?,0,?,?,?,?)",
-            (pickup_id, confirmed_by, notes, assignee, bid_no),
+            "INSERT OR IGNORE INTO nara_confirmed "
+            "(pickup_id, candidate_id, confirmed_by, notes, assignee, bid_ntce_no, relevance_stars, relevance_reason) "
+            "VALUES (?,0,?,?,?,?,?,?)",
+            (pickup_id, confirmed_by, notes, assignee, bid_no, stars, rsn),
         )
         return cur.lastrowid or 0
 
@@ -2837,15 +2889,18 @@ def get_pickup_candidate_ids() -> set:
 def add_nara_pickup(candidate_id: int, bid_ntce_no: str, bid_ntce_nm: str,
                     ntce_instt_nm: str, presmpt_prce: str, bid_clse_dt: str,
                     ntce_url: str, matched_keyword: str, reason: str,
-                    registered_by: str) -> int:
+                    registered_by: str,
+                    relevance_stars: int = 0, relevance_reason: str = "") -> int:
     with get_connection() as conn:
         cur = conn.execute(
             """INSERT INTO nara_pickups
                (candidate_id, bid_ntce_no, bid_ntce_nm, ntce_instt_nm, presmpt_prce,
-                bid_clse_dt, ntce_url, matched_keyword, reason, registered_by)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                bid_clse_dt, ntce_url, matched_keyword, reason, registered_by,
+                relevance_stars, relevance_reason)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
             (candidate_id, bid_ntce_no, bid_ntce_nm, ntce_instt_nm, presmpt_prce,
-             bid_clse_dt, ntce_url, matched_keyword, reason, registered_by),
+             bid_clse_dt, ntce_url, matched_keyword, reason, registered_by,
+             relevance_stars, relevance_reason),
         )
         return cur.lastrowid or 0
 
