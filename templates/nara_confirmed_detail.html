@@ -583,6 +583,35 @@ tr.sch-editing .sch-act-view{display:none !important;}
     </div>
     {% endif %}
 
+    <!-- 발주처 소통 내용 + 기타 메모 -->
+    <div style="margin-top:24px;border-top:1px solid #e5e7eb;padding-top:18px;">
+      <div style="font-size:14px;font-weight:700;color:#374151;margin-bottom:14px;">📞 발주처 소통 내용</div>
+      {% if can_edit %}
+      <textarea id="notes-client-comm" rows="5"
+        style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:vertical;font-family:inherit;outline:none;line-height:1.6;"
+        onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#d1d5db'"
+        oninput="debounceNotes()"
+        placeholder="발주처와 주고받은 내용, 요청사항, 미팅 내용 등을 기록하세요">{{ c.client_communication or '' }}</textarea>
+      {% elif c.client_communication %}
+      <div style="background:#f9fafb;padding:12px 14px;border-radius:8px;font-size:13px;line-height:1.7;color:#374151;white-space:pre-wrap;">{{ c.client_communication }}</div>
+      {% else %}
+      <div style="color:#9ca3af;font-size:13px;padding:8px 0;">내용 없음</div>
+      {% endif %}
+    </div>
+    <div style="margin-top:20px;">
+      <div style="font-size:14px;font-weight:700;color:#374151;margin-bottom:14px;">📝 기타</div>
+      {% if can_edit %}
+      <textarea id="notes-extra" rows="3"
+        style="width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;resize:vertical;font-family:inherit;outline:none;line-height:1.6;"
+        onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#d1d5db'"
+        oninput="debounceNotes()"
+        placeholder="기타 참고사항, 메모 등">{{ c.extra_notes or '' }}</textarea>
+      {% elif c.extra_notes %}
+      <div style="background:#f9fafb;padding:12px 14px;border-radius:8px;font-size:13px;line-height:1.7;color:#374151;white-space:pre-wrap;">{{ c.extra_notes }}</div>
+      {% endif %}
+      <div id="notes-save-status" style="font-size:12px;color:#9ca3af;margin-top:6px;min-height:16px;"></div>
+    </div>
+
     <!-- 코멘트 -->
     <div style="margin-top:24px;border-top:1px solid #e5e7eb;padding-top:18px;" id="tab-proposal_design-anchor">
       <div style="font-size:14px;font-weight:700;color:#374151;margin-bottom:14px;">💬 코멘트</div>
@@ -736,6 +765,30 @@ function toLocalDateStr(d) {
 const CID    = {{ c.id }};
 const USERS  = {{ users | tojson }};
 const TODAY  = toLocalDateStr(new Date());
+
+// 발주처 소통 / 기타 메모 debounce 자동저장
+let _notesTimer = null;
+function debounceNotes() {
+  clearTimeout(_notesTimer);
+  document.getElementById('notes-save-status').textContent = '입력 중...';
+  _notesTimer = setTimeout(saveNotes, 3000);
+}
+async function saveNotes() {
+  const comm  = document.getElementById('notes-client-comm')?.value ?? '';
+  const extra = document.getElementById('notes-extra')?.value ?? '';
+  const st = document.getElementById('notes-save-status');
+  try {
+    const r = await fetch(`/nara/confirmed/${CID}/save_notes`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({client_communication: comm, extra_notes: extra}),
+    });
+    const d = await r.json();
+    if (st) st.textContent = d.ok ? '저장됨 ✓' : '저장 실패';
+  } catch(e) {
+    if (st) st.textContent = '저장 실패';
+  }
+}
 const CAN_EDIT = {{ 'true' if can_edit else 'false' }};
 const CAN_EDIT_NARRATIVE = {{ 'true' if can_edit_narrative else 'false' }};
 

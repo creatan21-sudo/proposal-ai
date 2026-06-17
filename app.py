@@ -4775,6 +4775,27 @@ def nara_confirmed_detail(confirmed_id):
                            now=_dt.now().strftime("%Y-%m-%d %H:%M"))
 
 
+@app.route("/nara/confirmed/<int:confirmed_id>/save_notes", methods=["POST"])
+@login_required
+def nara_confirmed_save_notes(confirmed_id):
+    c = get_confirmed_by_id(confirmed_id)
+    if not c:
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    is_ops      = session.get("role") in ("admin", "operator")
+    is_assignee = session.get("username") == c.get("assignee")
+    if not (is_ops or is_assignee):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    data = request.get_json(force=True) or {}
+    client_communication = (data.get("client_communication") or "").strip()
+    extra_notes          = (data.get("extra_notes") or "").strip()
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE nara_confirmed SET client_communication=?, extra_notes=? WHERE id=?",
+            (client_communication, extra_notes, confirmed_id),
+        )
+    return jsonify({"ok": True})
+
+
 @app.route("/nara/confirmed/<int:confirmed_id>/narrative", methods=["POST"])
 @login_required
 def nara_confirmed_narrative_save(confirmed_id):

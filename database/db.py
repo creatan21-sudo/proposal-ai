@@ -712,6 +712,8 @@ def init_db() -> None:
             "ALTER TABLE nara_pickups ADD COLUMN relevance_reason TEXT DEFAULT ''",
             "ALTER TABLE nara_confirmed ADD COLUMN relevance_stars INTEGER DEFAULT 0",
             "ALTER TABLE nara_confirmed ADD COLUMN relevance_reason TEXT DEFAULT ''",
+            "ALTER TABLE nara_confirmed ADD COLUMN client_communication TEXT DEFAULT ''",
+            "ALTER TABLE nara_confirmed ADD COLUMN extra_notes TEXT DEFAULT ''",
         ]:
             try:
                 conn.execute(migration)
@@ -2612,6 +2614,7 @@ def get_confirmed_by_id(confirmed_id: int) -> dict | None:
             """SELECT cf.id, cf.candidate_id, cf.pickup_id, cf.confirmed_by,
                       cf.notes, cf.assignee, cf.created_at,
                       cf.completion_status, cf.final_result,
+                      cf.client_communication, cf.extra_notes,
                       COALESCE(pk.bid_ntce_no, ca.bid_ntce_no) as bid_ntce_no,
                       COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm) as bid_ntce_nm,
                       COALESCE(pk.ntce_instt_nm, ca.ntce_instt_nm) as ntce_instt_nm,
