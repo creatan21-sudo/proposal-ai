@@ -1,0 +1,270 @@
+{% extends "base.html" %}
+{% block title %}실적목록 — Prointerz{% endblock %}
+{% block head %}
+<style>
+.works-wrap{max-width:1100px;margin:0 auto;padding:24px 16px}
+.works-title{font-size:22px;font-weight:700;margin-bottom:6px}
+.works-subtitle{font-size:13px;color:#6b7280;margin-bottom:24px}
+.search-row{display:flex;gap:8px;margin-bottom:20px;flex-wrap:wrap;align-items:center}
+.search-row input{flex:1;min-width:200px;padding:9px 14px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;outline:none}
+.search-row input:focus{border-color:#6366f1;box-shadow:0 0 0 2px #eef2ff}
+.btn{padding:8px 16px;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;transition:background .15s}
+.btn-primary{background:#6366f1;color:#fff}
+.btn-primary:hover{background:#4f46e5}
+.btn-add{background:#ecfdf5;color:#065f46;border:1px solid #a7f3d0}
+.btn-add:hover{background:#d1fae5}
+.btn-sm{padding:4px 10px;font-size:12px;font-weight:600;border:none;border-radius:6px;cursor:pointer}
+.btn-edit{background:#eff6ff;color:#1d4ed8}
+.btn-edit:hover{background:#dbeafe}
+.btn-del{background:#fff1f2;color:#be123c}
+.btn-del:hover{background:#ffe4e6}
+.year-section{margin-bottom:28px}
+.year-header{display:flex;align-items:center;gap:10px;padding:10px 0 8px;border-bottom:2px solid #e5e7eb;margin-bottom:0;cursor:pointer;user-select:none}
+.year-label{font-size:16px;font-weight:700;color:#111827}
+.year-count{font-size:13px;color:#6b7280;font-weight:400}
+.year-chevron{font-size:12px;color:#9ca3af;transition:transform .2s}
+.year-chevron.open{transform:rotate(180deg)}
+.works-table{width:100%;border-collapse:collapse;font-size:13px;margin-top:0}
+.works-table th{background:#f9fafb;padding:9px 12px;text-align:left;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb;white-space:nowrap}
+.works-table td{padding:10px 12px;border-bottom:1px solid #f3f4f6;color:#374151;vertical-align:top}
+.works-table tr:hover td{background:#fafafa}
+.td-no{color:#9ca3af;font-size:12px;white-space:nowrap}
+.td-client{font-weight:600;color:#1f2937;white-space:nowrap}
+.td-project{color:#374151}
+.td-date{color:#6b7280;white-space:nowrap;font-size:12px}
+.td-actions{white-space:nowrap;text-align:right}
+.empty-row td{text-align:center;padding:32px;color:#9ca3af;font-size:13px}
+.total-badge{font-size:13px;color:#6b7280;margin-bottom:16px}
+/* 모달 */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal-box{background:#fff;border-radius:14px;padding:28px;width:500px;max-width:94vw;box-shadow:0 20px 60px rgba(0,0,0,.25)}
+.modal-title{font-weight:700;font-size:16px;margin-bottom:18px}
+.modal-field{margin-bottom:14px}
+.modal-label{font-size:12px;font-weight:600;color:#6b7280;margin-bottom:5px}
+.modal-input{width:100%;box-sizing:border-box;padding:9px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;outline:none;font-family:inherit}
+.modal-input:focus{border-color:#4f46e5}
+.modal-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+.toast{position:fixed;bottom:28px;right:28px;background:#1f2937;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .3s;z-index:9999;pointer-events:none}
+.toast.show{opacity:1}
+</style>
+{% endblock %}
+{% block subnav %}
+<div class="sub-nav">
+  <div class="sub-nav-inner">
+    <a href="/db/my_work">📝 내 작업</a>
+    <a href="/history">📚 공유본</a>
+    <a href="/db/works" class="active">📋 실적목록</a>
+  </div>
+</div>
+{% endblock %}
+{% block content %}
+<div class="works-wrap">
+  <div class="works-title">📋 실적목록</div>
+  <div class="works-subtitle">인터즈 납품 실적 {{ total }}건</div>
+
+  <div class="search-row">
+    <input type="text" id="q-input" placeholder="발주처 또는 과업명 검색"
+           value="{{ q or '' }}"
+           onkeydown="if(event.key==='Enter') doSearch()"
+           onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#d1d5db'">
+    <button class="btn btn-primary" onclick="doSearch()">🔍 검색</button>
+    {% if q %}
+    <button class="btn" style="background:#fff;border:1px solid #d1d5db;color:#6b7280" onclick="location.href='/db/works'">초기화</button>
+    {% endif %}
+    {% if is_ops %}
+    <button class="btn btn-add" onclick="openAddModal()">+ 추가</button>
+    {% endif %}
+  </div>
+
+  {% if total == 0 %}
+  <div style="text-align:center;padding:60px;color:#9ca3af;font-size:14px">
+    {% if q %}검색 결과가 없습니다.{% else %}등록된 실적이 없습니다.{% endif %}
+  </div>
+  {% else %}
+
+  {% for yr in years %}
+  {% set items = grouped[yr] %}
+  <div class="year-section">
+    <div class="year-header" onclick="toggleYear({{ yr }})">
+      <span class="year-label">{{ yr if yr else '연도 미상' }}년</span>
+      <span class="year-count">({{ items|length }}건)</span>
+      <span class="year-chevron open" id="chevron-{{ yr }}">▼</span>
+    </div>
+    <div id="year-body-{{ yr }}">
+      <table class="works-table">
+        <thead>
+          <tr>
+            <th style="width:7%">번호</th>
+            <th style="width:20%">발주처</th>
+            <th>과업명</th>
+            <th style="width:10%">납품일</th>
+            {% if is_ops %}<th style="width:8%"></th>{% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for w in items %}
+          <tr>
+            <td class="td-no">{{ w.hdd_no }}</td>
+            <td class="td-client">{{ w.client }}</td>
+            <td class="td-project">{{ w.project }}</td>
+            <td class="td-date">{{ w.work_date }}</td>
+            {% if is_ops %}
+            <td class="td-actions">
+              <button class="btn-sm btn-edit" onclick='openEditModal({{ w | tojson }})'>수정</button>
+              <button class="btn-sm btn-del" onclick="deleteWork({{ w.id }}, '{{ w.project|e }}')">삭제</button>
+            </td>
+            {% endif %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endfor %}
+
+  {% endif %}
+</div>
+
+<!-- 추가 모달 -->
+<div class="modal-overlay" id="add-modal">
+  <div class="modal-box">
+    <div class="modal-title">실적 추가</div>
+    <div class="modal-field">
+      <div class="modal-label">번호 (HDD No)</div>
+      <input class="modal-input" id="add-hdd_no" placeholder="예: N131">
+    </div>
+    <div class="modal-field">
+      <div class="modal-label">발주처 *</div>
+      <input class="modal-input" id="add-client" placeholder="예: 육군본부">
+    </div>
+    <div class="modal-field">
+      <div class="modal-label">과업명 *</div>
+      <input class="modal-input" id="add-project" placeholder="과업명을 입력하세요">
+    </div>
+    <div class="modal-field">
+      <div class="modal-label">납품일</div>
+      <input class="modal-input" id="add-work_date" placeholder="예: 2024.12.31">
+    </div>
+    <div class="modal-field">
+      <div class="modal-label">메모</div>
+      <input class="modal-input" id="add-notes" placeholder="(선택)">
+    </div>
+    <div class="modal-btns">
+      <button class="btn" style="background:#f3f4f6;color:#374151" onclick="closeModal('add-modal')">취소</button>
+      <button class="btn btn-primary" onclick="submitAdd()">추가</button>
+    </div>
+  </div>
+</div>
+
+<!-- 수정 모달 -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal-box">
+    <div class="modal-title">실적 수정</div>
+    <input type="hidden" id="edit-id">
+    <div class="modal-field">
+      <div class="modal-label">번호 (HDD No)</div>
+      <input class="modal-input" id="edit-hdd_no">
+    </div>
+    <div class="modal-field">
+      <div class="modal-label">발주처 *</div>
+      <input class="modal-input" id="edit-client">
+    </div>
+    <div class="modal-field">
+      <div class="modal-label">과업명 *</div>
+      <input class="modal-input" id="edit-project">
+    </div>
+    <div class="modal-field">
+      <div class="modal-label">납품일</div>
+      <input class="modal-input" id="edit-work_date">
+    </div>
+    <div class="modal-field">
+      <div class="modal-label">메모</div>
+      <input class="modal-input" id="edit-notes">
+    </div>
+    <div class="modal-btns">
+      <button class="btn" style="background:#f3f4f6;color:#374151" onclick="closeModal('edit-modal')">취소</button>
+      <button class="btn btn-primary" onclick="submitEdit()">저장</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+function doSearch(){
+  const q = document.getElementById('q-input').value.trim();
+  location.href = '/db/works' + (q ? '?q=' + encodeURIComponent(q) : '');
+}
+function toggleYear(yr){
+  const body    = document.getElementById('year-body-' + yr);
+  const chevron = document.getElementById('chevron-' + yr);
+  if(!body) return;
+  const hidden = body.style.display === 'none';
+  body.style.display    = hidden ? '' : 'none';
+  chevron.classList.toggle('open', hidden);
+}
+function showToast(msg, ok=true){
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = ok ? '#1f2937' : '#991b1b';
+  t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'), 2800);
+}
+function openModal(id){ document.getElementById(id).classList.add('open'); }
+function closeModal(id){ document.getElementById(id).classList.remove('open'); }
+
+function openAddModal(){
+  ['hdd_no','client','project','work_date','notes'].forEach(f=>{
+    document.getElementById('add-'+f).value = '';
+  });
+  openModal('add-modal');
+}
+async function submitAdd(){
+  const payload = {};
+  ['hdd_no','client','project','work_date','notes'].forEach(f=>{
+    payload[f] = document.getElementById('add-'+f).value.trim();
+  });
+  if(!payload.client || !payload.project){ showToast('발주처와 과업명은 필수입니다.', false); return; }
+  const r = await fetch('/db/works/add', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+  const d = await r.json();
+  if(d.ok){ closeModal('add-modal'); showToast('추가되었습니다.'); setTimeout(()=>location.reload(),800); }
+  else showToast(d.error||'오류가 발생했습니다.', false);
+}
+
+function openEditModal(w){
+  document.getElementById('edit-id').value       = w.id;
+  document.getElementById('edit-hdd_no').value   = w.hdd_no   || '';
+  document.getElementById('edit-client').value   = w.client   || '';
+  document.getElementById('edit-project').value  = w.project  || '';
+  document.getElementById('edit-work_date').value= w.work_date|| '';
+  document.getElementById('edit-notes').value    = w.notes    || '';
+  openModal('edit-modal');
+}
+async function submitEdit(){
+  const id = document.getElementById('edit-id').value;
+  const payload = {};
+  ['hdd_no','client','project','work_date','notes'].forEach(f=>{
+    payload[f] = document.getElementById('edit-'+f).value.trim();
+  });
+  if(!payload.client || !payload.project){ showToast('발주처와 과업명은 필수입니다.', false); return; }
+  const r = await fetch(`/db/works/${id}/edit`, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)});
+  const d = await r.json();
+  if(d.ok){ closeModal('edit-modal'); showToast('저장되었습니다.'); setTimeout(()=>location.reload(),800); }
+  else showToast(d.error||'오류가 발생했습니다.', false);
+}
+
+async function deleteWork(id, name){
+  if(!confirm(`"${name}" 항목을 삭제하시겠습니까?`)) return;
+  const r = await fetch(`/db/works/${id}/delete`, {method:'POST'});
+  const d = await r.json();
+  if(d.ok){ showToast('삭제되었습니다.'); setTimeout(()=>location.reload(),800); }
+  else showToast(d.error||'오류가 발생했습니다.', false);
+}
+
+// 모달 배경 클릭으로 닫기
+document.querySelectorAll('.modal-overlay').forEach(el=>{
+  el.addEventListener('click', e=>{ if(e.target===el) el.classList.remove('open'); });
+});
+</script>
+{% endblock %}

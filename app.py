@@ -93,7 +93,8 @@ from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           get_confirmed_research, save_confirmed_research,
                           get_or_create_default_schedules,
                           request_completion, approve_completion, set_final_result,
-                          get_proposal_design, save_proposal_design)
+                          get_proposal_design, save_proposal_design,
+                          get_all_company_works)
 
 app = Flask(__name__)
 # Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
@@ -1361,6 +1362,85 @@ def db_my_work():
             ORDER BY n.updated_at DESC
         """, (username,)).fetchall()
     return render_template("db_my_work.html", narratives=[dict(r) for r in rows])
+
+
+# 실적목록 페이지
+# ─────────────────────────────────────────────
+
+@app.route("/db/works")
+@login_required
+def db_works():
+    q    = request.args.get("q", "").strip()
+    role = session.get("role", "")
+    is_ops = role in ("admin", "operator")
+
+    all_works = get_all_company_works()
+
+    if q:
+        ql = q.lower()
+        all_works = [w for w in all_works
+                     if ql in w.get("client", "").lower()
+                     or ql in w.get("project", "").lower()]
+
+    grouped = {}
+    for w in all_works:
+        yr = w.get("work_year") or 0
+        grouped.setdefault(yr, []).append(w)
+    years = sorted(grouped.keys(), reverse=True)
+
+    return render_template("db_works.html",
+                           grouped=grouped, years=years,
+                           q=q, is_ops=is_ops,
+                           total=len(all_works))
+
+
+@app.route("/db/works/add", methods=["POST"])
+@login_required
+@operator_or_admin_required
+def db_works_add():
+    data = request.get_json(force=True) or {}
+    hdd_no    = (data.get("hdd_no")    or "").strip()
+    client    = (data.get("client")    or "").strip()
+    project   = (data.get("project")   or "").strip()
+    work_date = (data.get("work_date") or "").strip()
+    notes     = (data.get("notes")     or "").strip()
+    work_year = int(work_date[:4]) if len(work_date) >= 4 and work_date[:4].isdigit() else 0
+    with get_connection() as conn:
+        conn.execute(
+            "INSERT INTO company_works (hdd_no, client, project, work_date, work_year, notes)"
+            " VALUES (?,?,?,?,?,?)",
+            (hdd_no, client, project, work_date, work_year, notes)
+        )
+    return jsonify({"ok": True})
+
+
+@app.route("/db/works/<int:work_id>/edit", methods=["POST"])
+@login_required
+@operator_or_admin_required
+def db_works_edit(work_id):
+    data = request.get_json(force=True) or {}
+    hdd_no    = (data.get("hdd_no")    or "").strip()
+    client    = (data.get("client")    or "").strip()
+    project   = (data.get("project")   or "").strip()
+    work_date = (data.get("work_date") or "").strip()
+    notes     = (data.get("notes")     or "").strip()
+    work_year = int(work_date[:4]) if len(work_date) >= 4 and work_date[:4].isdigit() else 0
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE company_works SET hdd_no=?, client=?, project=?, work_date=?, work_year=?, notes=?"
+            " WHERE id=?",
+            (hdd_no, client, project, work_date, work_year, notes, work_id)
+        )
+    return jsonify({"ok": True})
+
+
+@app.route("/db/works/<int:work_id>/delete", methods=["POST"])
+@login_required
+@operator_or_admin_required
+def db_works_delete(work_id):
+    with get_connection() as conn:
+        conn.execute("DELETE FROM company_works WHERE id=?", (work_id,))
+    return jsonify({"ok": True})
 
 
 # 이력 페이지
