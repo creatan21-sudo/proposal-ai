@@ -219,8 +219,9 @@
                 {{ b.bid_ntce_nm }}
               </a>
               {% if b.relevance_stars and b.relevance_stars > 0 %}
-              <span style="color:#f5a623;cursor:default;font-size:13px;margin-left:4px;"
-                    title="{{ b.relevance_reason or '' }}">{{ '⭐' * b.relevance_stars }}</span>
+              <span class="relevance-badge"
+                    onclick="showRelevanceReason('{{ b.relevance_reason | e }}', {{ b.relevance_stars }})"
+                    style="cursor:pointer;color:#f5a623;font-size:13px;margin-left:4px;">{{ '⭐' * b.relevance_stars }}</span>
               {% endif %}
             </div>
             <span class="bid-kw">{{ b.matched_keyword }}</span>
