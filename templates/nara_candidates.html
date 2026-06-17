@@ -102,6 +102,10 @@
                {% if is_processed %}style="text-decoration:line-through;color:#aaa;"{% endif %}>
               {{ c.bid_ntce_nm or '-' }}
             </a>
+            {% if c.relevance_stars and c.relevance_stars > 0 %}
+            <span style="color:#f5a623;cursor:default;font-size:13px;margin-left:4px;"
+                  title="{{ c.relevance_reason or '' }}">{{ '⭐' * c.relevance_stars }}</span>
+            {% endif %}
           </td>
           <td>{{ c.ntce_instt_nm or '-' }}</td>
           <td class="bid-prce">{% if c.presmpt_prce and c.presmpt_prce.isdigit() %}{{ '{:,}'.format(c.presmpt_prce|int) }}원{% else %}-{% endif %}</td>

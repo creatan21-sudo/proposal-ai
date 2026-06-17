@@ -94,7 +94,7 @@ from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           get_or_create_default_schedules,
                           request_completion, approve_completion, set_final_result,
                           get_proposal_design, save_proposal_design,
-                          get_all_company_works)
+                          get_all_company_works, update_relevance_stars)
 
 app = Flask(__name__)
 # Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
@@ -2073,6 +2073,31 @@ def _schedule_credit_report():
 @admin_required
 def api_credit_status():
     return jsonify(get_credit_status())
+
+
+@app.route("/admin/analyze_all_bids")
+@login_required
+def admin_analyze_all_bids():
+    if not session.get("is_admin"):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    try:
+        from utils.nara import analyze_relevance
+        analyzed = 0
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT id, ntce_instt_nm, bid_ntce_nm FROM nara_bids"
+                " WHERE relevance_stars IS NULL OR relevance_stars = 0"
+            ).fetchall()
+        for row in rows:
+            stars, reason = analyze_relevance(
+                row["ntce_instt_nm"] or "", row["bid_ntce_nm"] or ""
+            )
+            if stars:
+                update_relevance_stars("nara_bids", row["id"], stars, reason)
+                analyzed += 1
+        return jsonify({"ok": True, "analyzed": analyzed})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
 
 
 @app.route("/admin")
@@ -4469,6 +4494,7 @@ def nara_confirmed_page():
         rows = conn.execute("""
             SELECT cf.id, cf.confirmed_by, cf.notes, cf.assignee, cf.created_at,
                    cf.completion_status, cf.final_result,
+                   cf.relevance_stars, cf.relevance_reason,
                    COALESCE(pk.bid_ntce_no, ca.bid_ntce_no) AS bid_ntce_no,
                    COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm) AS bid_ntce_nm,
                    COALESCE(pk.ntce_instt_nm, ca.ntce_instt_nm) AS ntce_instt_nm,
@@ -5119,6 +5145,26 @@ def nara_candidate_add():
         )
         if not new_id:
             return jsonify({"ok": False, "error": "이미 후보에 등록된 공고입니다"})
+        # nara_bids 별점 복사, 없으면 즉시 분석
+        try:
+            bid_no = str(data.get("bid_ntce_no", ""))
+            with get_connection() as conn:
+                bid_row = conn.execute(
+                    "SELECT relevance_stars, relevance_reason FROM nara_bids"
+                    " WHERE bid_ntce_no=? ORDER BY id DESC LIMIT 1", (bid_no,)
+                ).fetchone()
+            if bid_row and bid_row["relevance_stars"]:
+                update_relevance_stars("nara_candidates", new_id,
+                                       bid_row["relevance_stars"], bid_row["relevance_reason"])
+            else:
+                from utils.nara import analyze_relevance
+                stars, reason = analyze_relevance(
+                    str(data.get("ntce_instt_nm", "")), str(data.get("bid_ntce_nm", ""))
+                )
+                if stars:
+                    update_relevance_stars("nara_candidates", new_id, stars, reason)
+        except Exception:
+            pass
         return jsonify({"ok": True, "id": new_id})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
@@ -5152,6 +5198,19 @@ def nara_pickup_add():
             reason         = str(data.get("reason",         "")),
             registered_by  = session.get("username", ""),
         )
+        # 후보 별점 → 픽업으로 복사
+        try:
+            cand_id = int(data.get("candidate_id", 0))
+            with get_connection() as conn:
+                cand_row = conn.execute(
+                    "SELECT relevance_stars, relevance_reason FROM nara_candidates WHERE id=?",
+                    (cand_id,)
+                ).fetchone()
+            if cand_row and cand_row["relevance_stars"]:
+                update_relevance_stars("nara_pickups", new_id,
+                                       cand_row["relevance_stars"], cand_row["relevance_reason"])
+        except Exception:
+            pass
         try:
             settings  = get_notification_settings()
             notif_ids = settings.get("pickup_auto", [])
@@ -5187,6 +5246,18 @@ def nara_confirm_from_pickup(pickup_id):
             notes        = str(data.get("notes", "")),
             assignee     = assignee,
         )
+        # 픽업 별점 → 확정으로 복사
+        try:
+            with get_connection() as conn:
+                pu_row = conn.execute(
+                    "SELECT relevance_stars, relevance_reason FROM nara_pickups WHERE id=?",
+                    (pickup_id,)
+                ).fetchone()
+            if pu_row and pu_row["relevance_stars"]:
+                update_relevance_stars("nara_confirmed", new_id,
+                                       pu_row["relevance_stars"], pu_row["relevance_reason"])
+        except Exception:
+            pass
         # 담당자에게 RFP 등록 요청 알림
         try:
             c = get_confirmed_by_id(new_id)
@@ -5219,6 +5290,18 @@ def nara_confirm(candidate_id):
             notes        = str(data.get("notes", "")),
             assignee     = str(data.get("assignee", "")),
         )
+        # 후보 별점 → 확정으로 복사
+        try:
+            with get_connection() as conn:
+                ca_row = conn.execute(
+                    "SELECT relevance_stars, relevance_reason FROM nara_candidates WHERE id=?",
+                    (candidate_id,)
+                ).fetchone()
+            if ca_row and ca_row["relevance_stars"]:
+                update_relevance_stars("nara_confirmed", new_id,
+                                       ca_row["relevance_stars"], ca_row["relevance_reason"])
+        except Exception:
+            pass
         return jsonify({"ok": True, "id": new_id})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})

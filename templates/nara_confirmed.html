@@ -54,6 +54,10 @@
       <div class="og-card-left">
         <div class="og-card-name" title="{{ t.bid_ntce_nm or '-' }}">
           {{ t.bid_ntce_nm or '-' }}
+          {% if t.relevance_stars and t.relevance_stars > 0 %}
+          <span style="color:#f5a623;cursor:default;font-size:13px;margin-left:4px;"
+                title="{{ t.relevance_reason or '' }}">{{ '⭐' * t.relevance_stars }}</span>
+          {% endif %}
           {% if t.badge_rfp %}
           <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=research"
              onclick="event.stopPropagation();" title="RFP 등록됨">RFP분석</a>

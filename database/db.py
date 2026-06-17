@@ -704,6 +704,14 @@ def init_db() -> None:
             "ALTER TABLE nara_confirmed ADD COLUMN completion_approved_at TEXT DEFAULT ''",
             "ALTER TABLE nara_confirmed ADD COLUMN final_result TEXT DEFAULT ''",
             "ALTER TABLE confirmed_narratives ADD COLUMN ai_feedback TEXT DEFAULT ''",
+            "ALTER TABLE nara_bids ADD COLUMN relevance_stars INTEGER DEFAULT 0",
+            "ALTER TABLE nara_bids ADD COLUMN relevance_reason TEXT DEFAULT ''",
+            "ALTER TABLE nara_candidates ADD COLUMN relevance_stars INTEGER DEFAULT 0",
+            "ALTER TABLE nara_candidates ADD COLUMN relevance_reason TEXT DEFAULT ''",
+            "ALTER TABLE nara_pickups ADD COLUMN relevance_stars INTEGER DEFAULT 0",
+            "ALTER TABLE nara_pickups ADD COLUMN relevance_reason TEXT DEFAULT ''",
+            "ALTER TABLE nara_confirmed ADD COLUMN relevance_stars INTEGER DEFAULT 0",
+            "ALTER TABLE nara_confirmed ADD COLUMN relevance_reason TEXT DEFAULT ''",
         ]:
             try:
                 conn.execute(migration)
@@ -2352,6 +2360,19 @@ def get_ppt_job(task_id: str) -> dict | None:
     return dict(row) if row else None
 
 
+# ── 연관성 별점 ──────────────────────────────────────────
+
+def update_relevance_stars(table: str, record_id: int, stars: int, reason: str) -> None:
+    allowed = {"nara_bids", "nara_candidates", "nara_pickups", "nara_confirmed"}
+    if table not in allowed:
+        return
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE {table} SET relevance_stars=?, relevance_reason=? WHERE id=?",
+            (stars, reason, record_id),
+        )
+
+
 # ── 실적목록 ──────────────────────────────────────────
 
 def get_all_company_works() -> list:
@@ -2381,10 +2402,10 @@ def delete_nara_keyword(keyword_id: int):
     with get_connection() as conn:
         conn.execute("DELETE FROM nara_keywords WHERE id=?", (keyword_id,))
 
-def save_nara_bid(bid: dict, matched_keyword: str = ""):
+def save_nara_bid(bid: dict, matched_keyword: str = "") -> int:
     try:
         with get_connection() as conn:
-            conn.execute("""
+            cur = conn.execute("""
                 INSERT OR IGNORE INTO nara_bids
                     (bid_ntce_no, bid_ntce_nm, ntce_instt_nm, dmnd_instt_nm,
                      bid_mtd_nm, presmpt_prce, bid_ntce_dt, bid_clse_dt, ntce_url, matched_keyword)
@@ -2396,8 +2417,10 @@ def save_nara_bid(bid: dict, matched_keyword: str = ""):
                 bid.get("bid_ntce_dt",""), bid.get("bid_clse_dt",""),
                 bid.get("ntce_url",""), matched_keyword,
             ))
+            return cur.lastrowid or 0
     except Exception as e:
         print(f"[db] save_nara_bid 오류: {e}")
+        return 0
 
 def is_nara_bid_seen(bid_ntce_no: str) -> bool:
     with get_connection() as conn:

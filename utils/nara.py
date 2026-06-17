@@ -9,6 +9,36 @@ import json
 import concurrent.futures
 from datetime import datetime, timedelta
 
+
+def analyze_relevance(ntce_instt_nm: str, bid_ntce_nm: str) -> tuple:
+    """공고 연관성을 실적 DB 기반으로 Claude Haiku로 분석. (stars, reason) 반환."""
+    try:
+        from database.db import get_all_company_works
+        import anthropic
+        works = get_all_company_works()
+        if not works:
+            return 0, ''
+        works_summary = "\n".join(
+            [f"- {w['client']}: {w['project']}" for w in works[:100]]
+        )
+        client = anthropic.Anthropic()
+        response = client.messages.create(
+            model="claude-haiku-20240307",
+            max_tokens=200,
+            messages=[{"role": "user", "content": (
+                f"우리 회사 영상 제작 수주 실적:\n{works_summary}\n\n"
+                f"신규 공고:\n발주처: {ntce_instt_nm}\n공고명: {bid_ntce_nm}\n\n"
+                f"연관성 분석 후 JSON만 응답 (다른 텍스트 없이):\n"
+                f'{{\"stars\": 0, \"reason\": \"이유\"}}\n'
+                f"별점: 3=동일/유사 발주처 또는 동일 유형 다수 실적, "
+                f"2=유사 분야 실적, 1=간접 연관, 0=무관"
+            )}]
+        )
+        result = json.loads(response.content[0].text.strip())
+        return int(result.get('stars', 0)), str(result.get('reason', ''))
+    except Exception:
+        return 0, ''
+
 NARA_API_KEY = os.environ.get("NARA_API_KEY", "")
 NARA_API_URL    = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancListInfoServcPPSSrch"
 NARA_DETAIL_URL = "https://apis.data.go.kr/1230000/ad/BidPublicInfoService/getBidPblancDtlInfoServc"
@@ -349,8 +379,19 @@ def _run_scan():
             bid_no = bid["bid_ntce_no"]
             if not bid_no or is_nara_bid_seen(bid_no):
                 continue
-            save_nara_bid(bid, matched_keyword=keyword)
+            saved_id = save_nara_bid(bid, matched_keyword=keyword)
             new_count += 1
+            # 저장 후 연관성 별점 분석
+            if saved_id:
+                try:
+                    from database.db import update_relevance_stars
+                    stars, reason = analyze_relevance(
+                        bid.get("ntce_instt_nm", ""), bid.get("bid_ntce_nm", "")
+                    )
+                    if stars:
+                        update_relevance_stars("nara_bids", saved_id, stars, reason)
+                except Exception:
+                    pass
             msg = _format_msg(bid, keyword)
             for chat_id in get_admin_telegram_ids():
                 send_telegram(chat_id, msg)
@@ -624,8 +665,18 @@ def collect_all_bids(target_date: str = None) -> int:
         if new_items:
             filtered = filter_bids_with_ai(new_items, source='collect_all')
             for bid in filtered:
-                save_nara_bid(bid, matched_keyword="전체수집")
+                saved_id = save_nara_bid(bid, matched_keyword="전체수집")
                 new_count += 1
+                if saved_id:
+                    try:
+                        from database.db import update_relevance_stars
+                        stars, reason = analyze_relevance(
+                            bid.get("ntce_instt_nm", ""), bid.get("bid_ntce_nm", "")
+                        )
+                        if stars:
+                            update_relevance_stars("nara_bids", saved_id, stars, reason)
+                    except Exception:
+                        pass
             print(f"[nara 전체수집] 페이지{page}: {len(items)}건 → 신규 {len(new_items)}건 → AI필터 {len(filtered)}건 저장")
 
         time.sleep(0.5)
