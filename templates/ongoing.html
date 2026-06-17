@@ -38,6 +38,11 @@
 .og-id{font-size:12px;color:#999;font-weight:400;margin-right:8px;flex-shrink:0;}
 .og-del-btn{background:none;border:none;cursor:pointer;font-size:12px;color:#ef4444;padding:3px 7px;line-height:1;flex-shrink:0;font-weight:600;border-radius:4px;transition:background .12s;}
 .og-del-btn:hover{background:#fee2e2;}
+/* 마감 지난 카드 */
+.og-card.expired{opacity:.5;}
+.og-card.expired .og-card-name{text-decoration:line-through;}
+.expired-toggle{width:100%;padding:9px 16px;background:#f9fafb;border:1px dashed #d1d5db;border-radius:8px;font-size:13px;color:#6b7280;cursor:pointer;text-align:left;margin-bottom:10px;font-weight:500;transition:background .12s;}
+.expired-toggle:hover{background:#f3f4f6;color:#374151;}
 /* 삭제 확인 모달 */
 .del-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;}
 .del-modal-overlay.open{display:flex;}
@@ -60,7 +65,7 @@
     {% if my_tasks %}
       {% for t in my_tasks %}
       {% set clse = (t.bid_clse_dt or '')[:10] %}
-      <div class="og-card" id="og-card-{{ t.id }}" onclick="location.href='/nara/confirmed/{{ t.id }}'">
+      <div class="og-card" id="og-card-{{ t.id }}" data-clse="{{ clse }}" onclick="location.href='/nara/confirmed/{{ t.id }}'">
         <span class="og-id">{{ t.id }}</span>
         <div class="og-card-left">
           <div class="og-card-name" title="{{ t.bid_ntce_nm or '-' }}">
@@ -120,7 +125,7 @@
     {% if all_tasks %}
       {% for t in all_tasks %}
       {% set clse = (t.bid_clse_dt or '')[:10] %}
-      <div class="og-card" id="og-card-{{ t.id }}" onclick="location.href='/nara/confirmed/{{ t.id }}'">
+      <div class="og-card" id="og-card-{{ t.id }}" data-clse="{{ clse }}" onclick="location.href='/nara/confirmed/{{ t.id }}'">
         <span class="og-id">{{ t.id }}</span>
         <div class="og-card-left">
           <div class="og-card-name" title="{{ t.bid_ntce_nm or '-' }}">
@@ -190,6 +195,45 @@
 </div>
 
 <script>
+// 타임존 안전 오늘 날짜
+function toLocalDateStr(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+const TODAY = toLocalDateStr(new Date());
+
+// 만료 카드 숨김 + 토글 버튼 삽입
+function initExpiredCards(paneId){
+  const pane = document.getElementById(paneId);
+  if(!pane) return;
+  const cards = Array.from(pane.querySelectorAll('.og-card[data-clse]'));
+  const expired = cards.filter(c => c.dataset.clse && c.dataset.clse < TODAY);
+  if(!expired.length) return;
+
+  // 만료 카드 → 끝으로 이동 + 숨김
+  expired.forEach(c => {
+    c.classList.add('expired');
+    c.style.display = 'none';
+    pane.appendChild(c);
+  });
+
+  // 토글 버튼 생성
+  const btn = document.createElement('button');
+  btn.className = 'expired-toggle';
+  btn.dataset.open = '0';
+  btn.textContent = `📁 마감 지난 과업 ${expired.length}건 보기 ▼`;
+  btn.onclick = function(){
+    const opening = this.dataset.open === '0';
+    pane.querySelectorAll('.og-card.expired').forEach(c => {
+      c.style.display = opening ? '' : 'none';
+    });
+    this.dataset.open = opening ? '1' : '0';
+    this.textContent = opening
+      ? `▲ 마감 지난 과업 ${expired.length}건 접기`
+      : `📁 마감 지난 과업 ${expired.length}건 보기 ▼`;
+  };
+  pane.insertBefore(btn, expired[0]);
+}
+
 let _delId = null;
 
 function openDelModal(id, nm){
@@ -217,6 +261,8 @@ function switchTab(name){
 }
 
 (function(){
+  initExpiredCards('pane-my');
+  initExpiredCards('pane-all');
   const tab = new URLSearchParams(location.search).get('tab');
   if(tab === 'all') switchTab('all');
 })();
