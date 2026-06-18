@@ -2103,7 +2103,9 @@ def admin_analyze_all_bids():
             analyzed = 0
             with get_connection() as conn:
                 rows = conn.execute(
-                    "SELECT id, ntce_instt_nm, bid_ntce_nm FROM nara_bids LIMIT 200"
+                    "SELECT id, ntce_instt_nm, bid_ntce_nm FROM nara_bids"
+                    " WHERE relevance_stars = 0 OR relevance_stars IS NULL"
+                    " ORDER BY id DESC LIMIT 300"
                 ).fetchall()
             print(f"[analyze] nara_bids 대상 건수: {len(rows)}")
             for row in rows:
