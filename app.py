@@ -2093,11 +2093,16 @@ def admin_analyze_all_bids():
                     conn.execute(f"ALTER TABLE {table} ADD COLUMN relevance_reason TEXT DEFAULT ''")
                 except Exception:
                     pass
+        works = get_all_company_works()
+        print(f"[analyze] company_works 건수: {len(works)}")
+        if not works:
+            print("[analyze] company_works 비어있음 — 분석 스킵")
         analyzed = 0
         with get_connection() as conn:
             rows = conn.execute(
                 "SELECT id, ntce_instt_nm, bid_ntce_nm FROM nara_bids LIMIT 200"
             ).fetchall()
+        print(f"[analyze] nara_bids 대상 건수: {len(rows)}")
         for row in rows:
             stars, reason = analyze_relevance(
                 row["ntce_instt_nm"] or "", row["bid_ntce_nm"] or ""

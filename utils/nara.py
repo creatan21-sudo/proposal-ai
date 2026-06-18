@@ -16,6 +16,7 @@ def analyze_relevance(ntce_instt_nm: str, bid_ntce_nm: str) -> tuple:
         from database.db import get_all_company_works
         import anthropic
         works = get_all_company_works()
+        print(f"[analyze_relevance] works 건수: {len(works)}")
         if not works:
             return 0, ''
         works_summary = "\n".join(
@@ -34,9 +35,11 @@ def analyze_relevance(ntce_instt_nm: str, bid_ntce_nm: str) -> tuple:
                 f"2=유사 분야 실적, 1=간접 연관, 0=무관"
             )}]
         )
+        print(f"[analyze_relevance] API 응답: {response.content[0].text[:100]}")
         result = json.loads(response.content[0].text.strip())
         return int(result.get('stars', 0)), str(result.get('reason', ''))
-    except Exception:
+    except Exception as e:
+        print(f"[analyze_relevance] 오류: {e}")
         return 0, ''
 
 NARA_API_KEY = os.environ.get("NARA_API_KEY", "")
