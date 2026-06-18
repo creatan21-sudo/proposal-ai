@@ -2368,11 +2368,15 @@ def update_relevance_stars(table: str, record_id: int, stars: int, reason: str) 
     allowed = {"nara_bids", "nara_candidates", "nara_pickups", "nara_confirmed"}
     if table not in allowed:
         return
-    with get_connection() as conn:
-        conn.execute(
-            f"UPDATE {table} SET relevance_stars=?, relevance_reason=? WHERE id=?",
-            (stars, reason, record_id),
-        )
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                f"UPDATE {table} SET relevance_stars=?, relevance_reason=? WHERE id=?",
+                (stars, reason, record_id),
+            )
+        print(f"[stars] {table} id={record_id} → {stars}성 저장 완료")
+    except Exception as e:
+        print(f"[stars] 저장 오류: {e} / table={table} id={record_id}")
 
 
 # ── 실적목록 ──────────────────────────────────────────
