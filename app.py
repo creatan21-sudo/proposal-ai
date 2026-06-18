@@ -4469,6 +4469,8 @@ def nara_dashboard():
                                         hide_expired=hide_expired,
                                         search_nm=search_nm, search_instt=search_instt,
                                         search_no=search_no)
+    print(f"[nara] 첫 공고 id: {paged['items'][0]['id'] if paged['items'] else 'empty'}")
+    print(f"[nara] 첫 공고 relevance_stars: {paged['items'][0].get('relevance_stars') if paged['items'] else 'empty'}")
     settings     = get_nara_settings()
     candidate_nos = get_candidate_bid_nos()
     return render_template("nara.html", keywords=keywords,
