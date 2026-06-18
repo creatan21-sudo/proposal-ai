@@ -36,14 +36,20 @@ def analyze_relevance(ntce_instt_nm: str, bid_ntce_nm: str) -> tuple:
             )}]
         )
         print(f"[analyze_relevance] API 응답: {response.content[0].text[:100]}")
-        text = response.content[0].text.strip()
-        if text.startswith('```'):
-            text = text.split('```')[1]
-            if text.startswith('json'):
-                text = text[4:]
-        text = text.strip()
-        result = json.loads(text)
-        return int(result.get('stars', 0)), str(result.get('reason', ''))
+        try:
+            text = response.content[0].text.strip()
+            text = re.sub(r'```json\s*', '', text)
+            text = re.sub(r'```\s*', '', text)
+            text = text.strip()
+            start = text.find('{')
+            end = text.rfind('}')
+            if start != -1 and end != -1:
+                text = text[start:end+1]
+            result = json.loads(text)
+            return int(result.get('stars', 0)), str(result.get('reason', ''))
+        except Exception as e:
+            print(f"[analyze_relevance] 파싱 오류: {e} / 원문: {text[:100]}")
+            return 0, ''
     except Exception as e:
         print(f"[analyze_relevance] 오류: {e}")
         return 0, ''
