@@ -24,7 +24,7 @@ def analyze_relevance(ntce_instt_nm: str, bid_ntce_nm: str) -> tuple:
         )
         client = anthropic.Anthropic()
         response = client.messages.create(
-            model="claude-haiku-20240307",
+            model="claude-haiku-4-5-20251001",
             max_tokens=200,
             messages=[{"role": "user", "content": (
                 f"우리 회사 영상 제작 수주 실적:\n{works_summary}\n\n"
