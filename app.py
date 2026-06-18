@@ -2080,40 +2080,46 @@ def api_credit_status():
 def admin_analyze_all_bids():
     if not session.get("is_admin"):
         return jsonify({"ok": False, "error": "권한 없음"}), 403
-    try:
-        from utils.nara import analyze_relevance
-        # 컬럼 없는 경우 강제 추가 (Railway DB 마이그레이션 보장)
-        with get_connection() as conn:
-            for table in ['nara_bids', 'nara_candidates', 'nara_pickups', 'nara_confirmed']:
-                try:
-                    conn.execute(f"ALTER TABLE {table} ADD COLUMN relevance_stars INTEGER DEFAULT 0")
-                except Exception:
-                    pass
-                try:
-                    conn.execute(f"ALTER TABLE {table} ADD COLUMN relevance_reason TEXT DEFAULT ''")
-                except Exception:
-                    pass
-        works = get_all_company_works()
-        print(f"[analyze] company_works 건수: {len(works)}")
-        if not works:
-            print("[analyze] company_works 비어있음 — 분석 스킵")
-        analyzed = 0
-        with get_connection() as conn:
-            rows = conn.execute(
-                "SELECT id, ntce_instt_nm, bid_ntce_nm FROM nara_bids LIMIT 200"
-            ).fetchall()
-        print(f"[analyze] nara_bids 대상 건수: {len(rows)}")
-        for row in rows:
-            stars, reason = analyze_relevance(
-                row["ntce_instt_nm"] or "", row["bid_ntce_nm"] or ""
-            )
-            print(f"[analyze] {row['bid_ntce_nm']} → {stars}성: {reason}")
-            if stars:
-                update_relevance_stars("nara_bids", row["id"], stars, reason)
-                analyzed += 1
-        return jsonify({"ok": True, "analyzed": analyzed, "total": len(rows)})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)})
+
+    def run_analysis():
+        try:
+            from utils.nara import analyze_relevance
+            # 컬럼 없는 경우 강제 추가 (Railway DB 마이그레이션 보장)
+            with get_connection() as conn:
+                for table in ['nara_bids', 'nara_candidates', 'nara_pickups', 'nara_confirmed']:
+                    try:
+                        conn.execute(f"ALTER TABLE {table} ADD COLUMN relevance_stars INTEGER DEFAULT 0")
+                    except Exception:
+                        pass
+                    try:
+                        conn.execute(f"ALTER TABLE {table} ADD COLUMN relevance_reason TEXT DEFAULT ''")
+                    except Exception:
+                        pass
+            works = get_all_company_works()
+            print(f"[analyze] company_works 건수: {len(works)}")
+            if not works:
+                print("[analyze] company_works 비어있음 — 분석 스킵")
+                return
+            analyzed = 0
+            with get_connection() as conn:
+                rows = conn.execute(
+                    "SELECT id, ntce_instt_nm, bid_ntce_nm FROM nara_bids LIMIT 200"
+                ).fetchall()
+            print(f"[analyze] nara_bids 대상 건수: {len(rows)}")
+            for row in rows:
+                stars, reason = analyze_relevance(
+                    row["ntce_instt_nm"] or "", row["bid_ntce_nm"] or ""
+                )
+                print(f"[analyze] {row['bid_ntce_nm']} → {stars}성: {reason}")
+                if stars:
+                    update_relevance_stars("nara_bids", row["id"], stars, reason)
+                    analyzed += 1
+            print(f"[analyze] 완료: {analyzed}/{len(rows)}건 별점 저장")
+        except Exception as e:
+            print(f"[analyze] 오류: {e}")
+
+    threading.Thread(target=run_analysis, daemon=True).start()
+    return jsonify({"ok": True, "message": "백그라운드에서 분석 시작됨. Railway 로그에서 진행상황 확인하세요."})
 
 
 @app.route("/admin")
