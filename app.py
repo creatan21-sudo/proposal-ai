@@ -2082,20 +2082,31 @@ def admin_analyze_all_bids():
         return jsonify({"ok": False, "error": "권한 없음"}), 403
     try:
         from utils.nara import analyze_relevance
+        # 컬럼 없는 경우 강제 추가 (Railway DB 마이그레이션 보장)
+        with get_connection() as conn:
+            for table in ['nara_bids', 'nara_candidates', 'nara_pickups', 'nara_confirmed']:
+                try:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN relevance_stars INTEGER DEFAULT 0")
+                except Exception:
+                    pass
+                try:
+                    conn.execute(f"ALTER TABLE {table} ADD COLUMN relevance_reason TEXT DEFAULT ''")
+                except Exception:
+                    pass
         analyzed = 0
         with get_connection() as conn:
             rows = conn.execute(
-                "SELECT id, ntce_instt_nm, bid_ntce_nm FROM nara_bids"
-                " WHERE relevance_stars IS NULL OR relevance_stars = 0"
+                "SELECT id, ntce_instt_nm, bid_ntce_nm FROM nara_bids LIMIT 200"
             ).fetchall()
         for row in rows:
             stars, reason = analyze_relevance(
                 row["ntce_instt_nm"] or "", row["bid_ntce_nm"] or ""
             )
+            print(f"[analyze] {row['bid_ntce_nm']} → {stars}성: {reason}")
             if stars:
                 update_relevance_stars("nara_bids", row["id"], stars, reason)
                 analyzed += 1
-        return jsonify({"ok": True, "analyzed": analyzed})
+        return jsonify({"ok": True, "analyzed": analyzed, "total": len(rows)})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
