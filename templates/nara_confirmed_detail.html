@@ -612,6 +612,32 @@ tr.sch-editing .sch-act-view{display:none !important;}
       <div id="notes-save-status" style="font-size:12px;color:#9ca3af;margin-top:6px;min-height:16px;"></div>
     </div>
 
+    <!-- 회의록 -->
+    <div style="margin-top:24px;border-top:1px solid #e5e7eb;padding-top:18px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <div style="font-size:14px;font-weight:700;color:#374151;">📝 회의록</div>
+        {% if can_edit %}
+        <a href="/board/write?confirmed_id={{ c.id }}"
+           style="padding:6px 14px;background:#ede9fe;color:#7c3aed;border-radius:7px;font-size:12px;font-weight:600;text-decoration:none;">+ 회의록 작성</a>
+        {% endif %}
+      </div>
+      {% if meeting_posts %}
+      <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;">
+        {% for p in meeting_posts %}
+        <div style="background:#f9fafb;border-radius:8px;padding:12px 14px;border:1px solid #ede9fe;">
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="font-size:13px;font-weight:700;color:#374151;">{{ p.title }}</div>
+            <div style="font-size:11px;color:#9ca3af;">{{ p.author }} · {{ (p.created_at or '')[:10] }}</div>
+          </div>
+          <div style="font-size:13px;color:#6b7280;margin-top:6px;line-height:1.6;white-space:pre-wrap;">{{ p.content }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div style="color:#9ca3af;font-size:13px;padding:8px 0;">등록된 회의록이 없습니다.</div>
+      {% endif %}
+    </div>
+
     <!-- 코멘트 -->
     <div style="margin-top:24px;border-top:1px solid #e5e7eb;padding-top:18px;" id="tab-proposal_design-anchor">
       <div style="font-size:14px;font-weight:700;color:#374151;margin-bottom:14px;">💬 코멘트</div>

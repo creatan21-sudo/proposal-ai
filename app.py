@@ -94,7 +94,9 @@ from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           get_or_create_default_schedules,
                           request_completion, approve_completion, set_final_result,
                           get_proposal_design, save_proposal_design,
-                          get_all_company_works, update_relevance_stars)
+                          get_all_company_works, update_relevance_stars,
+                          list_board_posts, get_board_post, create_board_post,
+                          update_board_post, delete_board_post)
 
 app = Flask(__name__)
 # Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
@@ -4455,6 +4457,78 @@ def api_step_overrides(case_id):
 # ─────────────────────────────────────────────
 
 
+# ── 게시판 ──────────────────────────────────────────────
+
+@app.route("/board")
+@login_required
+def board():
+    post_type    = request.args.get("type", "all")
+    confirmed_id = int(request.args.get("confirmed_id", 0))
+    posts = list_board_posts(post_type=post_type, confirmed_id=confirmed_id)
+    is_ops = session.get("role") in ("admin", "operator")
+    return render_template("board.html", posts=posts,
+                           post_type=post_type, confirmed_id=confirmed_id,
+                           is_ops=is_ops)
+
+
+@app.route("/board/write", methods=["GET", "POST"])
+@login_required
+def board_write():
+    is_ops = session.get("role") in ("admin", "operator")
+    if request.method == "GET":
+        confirmed_id = int(request.args.get("confirmed_id", 0))
+        default_type = "meeting" if confirmed_id else ("notice" if is_ops else "meeting")
+        return render_template("board_write.html", confirmed_id=confirmed_id,
+                               default_type=default_type, is_ops=is_ops)
+    data         = request.form
+    post_type    = data.get("post_type", "meeting")
+    confirmed_id = int(data.get("confirmed_id", 0))
+    title        = (data.get("title") or "").strip()
+    content      = (data.get("content") or "").strip()
+    author       = session.get("username") or session.get("name", "")
+    if not title or not content:
+        return redirect(request.referrer or "/board")
+    if post_type == "notice" and not is_ops:
+        post_type = "meeting"
+    create_board_post(post_type, confirmed_id, title, content, author)
+    if confirmed_id:
+        return redirect(f"/nara/confirmed/{confirmed_id}")
+    return redirect("/board")
+
+
+@app.route("/board/<int:post_id>/edit", methods=["POST"])
+@login_required
+def board_edit(post_id):
+    post = get_board_post(post_id)
+    if not post:
+        return jsonify({"ok": False, "error": "없음"}), 404
+    is_ops  = session.get("role") in ("admin", "operator")
+    is_mine = session.get("username") == post["author"]
+    if not (is_ops or is_mine):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    data    = request.get_json(force=True) or {}
+    title   = (data.get("title") or "").strip()
+    content = (data.get("content") or "").strip()
+    if not title or not content:
+        return jsonify({"ok": False, "error": "내용 필요"}), 400
+    update_board_post(post_id, title, content)
+    return jsonify({"ok": True})
+
+
+@app.route("/board/<int:post_id>/delete", methods=["POST"])
+@login_required
+def board_delete(post_id):
+    post = get_board_post(post_id)
+    if not post:
+        return jsonify({"ok": False, "error": "없음"}), 404
+    is_ops  = session.get("role") in ("admin", "operator")
+    is_mine = session.get("username") == post["author"]
+    if not (is_ops or is_mine):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    delete_board_post(post_id)
+    return jsonify({"ok": True})
+
+
 # ── 나라장터 입찰 모니터링 ──────────────────────────────
 
 @app.route("/nara")
@@ -4788,6 +4862,7 @@ def nara_confirmed_detail(confirmed_id):
     rfp_files       = list_confirmed_rfp_files(confirmed_id)
     research        = get_confirmed_research(confirmed_id)
     proposal_design = get_proposal_design(confirmed_id)
+    meeting_posts   = list_board_posts(post_type="meeting", confirmed_id=confirmed_id)
     from datetime import datetime as _dt
     return render_template("nara_confirmed_detail.html",
                            c=c, narrative=narrative, narrative_qa=narrative_qa,
@@ -4795,6 +4870,7 @@ def nara_confirmed_detail(confirmed_id):
                            schedule=schedule, bid_info=bid_info,
                            rfp_files=rfp_files, research=research,
                            proposal_design=proposal_design,
+                           meeting_posts=meeting_posts,
                            users=users, can_edit=can_edit, is_ops=is_ops,
                            is_assignee=is_assignee,
                            can_edit_narrative=can_edit_narrative,
@@ -5678,6 +5754,7 @@ def confirmed_workspace(confirmed_id):
     users           = list_users()
     comments        = list_confirmed_comments(confirmed_id)
     proposal_design = get_proposal_design(confirmed_id)
+    meeting_posts   = list_board_posts(post_type="meeting", confirmed_id=confirmed_id)
     return render_template(
         "confirmed_workspace.html",
         c=c, research=research, narrative=narrative,
@@ -5685,6 +5762,7 @@ def confirmed_workspace(confirmed_id):
         can_edit=can_edit, is_ops=is_ops, is_assignee=is_assignee,
         bid_info=bid_info, schedule=schedule, users=users,
         comments=comments, proposal_design=proposal_design,
+        meeting_posts=meeting_posts,
     )
 
 

@@ -38,6 +38,7 @@
         <a href="/ongoing" class="{{ 'nav-active' if path == '/ongoing' else '' }}">진행중</a>
         <a href="/nara" class="{{ 'nav-active' if path.startswith('/nara') else '' }}">입찰</a>
         <a href="/schedule" class="{{ 'nav-active' if path == '/schedule' else '' }}">일정</a>
+        <a href="/board" class="{{ 'nav-active' if path.startswith('/board') else '' }}">게시판</a>
         {% if session.get('role') != 'user' %}
         <a href="/proposal" class="{{ 'nav-active' if path.startswith('/proposal') or path.startswith('/run/') else '' }}">작성</a>
         <a href="/history" class="{{ 'nav-active' if (path.startswith('/history') or path.startswith('/db')) else '' }}">DB</a>

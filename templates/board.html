@@ -1,0 +1,184 @@
+{% extends "base.html" %}
+{% block title %}게시판 — Prointerz{% endblock %}
+
+{% block content %}
+<style>
+.board-wrap{max-width:860px;margin:32px auto;padding:0 20px;}
+.board-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
+.board-header h1{font-size:22px;font-weight:700;color:#1f2937;}
+.board-tabs{display:flex;gap:6px;margin-bottom:20px;}
+.board-tab{padding:8px 20px;border-radius:20px;font-size:13px;font-weight:600;text-decoration:none;color:#6b7280;background:#f3f4f6;border:none;cursor:pointer;}
+.board-tab.active{background:#4f46e5;color:#fff;}
+.board-tab:hover:not(.active){background:#e0e7ff;color:#4f46e5;}
+.board-actions{display:flex;gap:8px;}
+.btn-write{padding:8px 18px;background:#4f46e5;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;text-decoration:none;}
+.btn-write.secondary{background:#f3f4f6;color:#374151;}
+.btn-write:hover{opacity:.9;}
+.board-table{width:100%;border-collapse:collapse;background:#fff;border-radius:12px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.08);}
+.board-table th{background:#f9fafb;padding:12px 16px;text-align:left;font-size:12px;font-weight:600;color:#6b7280;border-bottom:1px solid #e5e7eb;}
+.board-table td{padding:14px 16px;border-bottom:1px solid #f3f4f6;font-size:14px;color:#374151;vertical-align:middle;}
+.board-table tr:last-child td{border-bottom:none;}
+.board-table tr:hover td{background:#fafafa;cursor:pointer;}
+.badge{display:inline-block;padding:2px 8px;border-radius:12px;font-size:11px;font-weight:700;margin-right:6px;}
+.badge-notice{background:#fef3c7;color:#d97706;}
+.badge-meeting{background:#ede9fe;color:#7c3aed;}
+.post-title{font-weight:600;color:#1f2937;}
+.post-meta{font-size:12px;color:#9ca3af;}
+.empty-msg{text-align:center;padding:60px 20px;color:#9ca3af;font-size:14px;}
+
+/* 상세 모달 */
+.modal-overlay{display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.4);z-index:9999;align-items:center;justify-content:center;}
+.modal-overlay.open{display:flex;}
+.modal-box{background:#fff;border-radius:14px;padding:32px;max-width:640px;width:90%;max-height:80vh;overflow-y:auto;box-shadow:0 8px 32px rgba(0,0,0,.2);}
+.modal-type{font-size:12px;font-weight:700;color:#7c3aed;margin-bottom:8px;}
+.modal-title{font-size:20px;font-weight:700;color:#1f2937;margin-bottom:8px;}
+.modal-meta{font-size:12px;color:#9ca3af;margin-bottom:20px;}
+.modal-content{font-size:14px;line-height:1.8;color:#374151;white-space:pre-wrap;border-top:1px solid #f3f4f6;padding-top:16px;}
+.modal-actions{display:flex;gap:8px;margin-top:20px;justify-content:flex-end;}
+.btn-sm{padding:6px 14px;border-radius:7px;font-size:12px;font-weight:600;border:none;cursor:pointer;}
+.btn-edit{background:#e0e7ff;color:#4f46e5;}
+.btn-delete{background:#fee2e2;color:#dc2626;}
+.btn-close{background:#f3f4f6;color:#374151;}
+.edit-form{display:none;margin-top:16px;border-top:1px solid #f3f4f6;padding-top:16px;}
+.edit-form input,.edit-form textarea{width:100%;box-sizing:border-box;padding:10px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;font-family:inherit;margin-bottom:10px;outline:none;}
+.edit-form textarea{min-height:120px;resize:vertical;}
+.edit-form input:focus,.edit-form textarea:focus{border-color:#6366f1;}
+</style>
+
+<div class="board-wrap">
+  <div class="board-header">
+    <h1>게시판</h1>
+    <div class="board-actions">
+      {% if is_ops %}
+      <a href="/board/write?post_type=notice" class="btn-write secondary">📢 공지 작성</a>
+      {% endif %}
+      <a href="/board/write" class="btn-write">📝 회의록 작성</a>
+    </div>
+  </div>
+
+  <div class="board-tabs">
+    <a href="/board?type=all" class="board-tab {{ 'active' if post_type == 'all' else '' }}">전체</a>
+    <a href="/board?type=notice" class="board-tab {{ 'active' if post_type == 'notice' else '' }}">📢 공지</a>
+    <a href="/board?type=meeting" class="board-tab {{ 'active' if post_type == 'meeting' else '' }}">📝 회의록</a>
+  </div>
+
+  {% if posts %}
+  <table class="board-table">
+    <thead>
+      <tr>
+        <th style="width:60px;">구분</th>
+        <th>제목</th>
+        <th style="width:90px;">작성자</th>
+        <th style="width:100px;">날짜</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in posts %}
+      <tr onclick="openPost({{ p | tojson | e }})">
+        <td>
+          {% if p.post_type == 'notice' %}
+          <span class="badge badge-notice">📢 공지</span>
+          {% else %}
+          <span class="badge badge-meeting">📝 회의록</span>
+          {% endif %}
+        </td>
+        <td>
+          <div class="post-title">{{ p.title }}</div>
+          {% if p.post_type == 'meeting' and p.confirmed_id %}
+          <div class="post-meta">과업 #{{ p.confirmed_id }}</div>
+          {% endif %}
+        </td>
+        <td class="post-meta">{{ p.author }}</td>
+        <td class="post-meta">{{ (p.created_at or '')[:10] }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div class="empty-msg">게시글이 없습니다.</div>
+  {% endif %}
+</div>
+
+<!-- 상세 모달 -->
+<div class="modal-overlay" id="post-modal" onclick="closeModal(event)">
+  <div class="modal-box" id="post-modal-box">
+    <div class="modal-type" id="modal-type"></div>
+    <div class="modal-title" id="modal-title"></div>
+    <div class="modal-meta" id="modal-meta"></div>
+    <div class="modal-content" id="modal-content"></div>
+    <div class="edit-form" id="edit-form">
+      <input type="text" id="edit-title" placeholder="제목">
+      <textarea id="edit-content" placeholder="내용"></textarea>
+      <div style="display:flex;gap:8px;justify-content:flex-end;">
+        <button class="btn-sm btn-close" onclick="cancelEdit()">취소</button>
+        <button class="btn-sm" style="background:#4f46e5;color:#fff;" onclick="submitEdit()">저장</button>
+      </div>
+    </div>
+    <div class="modal-actions" id="modal-actions">
+      <button class="btn-sm btn-close" onclick="document.getElementById('post-modal').classList.remove('open')">닫기</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const ME       = {{ session.get('username') | tojson }};
+const IS_OPS   = {{ 'true' if is_ops else 'false' }};
+let _currentPost = null;
+
+function openPost(p) {
+  _currentPost = p;
+  document.getElementById('modal-type').textContent   = p.post_type === 'notice' ? '📢 공지' : '📝 회의록';
+  document.getElementById('modal-title').textContent  = p.title;
+  document.getElementById('modal-meta').textContent   = `${p.author} · ${(p.created_at||'').slice(0,10)}`;
+  document.getElementById('modal-content').textContent = p.content;
+  document.getElementById('edit-form').style.display  = 'none';
+
+  const actions = document.getElementById('modal-actions');
+  const canEdit = IS_OPS || p.author === ME;
+  actions.innerHTML = '';
+  if (canEdit) {
+    actions.innerHTML += `<button class="btn-sm btn-edit" onclick="startEdit()">수정</button>`;
+    actions.innerHTML += `<button class="btn-sm btn-delete" onclick="doDelete(${p.id})">삭제</button>`;
+  }
+  actions.innerHTML += `<button class="btn-sm btn-close" onclick="document.getElementById('post-modal').classList.remove('open')">닫기</button>`;
+  document.getElementById('post-modal').classList.add('open');
+}
+
+function closeModal(e) {
+  if (e.target === document.getElementById('post-modal'))
+    document.getElementById('post-modal').classList.remove('open');
+}
+
+function startEdit() {
+  document.getElementById('edit-title').value   = _currentPost.title;
+  document.getElementById('edit-content').value = _currentPost.content;
+  document.getElementById('edit-form').style.display = 'block';
+}
+
+function cancelEdit() {
+  document.getElementById('edit-form').style.display = 'none';
+}
+
+async function submitEdit() {
+  const title   = document.getElementById('edit-title').value.trim();
+  const content = document.getElementById('edit-content').value.trim();
+  if (!title || !content) return;
+  const r = await fetch(`/board/${_currentPost.id}/edit`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({title, content}),
+  });
+  const d = await r.json();
+  if (d.ok) location.reload();
+  else alert('수정 실패: ' + d.error);
+}
+
+async function doDelete(id) {
+  if (!confirm('삭제하시겠습니까?')) return;
+  const r = await fetch(`/board/${id}/delete`, {method:'POST'});
+  const d = await r.json();
+  if (d.ok) location.reload();
+  else alert('삭제 실패: ' + d.error);
+}
+</script>
+{% endblock %}

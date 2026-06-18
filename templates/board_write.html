@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}글쓰기 — Prointerz{% endblock %}
+
+{% block content %}
+<style>
+.write-wrap{max-width:720px;margin:40px auto;padding:0 20px;}
+.write-wrap h1{font-size:22px;font-weight:700;color:#1f2937;margin-bottom:28px;}
+.form-group{margin-bottom:18px;}
+.form-group label{display:block;font-size:13px;font-weight:600;color:#374151;margin-bottom:6px;}
+.form-group input,.form-group textarea,.form-group select{
+  width:100%;box-sizing:border-box;padding:10px 14px;
+  border:1px solid #d1d5db;border-radius:8px;font-size:14px;
+  font-family:inherit;outline:none;color:#1f2937;}
+.form-group input:focus,.form-group textarea:focus,.form-group select:focus{border-color:#6366f1;}
+.form-group textarea{min-height:200px;resize:vertical;line-height:1.7;}
+.form-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:24px;}
+.btn-submit{padding:10px 28px;background:#4f46e5;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;}
+.btn-cancel{padding:10px 28px;background:#f3f4f6;color:#374151;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;text-decoration:none;}
+.btn-submit:hover{opacity:.9;}
+</style>
+
+<div class="write-wrap">
+  <h1>📝 글쓰기</h1>
+  <form method="POST" action="/board/write">
+    <input type="hidden" name="confirmed_id" value="{{ confirmed_id }}">
+
+    {% if is_ops %}
+    <div class="form-group">
+      <label>글 종류</label>
+      <select name="post_type">
+        <option value="meeting" {{ 'selected' if default_type == 'meeting' else '' }}>📝 회의록</option>
+        <option value="notice"  {{ 'selected' if default_type == 'notice'  else '' }}>📢 공지</option>
+      </select>
+    </div>
+    {% else %}
+    <input type="hidden" name="post_type" value="meeting">
+    {% endif %}
+
+    <div class="form-group">
+      <label>제목</label>
+      <input type="text" name="title" placeholder="제목을 입력하세요" required autofocus>
+    </div>
+    <div class="form-group">
+      <label>내용</label>
+      <textarea name="content" placeholder="내용을 입력하세요" required></textarea>
+    </div>
+    <div class="form-actions">
+      <a href="{{ '/nara/confirmed/' + confirmed_id|string if confirmed_id else '/board' }}" class="btn-cancel">취소</a>
+      <button type="submit" class="btn-submit">등록</button>
+    </div>
+  </form>
+</div>
+{% endblock %}

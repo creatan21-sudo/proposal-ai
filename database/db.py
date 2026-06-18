@@ -485,6 +485,16 @@ def init_db() -> None:
                 notes      TEXT DEFAULT '',
                 created_at TEXT DEFAULT (datetime('now','localtime'))
             );
+            CREATE TABLE IF NOT EXISTS board_posts (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                post_type    TEXT    DEFAULT 'notice',
+                confirmed_id INTEGER DEFAULT 0,
+                title        TEXT    DEFAULT '',
+                content      TEXT    DEFAULT '',
+                author       TEXT    DEFAULT '',
+                created_at   TEXT    DEFAULT (datetime('now','localtime')),
+                updated_at   TEXT    DEFAULT (datetime('now','localtime'))
+            );
         """)
         # ── 기본 키워드 삽입 (최초 실행 시 또는 누락 시) ──
         _DEFAULT_KEYWORDS = [
@@ -3311,3 +3321,53 @@ def save_proposal_design(confirmed_id: int, content: str,
                 "VALUES (?,?,?,?,?)",
                 (confirmed_id, content, ai_feedback or '', now, now),
             )
+
+
+# ── 게시판 ──────────────────────────────────────────────
+
+def list_board_posts(post_type: str = "all", confirmed_id: int = 0) -> list:
+    conditions, params = [], []
+    if post_type in ("notice", "meeting"):
+        conditions.append("post_type=?")
+        params.append(post_type)
+    if confirmed_id:
+        conditions.append("confirmed_id=?")
+        params.append(confirmed_id)
+    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM board_posts {where} ORDER BY id DESC",
+            params,
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_board_post(post_id: int) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM board_posts WHERE id=?", (post_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def create_board_post(post_type: str, confirmed_id: int, title: str,
+                      content: str, author: str) -> int:
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO board_posts (post_type, confirmed_id, title, content, author)"
+            " VALUES (?,?,?,?,?)",
+            (post_type, confirmed_id, title, content, author),
+        )
+        return cur.lastrowid or 0
+
+
+def update_board_post(post_id: int, title: str, content: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE board_posts SET title=?, content=?, updated_at=datetime('now','localtime')"
+            " WHERE id=?",
+            (title, content, post_id),
+        )
+
+
+def delete_board_post(post_id: int) -> None:
+    with get_connection() as conn:
+        conn.execute("DELETE FROM board_posts WHERE id=?", (post_id,))
