@@ -492,6 +492,8 @@ def init_db() -> None:
                 title        TEXT    DEFAULT '',
                 content      TEXT    DEFAULT '',
                 author       TEXT    DEFAULT '',
+                meeting_date TEXT    DEFAULT '',
+                participants TEXT    DEFAULT '',
                 created_at   TEXT    DEFAULT (datetime('now','localtime')),
                 updated_at   TEXT    DEFAULT (datetime('now','localtime'))
             );
@@ -724,6 +726,8 @@ def init_db() -> None:
             "ALTER TABLE nara_confirmed ADD COLUMN relevance_reason TEXT DEFAULT ''",
             "ALTER TABLE nara_confirmed ADD COLUMN client_communication TEXT DEFAULT ''",
             "ALTER TABLE nara_confirmed ADD COLUMN extra_notes TEXT DEFAULT ''",
+            "ALTER TABLE board_posts ADD COLUMN meeting_date TEXT DEFAULT ''",
+            "ALTER TABLE board_posts ADD COLUMN participants TEXT DEFAULT ''",
         ]:
             try:
                 conn.execute(migration)
@@ -3328,15 +3332,29 @@ def save_proposal_design(confirmed_id: int, content: str,
 def list_board_posts(post_type: str = "all", confirmed_id: int = 0) -> list:
     conditions, params = [], []
     if post_type in ("notice", "meeting"):
-        conditions.append("post_type=?")
+        conditions.append("b.post_type=?")
         params.append(post_type)
     if confirmed_id:
-        conditions.append("confirmed_id=?")
+        conditions.append("b.confirmed_id=?")
         params.append(confirmed_id)
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
     with get_connection() as conn:
         rows = conn.execute(
-            f"SELECT * FROM board_posts {where} ORDER BY id DESC",
+            f"""SELECT b.*,
+                       COALESCE(cf.bid_ntce_nm, '') as confirmed_title
+                FROM board_posts b
+                LEFT JOIN nara_confirmed nc ON nc.id = b.confirmed_id
+                LEFT JOIN nara_pickups pk   ON pk.id = nc.pickup_id
+                LEFT JOIN nara_candidates ca ON ca.id = nc.candidate_id
+                LEFT JOIN nara_bids bid      ON bid.bid_ntce_no = COALESCE(pk.bid_ntce_no, ca.bid_ntce_no)
+                LEFT JOIN (
+                    SELECT nc2.id,
+                           COALESCE(pk2.bid_ntce_nm, ca2.bid_ntce_nm, '') as bid_ntce_nm
+                    FROM nara_confirmed nc2
+                    LEFT JOIN nara_pickups pk2    ON pk2.id = nc2.pickup_id
+                    LEFT JOIN nara_candidates ca2  ON ca2.id = nc2.candidate_id
+                ) cf ON cf.id = b.confirmed_id
+                {where} ORDER BY b.id DESC""",
             params,
         ).fetchall()
     return [dict(r) for r in rows]
@@ -3344,30 +3362,64 @@ def list_board_posts(post_type: str = "all", confirmed_id: int = 0) -> list:
 
 def get_board_post(post_id: int) -> dict | None:
     with get_connection() as conn:
-        row = conn.execute("SELECT * FROM board_posts WHERE id=?", (post_id,)).fetchone()
+        row = conn.execute(
+            """SELECT b.*,
+                      COALESCE(cf.bid_ntce_nm, '') as confirmed_title
+               FROM board_posts b
+               LEFT JOIN (
+                   SELECT nc.id,
+                          COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm, '') as bid_ntce_nm
+                   FROM nara_confirmed nc
+                   LEFT JOIN nara_pickups pk    ON pk.id = nc.pickup_id
+                   LEFT JOIN nara_candidates ca  ON ca.id = nc.candidate_id
+               ) cf ON cf.id = b.confirmed_id
+               WHERE b.id=?""",
+            (post_id,),
+        ).fetchone()
     return dict(row) if row else None
 
 
-def create_board_post(post_type: str, confirmed_id: int, title: str,
-                      content: str, author: str) -> int:
+def create_board_post(post_type: str, confirmed_id: int, title: str, content: str,
+                      author: str, meeting_date: str = "", participants: str = "") -> int:
     with get_connection() as conn:
         cur = conn.execute(
-            "INSERT INTO board_posts (post_type, confirmed_id, title, content, author)"
-            " VALUES (?,?,?,?,?)",
-            (post_type, confirmed_id, title, content, author),
+            "INSERT INTO board_posts"
+            " (post_type, confirmed_id, title, content, author, meeting_date, participants)"
+            " VALUES (?,?,?,?,?,?,?)",
+            (post_type, confirmed_id, title, content, author, meeting_date, participants),
         )
         return cur.lastrowid or 0
 
 
-def update_board_post(post_id: int, title: str, content: str) -> None:
+def update_board_post(post_id: int, title: str, content: str,
+                      meeting_date: str = "", participants: str = "") -> None:
     with get_connection() as conn:
         conn.execute(
-            "UPDATE board_posts SET title=?, content=?, updated_at=datetime('now','localtime')"
+            "UPDATE board_posts"
+            " SET title=?, content=?, meeting_date=?, participants=?,"
+            "     updated_at=datetime('now','localtime')"
             " WHERE id=?",
-            (title, content, post_id),
+            (title, content, meeting_date, participants, post_id),
         )
 
 
 def delete_board_post(post_id: int) -> None:
     with get_connection() as conn:
         conn.execute("DELETE FROM board_posts WHERE id=?", (post_id,))
+
+
+def list_confirmed_for_board() -> list:
+    """게시판 회의록 작성 시 과업 선택용 — 진행중 확정 과업 목록."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT nc.id,
+                      COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm, '') as title,
+                      nc.assignee
+               FROM nara_confirmed nc
+               LEFT JOIN nara_pickups pk    ON pk.id = nc.pickup_id
+               LEFT JOIN nara_candidates ca  ON ca.id = nc.candidate_id
+               WHERE nc.completion_status IN ('pending', 'in_progress', '')
+                  OR nc.completion_status IS NULL
+               ORDER BY nc.id DESC""",
+        ).fetchall()
+    return [dict(r) for r in rows]

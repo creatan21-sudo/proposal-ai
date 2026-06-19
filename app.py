@@ -96,7 +96,8 @@ from database.db import (get_nara_keywords, delete_nara_keyword, list_nara_bids,
                           get_proposal_design, save_proposal_design,
                           get_all_company_works, update_relevance_stars,
                           list_board_posts, get_board_post, create_board_post,
-                          update_board_post, delete_board_post)
+                          update_board_post, delete_board_post,
+                          list_confirmed_for_board)
 
 app = Flask(__name__)
 # Railway 등 역방향 프록시 환경에서 X-Forwarded-* 헤더 올바르게 처리
@@ -4464,11 +4465,24 @@ def api_step_overrides(case_id):
 def board():
     post_type    = request.args.get("type", "all")
     confirmed_id = int(request.args.get("confirmed_id", 0))
-    posts = list_board_posts(post_type=post_type, confirmed_id=confirmed_id)
+    posts  = list_board_posts(post_type=post_type, confirmed_id=confirmed_id)
     is_ops = session.get("role") in ("admin", "operator")
     return render_template("board.html", posts=posts,
                            post_type=post_type, confirmed_id=confirmed_id,
                            is_ops=is_ops)
+
+
+@app.route("/board/<int:post_id>")
+@login_required
+def board_detail(post_id):
+    post = get_board_post(post_id)
+    if not post:
+        return "게시글을 찾을 수 없습니다.", 404
+    is_ops  = session.get("role") in ("admin", "operator")
+    is_mine = session.get("username") == post["author"]
+    can_edit = is_ops or is_mine
+    return render_template("board_detail.html", post=post,
+                           can_edit=can_edit, is_ops=is_ops)
 
 
 @app.route("/board/write", methods=["GET", "POST"])
@@ -4477,26 +4491,31 @@ def board_write():
     is_ops = session.get("role") in ("admin", "operator")
     if request.method == "GET":
         confirmed_id = int(request.args.get("confirmed_id", 0))
-        default_type = "meeting" if confirmed_id else ("notice" if is_ops else "meeting")
+        default_type = request.args.get("type", "meeting" if confirmed_id else ("notice" if is_ops else "meeting"))
+        confirmed_list = list_confirmed_for_board()
         return render_template("board_write.html", confirmed_id=confirmed_id,
-                               default_type=default_type, is_ops=is_ops)
-    data         = request.form
-    post_type    = data.get("post_type", "meeting")
-    confirmed_id = int(data.get("confirmed_id", 0))
-    title        = (data.get("title") or "").strip()
-    content      = (data.get("content") or "").strip()
-    author       = session.get("username") or session.get("name", "")
+                               default_type=default_type, is_ops=is_ops,
+                               confirmed_list=confirmed_list)
+    data          = request.form
+    post_type     = data.get("post_type", "meeting")
+    confirmed_id  = int(data.get("confirmed_id") or 0)
+    title         = (data.get("title") or "").strip()
+    content       = (data.get("content") or "").strip()
+    meeting_date  = (data.get("meeting_date") or "").strip()
+    participants  = (data.get("participants") or "").strip()
+    author        = session.get("username") or session.get("name", "")
     if not title or not content:
         return redirect(request.referrer or "/board")
     if post_type == "notice" and not is_ops:
         post_type = "meeting"
-    create_board_post(post_type, confirmed_id, title, content, author)
+    new_id = create_board_post(post_type, confirmed_id, title, content, author,
+                               meeting_date, participants)
     if confirmed_id:
         return redirect(f"/nara/confirmed/{confirmed_id}")
-    return redirect("/board")
+    return redirect(f"/board/{new_id}")
 
 
-@app.route("/board/<int:post_id>/edit", methods=["POST"])
+@app.route("/board/<int:post_id>/edit", methods=["GET", "POST"])
 @login_required
 def board_edit(post_id):
     post = get_board_post(post_id)
@@ -4506,12 +4525,21 @@ def board_edit(post_id):
     is_mine = session.get("username") == post["author"]
     if not (is_ops or is_mine):
         return jsonify({"ok": False, "error": "권한 없음"}), 403
-    data    = request.get_json(force=True) or {}
-    title   = (data.get("title") or "").strip()
-    content = (data.get("content") or "").strip()
+    if request.method == "GET":
+        confirmed_list = list_confirmed_for_board()
+        return render_template("board_write.html", post=post,
+                               confirmed_id=post["confirmed_id"],
+                               default_type=post["post_type"],
+                               is_ops=is_ops, confirmed_list=confirmed_list,
+                               edit_mode=True)
+    data         = request.get_json(force=True) or {}
+    title        = (data.get("title") or "").strip()
+    content      = (data.get("content") or "").strip()
+    meeting_date = (data.get("meeting_date") or "").strip()
+    participants = (data.get("participants") or "").strip()
     if not title or not content:
         return jsonify({"ok": False, "error": "내용 필요"}), 400
-    update_board_post(post_id, title, content)
+    update_board_post(post_id, title, content, meeting_date, participants)
     return jsonify({"ok": True})
 
 
@@ -4525,8 +4553,11 @@ def board_delete(post_id):
     is_mine = session.get("username") == post["author"]
     if not (is_ops or is_mine):
         return jsonify({"ok": False, "error": "권한 없음"}), 403
+    confirmed_id = post.get("confirmed_id", 0)
     delete_board_post(post_id)
-    return jsonify({"ok": True})
+    if confirmed_id:
+        return jsonify({"ok": True, "redirect": f"/nara/confirmed/{confirmed_id}"})
+    return jsonify({"ok": True, "redirect": "/board"})
 
 
 # ── 나라장터 입찰 모니터링 ──────────────────────────────

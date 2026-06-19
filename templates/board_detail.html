@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}{{ post.title }} — Prointerz{% endblock %}
+
+{% block content %}
+<style>
+.det-wrap{max-width:780px;margin:36px auto;padding:0 20px;}
+.det-card{background:#fff;border-radius:14px;padding:32px 36px;box-shadow:0 1px 6px rgba(0,0,0,.08);}
+.det-badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:12px;font-weight:700;margin-bottom:14px;}
+.badge-notice{background:#fef3c7;color:#d97706;}
+.badge-meeting{background:#ede9fe;color:#7c3aed;}
+.det-title{font-size:22px;font-weight:700;color:#1f2937;margin-bottom:12px;line-height:1.4;}
+.det-meta{display:flex;flex-wrap:wrap;gap:14px;font-size:13px;color:#9ca3af;padding-bottom:18px;border-bottom:1px solid #f3f4f6;margin-bottom:20px;}
+.det-meta span{display:flex;align-items:center;gap:4px;}
+.det-confirmed{display:inline-block;margin-bottom:14px;padding:6px 12px;background:#f0f1f8;border-radius:8px;font-size:13px;color:#4f46e5;font-weight:600;text-decoration:none;}
+.det-confirmed:hover{background:#e0e7ff;}
+.det-content{font-size:15px;line-height:1.85;color:#374151;white-space:pre-wrap;min-height:80px;}
+.det-actions{display:flex;gap:10px;margin-top:28px;padding-top:20px;border-top:1px solid #f3f4f6;justify-content:flex-end;}
+.btn{padding:9px 22px;border-radius:8px;font-size:13px;font-weight:600;border:none;cursor:pointer;text-decoration:none;display:inline-block;}
+.btn-back{background:#f3f4f6;color:#374151;}
+.btn-edit{background:#e0e7ff;color:#4f46e5;}
+.btn-del{background:#fee2e2;color:#dc2626;}
+.btn:hover{opacity:.88;}
+</style>
+
+<div class="det-wrap">
+  <div class="det-card">
+    <div>
+      {% if post.post_type == 'notice' %}
+      <span class="det-badge badge-notice">📢 공지</span>
+      {% else %}
+      <span class="det-badge badge-meeting">📝 회의록</span>
+      {% endif %}
+    </div>
+
+    {% if post.post_type == 'meeting' and post.confirmed_id %}
+    <a href="/nara/confirmed/{{ post.confirmed_id }}" class="det-confirmed">
+      📋 {{ post.confirmed_title or ('과업 #' + post.confirmed_id|string) }}
+    </a>
+    {% endif %}
+
+    <div class="det-title">{{ post.title }}</div>
+
+    <div class="det-meta">
+      <span>✍️ {{ post.author }}</span>
+      <span>🗓 {{ (post.created_at or '')[:16] }}</span>
+      {% if post.post_type == 'meeting' and post.meeting_date %}
+      <span>📅 회의일시: {{ post.meeting_date }}</span>
+      {% endif %}
+      {% if post.post_type == 'meeting' and post.participants %}
+      <span>👥 {{ post.participants }}</span>
+      {% endif %}
+      {% if post.updated_at and post.updated_at != post.created_at %}
+      <span style="color:#d1d5db;">수정됨: {{ (post.updated_at or '')[:16] }}</span>
+      {% endif %}
+    </div>
+
+    <div class="det-content">{{ post.content }}</div>
+
+    <div class="det-actions">
+      <a href="/board" class="btn btn-back">← 목록</a>
+      {% if can_edit %}
+      <a href="/board/{{ post.id }}/edit" class="btn btn-edit">수정</a>
+      <button class="btn btn-del" onclick="doDelete({{ post.id }})">삭제</button>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+async function doDelete(id) {
+  if (!confirm('삭제하시겠습니까?')) return;
+  const r = await fetch(`/board/${id}/delete`, {method: 'POST'});
+  const d = await r.json();
+  if (d.ok) location.href = d.redirect || '/board';
+  else alert('삭제 실패: ' + d.error);
+}
+</script>
+{% endblock %}
