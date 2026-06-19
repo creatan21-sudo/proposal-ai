@@ -203,6 +203,45 @@ function showRelevanceReason(reason, stars) {
   overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
   document.body.appendChild(overlay);
 }
+
+/* ── 새 공지 팝업 (세션당 1회) ── */
+(async function checkNewNotices() {
+  if (sessionStorage.getItem('notices_shown')) return;
+  try {
+    const r = await fetch('/api/new_notices');
+    if (!r.ok) return;
+    const d = await r.json();
+    if (!d.ok || !d.notices || !d.notices.length) {
+      sessionStorage.setItem('notices_shown', '1');
+      return;
+    }
+    sessionStorage.setItem('notices_shown', '1');
+    const overlay = document.createElement('div');
+    overlay.id = 'notice-popup';
+    overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.45);z-index:10000;display:flex;align-items:center;justify-content:center;';
+    const items = d.notices.map(n =>
+      `<a href="/board/${n.id}" onclick="document.getElementById('notice-popup').remove()"
+         style="display:block;padding:10px 14px;background:#f9fafb;border-radius:8px;margin-bottom:8px;text-decoration:none;color:#1f2937;font-size:14px;font-weight:600;border:1px solid #e5e7eb;">
+         📢 ${n.title}
+         <span style="font-size:11px;color:#9ca3af;font-weight:400;margin-left:6px;">${(n.created_at||'').slice(0,10)}</span>
+       </a>`
+    ).join('');
+    overlay.innerHTML = `
+      <div style="background:#fff;border-radius:16px;padding:28px 28px 24px;max-width:420px;width:92%;box-shadow:0 8px 32px rgba(0,0,0,0.18);">
+        <div style="font-size:18px;font-weight:700;color:#1f2937;margin-bottom:16px;">📢 새 공지사항</div>
+        <div>${items}</div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px;">
+          <a href="/board?type=notice"
+             style="padding:9px 20px;background:#e0e7ff;color:#4f46e5;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;"
+             onclick="document.getElementById('notice-popup').remove()">게시판에서 보기</a>
+          <button onclick="document.getElementById('notice-popup').remove()"
+                  style="padding:9px 20px;background:#4f46e5;color:#fff;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">확인</button>
+        </div>
+      </div>`;
+    overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+    document.body.appendChild(overlay);
+  } catch(e) {}
+})();
 </script>
 </body>
 </html>

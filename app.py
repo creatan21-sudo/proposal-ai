@@ -18,7 +18,7 @@ import traceback
 import urllib.request as _urllib_req
 import uuid
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
 
@@ -104,6 +104,7 @@ app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
 app.secret_key = os.environ.get("SECRET_KEY", "prointerz-web-secret-2024")
 app.config["MAX_CONTENT_LENGTH"] = 100 * 1024 * 1024  # 100 MB
+app.permanent_session_lifetime   = timedelta(hours=20)
 
 _IS_PRODUCTION = os.environ.get("FLASK_ENV", "production") == "production"
 
@@ -596,16 +597,33 @@ def _run_pipeline_sync(sid: str, sess: dict):
 # 로그인 없이 접근 허용할 엔드포인트
 _PUBLIC_ENDPOINTS = frozenset({"login", "logout", "static"})
 
+_SESSION_TIMEOUT_SEC = 20 * 3600  # 20시간
+
 @app.before_request
 def check_login():
     """모든 요청에서 로그인 여부 확인. 로그인·static은 무조건 통과."""
     if request.endpoint in _PUBLIC_ENDPOINTS:
         return None
+    # 정적 파일 제외
+    if request.path.startswith("/static/"):
+        return None
+
     uid = session.get("user_id")
     if not uid:
         if request.path.startswith("/api/") or request.is_json:
             return jsonify({"ok": False, "error": "로그인이 필요합니다"}), 401
         return redirect(url_for("login"))
+
+    # 20시간 미사용 자동 로그아웃
+    now_ts = time.time()
+    last_active = session.get("flask_last_active")
+    if last_active and (now_ts - last_active) > _SESSION_TIMEOUT_SEC:
+        session.clear()
+        if request.path.startswith("/api/") or request.is_json:
+            return jsonify({"ok": False, "error": "세션이 만료되었습니다.", "redirect": "/login"}), 401
+        return redirect(url_for("login") + "?reason=timeout")
+    session["flask_last_active"] = now_ts
+    session.permanent = True
 
     # 이중 로그인 방지: 세션 토큰이 DB와 불일치하면 강제 만료
     session_token = session.get("session_token")
@@ -684,17 +702,23 @@ def login():
     if session.get("user_id"):
         return redirect(url_for("ongoing"))
     error = None
-    if request.args.get("reason") == "duplicate":
+    reason = request.args.get("reason", "")
+    if reason == "duplicate":
         error = "다른 기기에서 로그인되어 세션이 종료되었습니다."
+    elif reason == "timeout":
+        error = "20시간 동안 사용하지 않아 자동 로그아웃되었습니다."
     if request.method == "POST":
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         user = verify_user(username, password)
         if user:
-            session["user_id"]  = user["id"]
-            session["username"] = user["username"]
-            session["is_admin"] = bool(user["is_admin"])
-            session["role"] = user.get("role") or ("admin" if user["is_admin"] else "operator")
+            session["user_id"]       = user["id"]
+            session["username"]      = user["username"]
+            session["is_admin"]      = bool(user["is_admin"])
+            session["role"]          = user.get("role") or ("admin" if user["is_admin"] else "operator")
+            session["flask_last_active"] = time.time()
+            session["last_login"]    = datetime.now().isoformat()
+            session.permanent        = True
             # 이중 로그인 방지: 새 세션 토큰 발급 → 기존 세션 자동 만료
             token = str(uuid.uuid4())
             session["session_token"] = token
@@ -4459,6 +4483,22 @@ def api_step_overrides(case_id):
 
 
 # ── 게시판 ──────────────────────────────────────────────
+
+@app.route("/api/new_notices")
+@login_required
+def api_new_notices():
+    last_login = session.get("last_login")
+    if not last_login:
+        return jsonify({"ok": True, "notices": []})
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, title, created_at FROM board_posts"
+            " WHERE post_type='notice' AND created_at > ?"
+            " ORDER BY id DESC LIMIT 10",
+            (last_login,),
+        ).fetchall()
+    return jsonify({"ok": True, "notices": [dict(r) for r in rows]})
+
 
 @app.route("/board")
 @login_required
