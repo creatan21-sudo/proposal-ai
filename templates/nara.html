@@ -189,7 +189,7 @@
            oninput="applySearch()" value="{{ search_instt or '' }}"
            style="flex:1;min-width:120px;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;outline:none;"
            onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#d1d5db'">
-    <input type="text" id="search-no" placeholder="공고번호 검색"
+    <input type="text" id="search-no" placeholder="공고번호 검색 (예: R26BK01530750 또는 R26BK01530750-000)"
            oninput="applySearch()" value="{{ search_no or '' }}"
            style="flex:1;min-width:120px;padding:8px 12px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;outline:none;"
            onfocus="this.style.borderColor='#6366f1'" onblur="this.style.borderColor='#d1d5db'">
@@ -513,7 +513,7 @@ function setCatFilter(btn, cat){
 function applySearch(){
   const nm          = (document.getElementById('search-nm')?.value||'').toLowerCase();
   const instt       = (document.getElementById('search-instt')?.value||'').toLowerCase();
-  const no          = (document.getElementById('search-no')?.value||'').toLowerCase();
+  const no          = (document.getElementById('search-no')?.value||'').split('-')[0].trim().toLowerCase();
   const kw          = document.getElementById('kw-filter')?.value||'';
   const hideExpired = document.getElementById('hide-expired')?.checked;
   const clseUntil   = (document.getElementById('clse-until')?.value||'').replace(/-/g,'');

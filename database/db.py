@@ -2461,8 +2461,9 @@ def list_nara_bids(keyword: str = "", search_nm: str = "", search_instt: str = "
         conditions.append("ntce_instt_nm LIKE ?")
         params.append(f"%{search_instt}%")
     if search_no:
+        base_no = search_no.split("-")[0].strip()
         conditions.append("bid_ntce_no LIKE ?")
-        params.append(f"%{search_no}%")
+        params.append(f"%{base_no}%")
     if hide_expired:
         conditions.append("(bid_clse_dt IS NULL OR bid_clse_dt = '' OR bid_clse_dt >= date('now'))")
     where  = ("WHERE " + " AND ".join(conditions)) if conditions else ""
@@ -2945,8 +2946,9 @@ def list_nara_bids_paged(keyword: str = "", page: int = 1, per_page: int = 50,
         conditions.append("ntce_instt_nm LIKE ?")
         base_params.append(f"%{search_instt}%")
     if search_no:
+        base_no = search_no.split("-")[0].strip()
         conditions.append("bid_ntce_no LIKE ?")
-        base_params.append(f"%{search_no}%")
+        base_params.append(f"%{base_no}%")
     if hide_expired:
         conditions.append("(bid_clse_dt IS NULL OR bid_clse_dt = '' OR bid_clse_dt >= date('now'))")
     where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
