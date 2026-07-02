@@ -2451,8 +2451,10 @@ def my_change_password():
 def schedule_page():
     from database.db import get_connection
     username = session.get("username", "")
+    show_stopped = request.args.get("show_stopped") == "1"
+    stopped_filter = "" if show_stopped else "WHERE cf.final_result != 'stopped' OR cf.final_result IS NULL"
     with get_connection() as conn:
-        confirmed = conn.execute("""
+        confirmed = conn.execute(f"""
             SELECT cf.id,
                    COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm) as bid_ntce_nm,
                    COALESCE(pk.ntce_instt_nm, ca.ntce_instt_nm) as ntce_instt_nm,
@@ -2463,15 +2465,16 @@ def schedule_page():
             LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
             LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
             LEFT JOIN confirmed_bid_info bi ON bi.confirmed_id = cf.id
+            {stopped_filter}
             ORDER BY COALESCE(pk.bid_clse_dt, ca.bid_clse_dt) ASC
         """).fetchall()
-        schedules = conn.execute("""
+        schedules = conn.execute(f"""
             SELECT s.*, COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm) as bid_ntce_nm
             FROM confirmed_schedule s
             JOIN nara_confirmed cf ON cf.id = s.confirmed_id
             LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
             LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
-            WHERE cf.final_result != 'stopped' OR cf.final_result IS NULL
+            {stopped_filter}
             ORDER BY s.due_date ASC
         """).fetchall()
         # 내 진행 과업 (담당자 = 현재 사용자, 결과 미등록)
@@ -2504,6 +2507,7 @@ def schedule_page():
                            confirmed=[dict(r) for r in confirmed],
                            schedules=[dict(r) for r in schedules],
                            my_tasks=[dict(r) for r in my_tasks_rows],
+                           show_stopped=show_stopped,
                            now=_sdt.now().strftime("%Y-%m-%d %H:%M"))
 
 
