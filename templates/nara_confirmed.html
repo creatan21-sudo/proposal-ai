@@ -85,7 +85,7 @@
           <span class="assignee">{{ t.assignee }}</span>
           {% endif %}
           {% if t.completion_status == 'requested' %}
-          <span class="cs-badge cs-requested">⏳ 승인 대기</span>
+          <span class="cs-badge cs-requested">⏳ 완료대기</span>
           {% elif t.completion_status == 'approved' %}
           <span class="cs-badge cs-approved">✅ 완료 승인</span>
           {% endif %}

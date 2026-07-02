@@ -2471,6 +2471,7 @@ def schedule_page():
             JOIN nara_confirmed cf ON cf.id = s.confirmed_id
             LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
             LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
+            WHERE cf.final_result != 'stopped' OR cf.final_result IS NULL
             ORDER BY s.due_date ASC
         """).fetchall()
         # 내 진행 과업 (담당자 = 현재 사용자, 결과 미등록)
@@ -4758,14 +4759,14 @@ def request_completion_route(confirmed_id):
     request_completion(confirmed_id, username)
     c = get_confirmed_by_id(confirmed_id)
     nm = (c.get("bid_ntce_nm") or "-") if c else "-"
-    settings = get_notification_settings()
     _tnm = nm[:15] + ('...' if len(nm) > 15 else '')
-    for uid in settings.get("completion_approval", []):
-        create_notification(
-            uid, f"완료 승인 요청 — {_tnm}",
-            f"{nm} — {username}님이 완료 승인을 요청했습니다.",
-            f"/nara/confirmed/{confirmed_id}",
-        )
+    for u in list_users():
+        if u.get("role") in ("admin", "operator"):
+            create_notification(
+                u["id"], f"완료 요청 — {_tnm}",
+                f"{username}님이 과업 완료를 요청했습니다. 결과를 입력해주세요.",
+                f"/nara/confirmed/{confirmed_id}",
+            )
     return jsonify({"ok": True})
 
 
