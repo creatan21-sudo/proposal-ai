@@ -598,6 +598,10 @@ def _run_pipeline_sync(sid: str, sess: dict):
 # 로그인 없이 접근 허용할 엔드포인트
 _PUBLIC_ENDPOINTS = frozenset({"login", "logout", "static"})
 
+PASSWORD_MIN_LEN = 6   # 비밀번호 최소 길이 (2026-10 4자 → 6자 상향)
+# 짧은 비밀번호로 로그인한 사용자가 변경 전에도 접근 가능한 엔드포인트
+_PW_CHANGE_ALLOWED = frozenset({"password_required", "logout", "static", "health"})
+
 _SESSION_TIMEOUT_SEC = 20 * 3600  # 20시간
 
 @app.before_request
@@ -614,6 +618,13 @@ def check_login():
         if request.path.startswith("/api/") or request.is_json:
             return jsonify({"ok": False, "error": "로그인이 필요합니다"}), 401
         return redirect(url_for("login"))
+
+    # 비밀번호가 6자 미만인 기존 사용자: 변경 전까지 다른 화면 이용 불가
+    if session.get("must_change_pw") and request.endpoint not in _PW_CHANGE_ALLOWED:
+        if request.path.startswith("/api/") or request.is_json or request.method != "GET":
+            return jsonify({"ok": False, "error": f"비밀번호를 {PASSWORD_MIN_LEN}자 이상으로 변경해야 합니다.",
+                            "redirect": "/password/required"}), 403
+        return redirect(url_for("password_required"))
 
     # 20시간 미사용 자동 로그아웃
     now_ts = time.time()
@@ -724,6 +735,9 @@ def login():
             token = str(uuid.uuid4())
             session["session_token"] = token
             set_session_token(user["id"], token)
+            if len(password) < PASSWORD_MIN_LEN:
+                session["must_change_pw"] = True
+                return redirect(url_for("password_required"))
             # user 역할: 공유받은 제안서 목록으로 바로 이동
             if session["role"] == "user":
                 return redirect(url_for("history"))
@@ -2216,8 +2230,8 @@ def admin_add_user():
 
     if not username or not password:
         error = "아이디와 비밀번호를 입력하세요."
-    elif len(password) < 4:
-        error = "비밀번호는 4자 이상이어야 합니다."
+    elif len(password) < PASSWORD_MIN_LEN:
+        error = f"비밀번호는 {PASSWORD_MIN_LEN}자 이상이어야 합니다."
     else:
         try:
             new_uid = create_user(username, password, is_admin, role=role)
@@ -2250,8 +2264,11 @@ def admin_delete_user(uid):
 @admin_required
 def admin_change_password(uid):
     new_pw = request.form.get("new_password", "").strip()
-    if new_pw and len(new_pw) >= 4:
+    if new_pw and len(new_pw) >= PASSWORD_MIN_LEN:
         change_password(uid, new_pw)
+        flash("비밀번호를 변경했습니다.", "success")
+    else:
+        flash(f"비밀번호는 {PASSWORD_MIN_LEN}자 이상이어야 합니다.", "error")
     return redirect(url_for("admin"))
 
 
@@ -2490,9 +2507,39 @@ def my_change_password():
     current = request.form.get("current_password", "")
     new_pw  = request.form.get("new_password", "").strip()
     user    = verify_user(session["username"], current)
-    if user and new_pw and len(new_pw) >= 4:
+    if not user:
+        flash("현재 비밀번호가 맞지 않습니다.", "error")
+    elif len(new_pw) < PASSWORD_MIN_LEN:
+        flash(f"새 비밀번호는 {PASSWORD_MIN_LEN}자 이상이어야 합니다.", "error")
+    else:
         change_password(session["user_id"], new_pw)
-    return redirect(url_for("index"))
+        flash("비밀번호를 변경했습니다.", "success")
+    return redirect(url_for("profile") if "profile" in app.view_functions else url_for("index"))
+
+
+@app.route("/password/required", methods=["GET", "POST"])
+def password_required():
+    """비밀번호 6자 상향: 짧은 비밀번호 사용자는 로그인 직후 여기서 변경해야 다른 화면 이용 가능"""
+    if not session.get("user_id"):
+        return redirect(url_for("login"))
+    if not session.get("must_change_pw"):
+        return redirect(url_for("index"))
+    error = None
+    if request.method == "POST":
+        new_pw  = request.form.get("new_password", "")
+        confirm = request.form.get("confirm_password", "")
+        if len(new_pw) < PASSWORD_MIN_LEN:
+            error = f"새 비밀번호는 {PASSWORD_MIN_LEN}자 이상이어야 합니다."
+        elif new_pw != confirm:
+            error = "새 비밀번호 확인이 일치하지 않습니다."
+        elif verify_user(session["username"], new_pw):
+            error = "지금 쓰는 비밀번호와 다른 비밀번호를 입력하세요."
+        else:
+            change_password(session["user_id"], new_pw)
+            session.pop("must_change_pw", None)
+            flash("비밀번호를 변경했습니다.", "success")
+            return redirect(url_for("history") if session.get("role") == "user" else url_for("ongoing"))
+    return render_template("password_required.html", error=error, min_len=PASSWORD_MIN_LEN)
 
 
 # ─────────────────────────────────────────────

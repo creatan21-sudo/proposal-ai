@@ -75,7 +75,7 @@
           <td>
             <form method="POST" action="/admin/change-password/{{ u.id }}"
                   style="display:flex;gap:6px;">
-              <input type="password" name="new_password" placeholder="새 비밀번호"
+              <input type="password" name="new_password" placeholder="6자 이상" minlength="6"
                      style="width:130px;padding:5px 8px;font-size:13px;">
               <button type="submit" class="btn btn-secondary btn-sm">변경</button>
             </form>
@@ -117,8 +117,8 @@
         <input type="text" name="username" placeholder="영문/숫자" required>
       </div>
       <div class="form-group" style="margin-bottom:12px;">
-        <label>비밀번호 (4자 이상)</label>
-        <input type="password" name="password" placeholder="비밀번호" required minlength="4">
+        <label>비밀번호 (6자 이상)</label>
+        <input type="password" name="password" placeholder="비밀번호" required minlength="6">
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label>역할</label>
@@ -145,7 +145,7 @@
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label>새 비밀번호</label>
-        <input type="password" name="new_password" placeholder="새 비밀번호 (4자 이상)">
+        <input type="password" name="new_password" placeholder="새 비밀번호 (6자 이상)" minlength="6">
       </div>
       <button type="submit" class="btn btn-secondary" style="width:100%;">비밀번호 변경</button>
     </form>
