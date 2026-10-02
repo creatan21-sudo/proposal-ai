@@ -6183,10 +6183,16 @@ def production_db():
 @operator_or_admin_required
 def production_learning():
     """제작부문 - 학습 데이터 입력"""
+    from database.db import list_production_tasks
+
+    # 모든 진행 중 또는 대기 중인 과업 조회
+    paged = list_production_tasks(status=None, page=1, per_page=100)
+    tasks = paged.get("items", [])
+
     if request.method == "POST":
         # 향후 학습 데이터 저장 로직 추가
         return jsonify({"ok": True, "message": "학습 데이터가 저장되었습니다"})
-    return render_template("production_learning.html", data=None)
+    return render_template("production_learning.html", tasks=tasks)
 
 
 @app.route("/production/tasks/<int:task_id>")
@@ -6253,6 +6259,136 @@ def assign_production_task_route(task_id):
         return jsonify({"ok": True, "message": "담당자가 배정되었습니다"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route("/production/tasks/<int:task_id>/upload_recording", methods=["POST"])
+@login_required
+@operator_or_admin_required
+def upload_production_recording(task_id):
+    """제작 과업 녹음 파일 업로드 및 자동 정리"""
+    from database.db import add_production_task_section, get_production_task
+    import os
+    import tempfile
+    from pathlib import Path
+
+    # 녹음 타입 확인 (technical 또는 kickoff)
+    recording_type = request.form.get("type", "").strip()  # 'technical' 또는 'kickoff'
+    recording_file = request.files.get("recording")
+
+    if not recording_type or recording_type not in ["technical", "kickoff"]:
+        return jsonify({"ok": False, "error": "녹음 타입이 필요합니다 (technical 또는 kickoff)"}), 400
+
+    if not recording_file or recording_file.filename == "":
+        return jsonify({"ok": False, "error": "녹음 파일을 선택하세요"}), 400
+
+    # 파일 크기 검증 (최대 50MB)
+    if recording_file.content_length and recording_file.content_length > 50 * 1024 * 1024:
+        return jsonify({"ok": False, "error": "파일 크기는 50MB 이하여야 합니다"}), 400
+
+    try:
+        # 임시 파일에 저장
+        with tempfile.NamedTemporaryFile(suffix=Path(recording_file.filename).suffix, delete=False) as tmp:
+            recording_file.save(tmp.name)
+            tmp_path = tmp.name
+
+        # ========== Claude API로 음성 인식 및 정리 ==========
+        try:
+            from core import claude_client
+
+            # 음성 파일 읽기
+            with open(tmp_path, "rb") as f:
+                audio_data = f.read()
+
+            # 음성 인식 프롬프트
+            if recording_type == "technical":
+                prompt = """다음 음성 녹음을 정리하시오. 이것은 제작 과업의 기술협상 내용입니다.
+
+주요 포인트:
+1. 발주처 요구사항 및 기술 사양
+2. 제약사항 및 주의사항
+3. 일정 및 리스크 이슈
+
+다음 형식으로 정리하시오:
+## 발주처 요구사항
+[내용]
+
+## 기술 사양
+[내용]
+
+## 제약사항 및 주의사항
+[내용]
+
+## 일정 및 리스크
+[내용]
+"""
+            else:  # kickoff
+                prompt = """다음 음성 녹음을 정리하시오. 이것은 제작 과업의 착수보고 내용입니다.
+
+주요 포인트:
+1. 프로젝트 개요 및 목표
+2. 팀 구성 및 역할 분담
+3. 주요 일정 및 마일스톤
+4. 리스크 및 대응 방안
+
+다음 형식으로 정리하시오:
+## 프로젝트 개요
+[내용]
+
+## 팀 구성
+[내용]
+
+## 주요 일정
+[내용]
+
+## 리스크 및 대응
+[내용]
+"""
+
+            # Claude API 호출 (음성 인식 및 정리)
+            # 참고: 현재 Anthropic API는 audio input을 지원하지 않으므로,
+            # 실제 배포 시에는 Whisper API 등을 사용해 먼저 음성을 텍스트로 변환한 후
+            # Claude API로 정리하도록 구현해야 합니다.
+
+            # 지금은 플레이스홀더로 기본 메시지 생성
+            generated_content = f"[음성 녹음 처리 준비 중]\n파일명: {recording_file.filename}\n파일 크기: {len(audio_data)} bytes\n\n실제 음성 인식 기능은 Whisper API 또는 다른 음성 인식 서비스 연동이 필요합니다."
+
+        except Exception as e:
+            print(f"[경고] Claude API 호출 실패: {str(e)}")
+            generated_content = f"[음성 인식 오류]\n{str(e)}"
+
+        finally:
+            # 임시 파일 삭제
+            try:
+                os.unlink(tmp_path)
+            except:
+                pass
+
+        # ========== 데이터베이스에 저장 ==========
+        section_type_map = {
+            "technical": "technical_discussion",
+            "kickoff": "kickoff_report"
+        }
+        section_type = section_type_map[recording_type]
+
+        add_production_task_section(
+            task_id=task_id,
+            section_type=section_type,
+            content=generated_content,
+            auto_generated=1,
+            generated_by=session.get("username", "system")
+        )
+
+        return jsonify({
+            "ok": True,
+            "message": f"{recording_type} 녹음이 처리되었습니다",
+            "content": generated_content
+        })
+
+    except Exception as e:
+        print(f"[오류] 녹음 업로드 실패: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"ok": False, "error": f"녹음 처리 실패: {str(e)}"}), 500
 
 
 if __name__ == "__main__":

@@ -31,18 +31,19 @@
 
     <!-- 우측: 콘텐츠 -->
     <div>
-      <form method="POST" style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
+      <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
         <!-- 기술협상 탭 -->
         <div id="technical-tab" class="tab-content" style="display: block;">
           <div style="margin-bottom: 20px;">
             <label style="display: block; font-size: 13px; font-weight: 700; color: #1f2937; margin-bottom: 8px;">
               📋 과업 선택
             </label>
-            <select name="task_id" required style="width: 100%; padding: 10px 12px; border: 1px solid #d1d5db;
+            <select id="task-select-technical" required style="width: 100%; padding: 10px 12px; border: 1px solid #d1d5db;
                                                     border-radius: 8px; font-size: 13px;">
               <option value="">선택하세요</option>
-              <option value="1">프로젝트 A - 제작 과업 1</option>
-              <option value="2">프로젝트 B - 제작 과업 2</option>
+              {% for task in tasks %}
+              <option value="{{ task.id }}">{{ task.project_name }} ({{ task.client_name }})</option>
+              {% endfor %}
             </select>
           </div>
 
@@ -58,7 +59,7 @@
                 녹음 파일을 드래그하거나 클릭하여 업로드
               </div>
               <div style="font-size: 12px; color: #6b7280;">MP3, WAV, M4A 형식 지원</div>
-              <input type="file" name="recording_technical" accept="audio/*" style="display: none;" id="recording-input-technical">
+              <input type="file" accept="audio/*" style="display: none;" id="recording-input-technical">
             </div>
             <div id="technical-status" style="margin-top: 12px; font-size: 13px; color: #6b7280;"></div>
           </div>
@@ -67,7 +68,7 @@
             <label style="display: block; font-size: 13px; font-weight: 700; color: #1f2937; margin-bottom: 8px;">
               📝 기술협상 내용
             </label>
-            <textarea name="technical_content" placeholder="기술협상 내용이 자동으로 정리됩니다..."
+            <textarea id="technical_content" placeholder="녹음 파일이 업로드되면 자동으로 정리됩니다..."
                       style="width: 100%; min-height: 200px; padding: 12px; border: 1px solid #d1d5db;
                              border-radius: 8px; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;"
                       readonly></textarea>
@@ -75,10 +76,29 @@
               💡 녹음 파일이 업로드되면 Claude API를 이용해 자동으로 정리됩니다
             </div>
           </div>
+
+          <button onclick="uploadRecording('technical')" style="padding: 10px 20px; background: #4f46e5; color: #fff;
+                                      border: none; border-radius: 8px; font-size: 13px;
+                                      font-weight: 600; cursor: pointer;">
+            기술협상 내용 저장
+          </button>
         </div>
 
         <!-- 착수보고 탭 -->
         <div id="kickoff-tab" class="tab-content" style="display: none;">
+          <div style="margin-bottom: 20px;">
+            <label style="display: block; font-size: 13px; font-weight: 700; color: #1f2937; margin-bottom: 8px;">
+              📋 과업 선택
+            </label>
+            <select id="task-select-kickoff" required style="width: 100%; padding: 10px 12px; border: 1px solid #d1d5db;
+                                                    border-radius: 8px; font-size: 13px;">
+              <option value="">선택하세요</option>
+              {% for task in tasks %}
+              <option value="{{ task.id }}">{{ task.project_name }} ({{ task.client_name }})</option>
+              {% endfor %}
+            </select>
+          </div>
+
           <div style="margin-bottom: 20px;">
             <label style="display: block; font-size: 13px; font-weight: 700; color: #1f2937; margin-bottom: 8px;">
               🎤 녹음 입력 (착수보고)
@@ -91,7 +111,7 @@
                 녹음 파일을 드래그하거나 클릭하여 업로드
               </div>
               <div style="font-size: 12px; color: #6b7280;">MP3, WAV, M4A 형식 지원</div>
-              <input type="file" name="recording_kickoff" accept="audio/*" style="display: none;" id="recording-input-kickoff">
+              <input type="file" accept="audio/*" style="display: none;" id="recording-input-kickoff">
             </div>
             <div id="kickoff-status" style="margin-top: 12px; font-size: 13px; color: #6b7280;"></div>
           </div>
@@ -100,7 +120,7 @@
             <label style="display: block; font-size: 13px; font-weight: 700; color: #1f2937; margin-bottom: 8px;">
               📝 착수보고 내용
             </label>
-            <textarea name="kickoff_content" placeholder="착수보고 내용이 자동으로 정리됩니다..."
+            <textarea id="kickoff_content" placeholder="녹음 파일이 업로드되면 자동으로 정리됩니다..."
                       style="width: 100%; min-height: 200px; padding: 12px; border: 1px solid #d1d5db;
                              border-radius: 8px; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;"
                       readonly></textarea>
@@ -108,22 +128,14 @@
               💡 녹음 파일이 업로드되면 Claude API를 이용해 자동으로 정리됩니다
             </div>
           </div>
-        </div>
 
-        <!-- 저장 버튼 -->
-        <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
-          <button type="reset" style="padding: 10px 20px; border: 1px solid #d1d5db; background: #fff;
-                                     border-radius: 8px; font-size: 13px; font-weight: 600;
-                                     color: #374151; cursor: pointer;">
-            취소
-          </button>
-          <button type="submit" style="padding: 10px 20px; background: #4f46e5; color: #fff;
+          <button onclick="uploadRecording('kickoff')" style="padding: 10px 20px; background: #4f46e5; color: #fff;
                                       border: none; border-radius: 8px; font-size: 13px;
                                       font-weight: 600; cursor: pointer;">
-            저장
+            착수보고 내용 저장
           </button>
         </div>
-      </form>
+      </div>
     </div>
   </div>
 </div>
@@ -181,7 +193,7 @@ function setupFileUpload(dropAreaId, inputId, statusId) {
     const files = dt.files;
     input.files = files;
     if (files.length > 0) {
-      statusDiv.textContent = '✅ ' + files[0].name + ' 업로드됨';
+      statusDiv.textContent = '✅ ' + files[0].name + ' 선택됨';
       statusDiv.style.color = '#059669';
     }
   });
@@ -192,6 +204,48 @@ function setupFileUpload(dropAreaId, inputId, statusId) {
       statusDiv.style.color = '#059669';
     }
   });
+}
+
+async function uploadRecording(type) {
+  const taskSelect = document.getElementById('task-select-' + type);
+  const taskId = taskSelect ? taskSelect.value : '';
+  const fileInput = document.getElementById('recording-input-' + type);
+  const contentArea = document.getElementById(type + '_content');
+
+  if (!taskId) {
+    alert('과업을 선택하세요');
+    return;
+  }
+
+  if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+    alert('녹음 파일을 선택하세요');
+    return;
+  }
+
+  const file = fileInput.files[0];
+  const formData = new FormData();
+  formData.append('recording', file);
+  formData.append('type', type === 'technical' ? 'technical' : 'kickoff');
+
+  try {
+    const response = await fetch(`/production/tasks/${taskId}/upload_recording`, {
+      method: 'POST',
+      body: formData
+    });
+
+    const data = await response.json();
+
+    if (data.ok) {
+      if (contentArea) {
+        contentArea.value = data.content;
+      }
+      alert('녹음이 처리되었습니다');
+    } else {
+      alert('오류: ' + (data.error || '알 수 없는 오류'));
+    }
+  } catch (err) {
+    alert('오류: ' + err.message);
+  }
 }
 
 document.addEventListener('DOMContentLoaded', function(){
