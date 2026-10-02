@@ -5,6 +5,8 @@
 .sch-wrap{max-width:1200px;margin:0 auto;padding:20px 16px}
 .sch-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;}
 .sch-title{font-size:20px;font-weight:700;}
+.sch-filter{padding:7px 32px 7px 12px;border:1px solid #c7d2fe;border-radius:8px;font-size:13px;font-weight:600;color:#3730a3;background:#eef2ff;cursor:pointer;max-width:320px;}
+.filter-note{font-size:12px;color:#6b7280;margin:-6px 0 12px;}
 .nav-row{display:flex;align-items:center;gap:8px;}
 .nav-btn{padding:6px 12px;border:1px solid #e5e7eb;border-radius:7px;font-size:13px;cursor:pointer;background:#fff;color:#374151;}
 .nav-btn:hover{background:#f3f4f6;}
@@ -80,7 +82,19 @@
 {% block content %}
 <div class="sch-wrap">
   <div class="sch-top">
-    <div class="sch-title">📅 제작 일정</div>
+    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+      <div class="sch-title">📅 제작 일정</div>
+      {# 전체 일정 / 진행 중 과업별 일정 선택 #}
+      <select id="task-filter" class="sch-filter" onchange="setFilter(this.value)">
+        <option value="">전체 일정</option>
+        {% set active_tasks = tasks | rejectattr('status', 'equalto', '완료') | list %}
+        {% if active_tasks %}
+        <optgroup label="진행 중인 과업">
+          {% for t in active_tasks %}<option value="{{ t.id }}">{{ t.project_name }}</option>{% endfor %}
+        </optgroup>
+        {% endif %}
+      </select>
+    </div>
     <div class="nav-row">
       <button class="nav-btn" onclick="prevMonth()">‹ 이전</button>
       <span class="nav-month" id="nav-month-label"></span>
@@ -91,6 +105,7 @@
 
   <div class="sch-body">
     <div>
+      <div class="filter-note" id="filter-note" style="display:none;"></div>
       <div id="view-cal"></div>
       {% if can_write %}<div class="cal-hint" id="cal-hint">빈 칸을 누르면 작성란에 날짜가 들어갑니다 · 일정을 누르면 내용을 볼 수 있습니다</div>{% endif %}
       <div id="view-list" style="display:none;"></div>
@@ -184,7 +199,34 @@ let curYear = new Date().getFullYear(), curMonth = new Date().getMonth(), curVie
   if(m && /^\d{4}-\d{2}$/.test(m)){ curYear=+m.slice(0,4); curMonth=+m.slice(5,7)-1; }
 })();
 
-function eventsOn(ds){ return SCHEDULES.filter(s => (s.dates||[]).includes(ds)); }
+let filterTask = null;                                   // null = 전체 일정
+function visible(){ return filterTask ? SCHEDULES.filter(s => s.task_id === filterTask) : SCHEDULES; }
+function eventsOn(ds){ return visible().filter(s => (s.dates||[]).includes(ds)); }
+function setFilter(v){
+  filterTask = v ? +v : null;
+  const sel = document.getElementById('task-filter'); if(sel.value !== (v||'')) sel.value = v || '';
+  const note = document.getElementById('filter-note');
+  if(filterTask){
+    const n = visible().length;
+    note.textContent = `선택한 과업의 일정 ${n}건만 표시 중`;
+    note.style.display = '';
+    // 새 일정 작성 시 이 과업이 기본 선택되게 (수정 중이 아닐 때)
+    if(CAN_WRITE && !editingId){ const ft=document.getElementById('f-task'); ft.value = String(filterTask); ft.dataset.preset = ft.value; }
+    // 이번 달에 일정이 없으면 가장 가까운 일정이 있는 달로 이동
+    const ym = `${curYear}-${String(curMonth+1).padStart(2,'0')}`;
+    const vs = visible();
+    if(vs.length && !vs.some(s => s.dates.some(d => d.startsWith(ym)))){
+      const upcoming = vs.find(s => s.end_date >= TODAY) || vs[vs.length-1];
+      curYear = +upcoming.start_date.slice(0,4); curMonth = +upcoming.start_date.slice(5,7)-1;
+    }
+  } else {
+    note.style.display = 'none';
+    if(CAN_WRITE && !editingId){ const ft=document.getElementById('f-task'); ft.value=''; ft.dataset.preset=''; }
+  }
+  if(panelMode==='detail' && selectedId && !visible().some(s=>s.id===selectedId)) showForm(false);
+  render();
+}
+function _filterParam(){ return filterTask ? '&f=' + filterTask : ''; }
 
 function switchView(v){
   curView=v;
@@ -242,7 +284,7 @@ function onCellClick(ds){
 function renderList(){
   const el = document.getElementById('view-list');
   const ym = `${curYear}-${String(curMonth+1).padStart(2,'0')}`;
-  const items = SCHEDULES.filter(s => (s.dates||[]).some(d => d.startsWith(ym)));
+  const items = visible().filter(s => (s.dates||[]).some(d => d.startsWith(ym)));
   if(!items.length){ el.innerHTML = '<div style="text-align:center;padding:60px;color:#9ca3af;font-size:14px;">이 달의 일정이 없습니다</div>'; return; }
   el.innerHTML = items.map(s => {
     const past = (s.end_date||'') < TODAY;
@@ -405,7 +447,7 @@ async function submitSchedule(){
     if(d.ok){
       const back = new URLSearchParams(location.search).get('back');
       if(back==='task' && body.task_id){ location.href = '/production/tasks/' + body.task_id + '?tab=schedule'; return; }
-      location.href = location.pathname + '?month=' + d.first_date.slice(0,7) + (curView==='list'?'&view=list':''); return;
+      location.href = location.pathname + '?month=' + d.first_date.slice(0,7) + (curView==='list'?'&view=list':'') + _filterParam(); return;
     }
     alert(d.error || '저장 실패');
   }catch(e){ alert('저장 실패: '+e.message); }
@@ -416,12 +458,20 @@ async function deleteSchedule(id){
   try{
     const r = await fetch('/production/schedule/'+id+'/delete', {method:'POST'});
     const d = await r.json();
-    if(d.ok){ location.href = location.pathname + `?month=${curYear}-${String(curMonth+1).padStart(2,'0')}`; return; }
+    if(d.ok){ location.href = location.pathname + `?month=${curYear}-${String(curMonth+1).padStart(2,'0')}` + _filterParam(); return; }
     alert(d.error || '삭제 실패');
   }catch(e){ alert('삭제 실패: '+e.message); }
 }
 
 if(CAN_WRITE){ const ft=document.getElementById('f-task'); ft.dataset.preset = ft.value; }
+(function initFilter(){
+  const f = new URLSearchParams(location.search).get('f');
+  if(f && document.querySelector(`#task-filter option[value="${CSS.escape(f)}"]`)){
+    const keepMonth = new URLSearchParams(location.search).get('month');
+    setFilter(f);
+    if(keepMonth){ curYear=+keepMonth.slice(0,4); curMonth=+keepMonth.slice(5,7)-1; }  // 저장 직후엔 저장한 달 유지
+  }
+})();
 if(new URLSearchParams(location.search).get('view')==='list') switchView('list'); else render();
 </script>
 {% endblock %}
