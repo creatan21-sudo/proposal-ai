@@ -6348,21 +6348,26 @@ def upload_production_proposal(task_id):
     if Path(f.filename).suffix.lower() != ".pdf":
         return jsonify({"ok": False, "error": "PDF 파일만 올릴 수 있습니다"})
 
-    dest_dir = UPLOAD_DIR / "production_proposals" / str(task_id)
-    dest_dir.mkdir(parents=True, exist_ok=True)
-    dest = dest_dir / _safe_upload_name(f.filename, ".pdf")
-    f.save(str(dest))
-    set_production_task_proposal(task_id, f.filename, str(dest))
-
+    # 제안서 원본은 '입력 전용' — AI 정리에만 쓰고 서버에 남기지 않는다.
+    # (열람·다운로드 경로 없음. 처리 후 성공/실패와 무관하게 즉시 삭제)
+    tmp_dir = UPLOAD_DIR / "production_proposals_tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    tmp = tmp_dir / _safe_upload_name(f.filename, ".pdf")
+    f.save(str(tmp))
     try:
         from agents.proposal_summarizer import summarize_proposal_pdf
-        result = summarize_proposal_pdf(str(dest), task.get("project_name", ""),
+        result = summarize_proposal_pdf(str(tmp), task.get("project_name", ""),
                                         task.get("client_name", ""))
     except Exception as e:
         print(f"[오류] 제안서 정리 실패 (task {task_id}): {e}")
-        return jsonify({"ok": False,
-                        "error": f"파일은 올라갔지만 AI 정리에 실패했습니다: {e}"}), 500
+        return jsonify({"ok": False, "error": f"AI 정리에 실패했습니다: {e}"}), 500
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except Exception as e:
+            print(f"[경고] 제안서 임시파일 삭제 실패: {e}")
 
+    set_production_task_proposal(task_id, f.filename, "")   # 파일명·시각만 기록, 경로 없음
     by = session.get("username", "system")
     for key in ("production_content", "proposal_overview"):
         if result.get(key):

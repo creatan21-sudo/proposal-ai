@@ -123,7 +123,7 @@
     <div style="display:flex; align-items:center; gap:10px;">
       {% if task.proposal_filename %}
       <span style="font-size:12px; color:#6b7280; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
-            title="{{ task.proposal_filename }}">📎 {{ task.proposal_filename }} · {{ (task.proposal_uploaded_at or '')[:10] }}</span>
+            title="제안서 원본은 보관하지 않습니다 (AI 정리에만 사용 후 삭제)">✔ 제안서 반영 {{ (task.proposal_uploaded_at or '')[:10] }} · {{ task.proposal_filename }}</span>
       {% endif %}
       <input type="file" id="proposal-file" accept="application/pdf,.pdf" style="display:none" onchange="uploadProposal(this)">
       <button type="button" id="proposal-btn" onclick="document.getElementById('proposal-file').click()"
