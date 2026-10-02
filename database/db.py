@@ -3773,6 +3773,48 @@ def list_coop_requests(task_id: int) -> list:
     return result
 
 
+def list_all_coop_requests() -> list:
+    """전체 공조 (공조 메뉴) — 진행 중 먼저, 최신순. 과업명 포함(과업 없는 공조는 task_name None)"""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT r.*, t.project_name AS task_name
+               FROM production_coop_requests r
+               LEFT JOIN production_tasks t ON t.id = r.production_task_id
+               ORDER BY CASE r.status WHEN '요청' THEN 0 ELSE 1 END, r.created_at DESC, r.id DESC"""
+        ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["targets"] = json.loads(d.get("targets_json") or "[]")
+        except Exception:
+            d["targets"] = []
+        out.append(d)
+    return out
+
+
+def count_open_coop_for(username: str) -> int:
+    """나에게 온(전체 대상 포함) 미완료 공조 수 — 상단 메뉴 배지용"""
+    if not username:
+        return 0
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT target_type, targets_json FROM production_coop_requests WHERE status='요청' AND requester!=?",
+            (username,),
+        ).fetchall()
+    n = 0
+    for r in rows:
+        if r["target_type"] == "all":
+            n += 1
+        else:
+            try:
+                if username in json.loads(r["targets_json"] or "[]"):
+                    n += 1
+            except Exception:
+                pass
+    return n
+
+
 def get_coop_request(req_id: int) -> dict:
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM production_coop_requests WHERE id=?", (req_id,)).fetchone()
@@ -3977,7 +4019,7 @@ def list_recent_production_tasks(limit: int = 12) -> list:
                  (updated if updated > created else "", "과업 정보 변경·배정"),
                  (d.get("a_sec") or "", "과업내용 작성"),
                  (d.get("a_sch") or "", "일정 등록·수정"),
-                 (d.get("a_coop") or "", "공조요청")]
+                 (d.get("a_coop") or "", "공조")]
         ts, label = max(cands, key=lambda x: x[0])
         d["last_activity"], d["last_activity_label"] = ts, label
         out.append(d)

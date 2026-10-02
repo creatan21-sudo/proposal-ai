@@ -3,7 +3,7 @@
          const pp = PeoplePicker(document.getElementById('...'), {people:[{name,team}], allowAll, allowFree})
          pp.get() → {all: bool, names: [...]},  pp.set(names, all),  pp.clear()
    - 오른쪽에서 사람을 고르면 바로 추가됨 ('전원' = 그 팀 모두)
-   - allowAll: 왼쪽 '전체' + '전원' = 모든 사람 대상(공조요청의 '전체')
+   - allowAll: 왼쪽 '전체' + '전원' = 모든 사람 대상(공조의 '전체')
    - allowFree: 명단에 없는 이름 직접 입력 (외부 스태프 등) #}
 <style>
 .pp-row{display:flex;gap:6px;}

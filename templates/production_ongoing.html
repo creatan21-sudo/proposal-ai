@@ -59,7 +59,7 @@
     {% for t in recent_tasks %}{{ task_card(t, true) }}{% else %}
       <div class="og-empty">최근 활동이 있는 과업이 없습니다</div>
     {% endfor %}
-    {% if recent_tasks %}<div style="font-size:12px; color:#9ca3af; margin-top:6px;">진행 중인 과업을 마지막 활동(내용 작성·일정·공조요청·배정 등) 순으로 최대 12건 보여줍니다.</div>{% endif %}
+    {% if recent_tasks %}<div style="font-size:12px; color:#9ca3af; margin-top:6px;">진행 중인 과업을 마지막 활동(내용 작성·일정·공조·배정 등) 순으로 최대 12건 보여줍니다.</div>{% endif %}
   </div>
 
   <div id="pane-my" style="display:none;">

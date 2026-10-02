@@ -78,6 +78,7 @@
         <div class="division-menu" id="production-menu" style="display:{{ 'flex' if division == 'production' else 'none' }};">
           <a href="/production/ongoing" class="{{ 'nav-active' if path.startswith('/production/ongoing') or path.startswith('/production/tasks') else '' }}">진행중</a>
           <a href="/production/schedule" class="{{ 'nav-active' if path == '/production/schedule' else '' }}">일정</a>
+          <a href="/production/coop" class="{{ 'nav-active' if path.startswith('/production/coop') else '' }}" style="position:relative;">공조{% if coop_open_count %}<span style="position:absolute;top:0;right:2px;background:#ef4444;color:#fff;border-radius:99px;font-size:10px;font-weight:700;padding:0 5px;line-height:15px;">{{ coop_open_count }}</span>{% endif %}</a>
           <a href="/production/board" class="{{ 'nav-active' if path.startswith('/production/board') else '' }}">게시판</a>
           {% if session.get('role') != 'user' %}
           <a href="/production/db" class="{{ 'nav-active' if path.startswith('/production/db') else '' }}">DB</a>
@@ -220,7 +221,7 @@
           div.style.cssText='background:#eff6ff;border-radius:8px;padding:8px 10px;font-size:13px;';
           let btnHtml='';
           if(n.link && n.link !== 'None' && n.link !== ''){
-            // 제작부문 알림(공조요청·배정 등)은 '바로 가기', 기존 기획부문 알림은 '지금 등록' 유지
+            // 제작부문 알림(공조·배정 등)은 '바로 가기', 기존 기획부문 알림은 '지금 등록' 유지
             const _isProd = n.link.indexOf('/production/') === 0;
             btnHtml='<div style="margin-top:8px;">'
               +'<a href="'+n.link+'" style="display:inline-block;padding:5px 12px;background:'+(_isProd?'#4f46e5':'#ea580c')+';color:#fff;border-radius:6px;font-size:12px;font-weight:700;text-decoration:none;" onclick="closeNotifPopup()">'+(_isProd?'👉 바로 가기 →':'📋 지금 등록 →')+'</a>'

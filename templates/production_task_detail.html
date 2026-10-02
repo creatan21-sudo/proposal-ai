@@ -42,7 +42,7 @@
        ("content",     "📋 과업내용"),
        ("schedule",    "📅 제작일정"),
        ("post",        "🎬 후반일정"),
-       ("cooperation", "🤝 공조요청"),
+       ("cooperation", "🤝 공조"),
      ] %}
   {% set content_tabs = [
        ("production_content",   "제작내용"),
@@ -250,11 +250,11 @@
   </div>
   {% endfor %}
 
-  <!-- 공조요청 -->
+  <!-- 공조 -->
   <div id="cooperation-tab" class="tab-content" style="display: none;">
     {% if can_request %}
     <div style="background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:20px 24px; margin-bottom:16px;">
-      <div style="font-size:15px; font-weight:700; color:#1f2937; margin-bottom:12px;">✍️ 공조요청 작성</div>
+      <div style="font-size:15px; font-weight:700; color:#1f2937; margin-bottom:12px;">✍️ 공조 작성</div>
       <div style="font-size:13px; font-weight:600; color:#374151; margin-bottom:6px;">요청 대상
         <span style="font-weight:400; color:#9ca3af; font-size:12px;">왼쪽에서 팀, 오른쪽에서 사람을 고르세요 (전체 → 전체 = 모든 사람)</span></div>
       <div id="coop-picker" style="margin-bottom:10px;"></div>
@@ -271,7 +271,7 @@
 
     <div style="background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:20px 24px;">
       <div style="font-size:15px; font-weight:700; color:#1f2937; margin-bottom:12px;">
-        공조요청 내역 <span style="font-size:12px; color:#6b7280; font-weight:600; margin-left:4px;">{{ coop_requests|length }}건</span>
+        공조 내역 <span style="font-size:12px; color:#6b7280; font-weight:600; margin-left:4px;">{{ coop_requests|length }}건</span>
       </div>
       {% for r in coop_requests %}
       <div style="padding:14px 0; {% if not loop.first %}border-top:1px solid #f3f4f6;{% endif %} {% if r.status == '완료' %}opacity:.55;{% endif %}">
@@ -303,7 +303,7 @@
         </div>
       </div>
       {% else %}
-      <div style="color:#9ca3af; font-size:14px; padding:20px 0; text-align:center;">아직 공조요청이 없습니다.</div>
+      <div style="color:#9ca3af; font-size:14px; padding:20px 0; text-align:center;">아직 공조가 없습니다.</div>
       {% endfor %}
     </div>
   </div>

@@ -2270,7 +2270,7 @@ def admin_change_role(uid):
 @app.route("/admin/change-team/<int:uid>", methods=["POST"])
 @admin_required
 def admin_change_team(uid):
-    """사용자 소속 팀 지정 (공조요청·제작일정의 팀 → 사람 선택에 사용)"""
+    """사용자 소속 팀 지정 (공조·제작일정의 팀 → 사람 선택에 사용)"""
     from database.db import update_user_team
     update_user_team(uid, request.form.get("team", ""))
     return redirect(url_for("admin"))
@@ -6474,7 +6474,7 @@ def production_task_detail(task_id):
 
 
 def _can_close_coop(req: dict) -> bool:
-    """공조요청 완료 처리: 요청자·관리자·운영자·요청 대상자"""
+    """공조 완료 처리: 요청자·관리자·운영자·요청 대상자"""
     me = session.get("username", "")
     if session.get("role") in ("admin", "operator") or req.get("requester") == me:
         return True
@@ -6483,18 +6483,11 @@ def _can_close_coop(req: dict) -> bool:
     return req.get("target_type") == "all" or me in (req.get("targets") or [])
 
 
-@app.route("/production/tasks/<int:task_id>/coop", methods=["POST"])
-@login_required
-def create_production_coop(task_id):
-    """제작부문 — 공조요청 등록 (특정인 지정 또는 전체) + 대상자 알림"""
-    from database.db import get_production_task, create_coop_request, list_users
+def _create_coop(task: dict, data: dict):
+    """공조 등록 + 대상자 알림 (과업 화면·공조 메뉴 공용). task=None이면 과업 없는 공조. → (json, status)"""
+    from database.db import create_coop_request, list_users
     if session.get("role") == "user":
-        return jsonify({"ok": False, "error": "열람 전용 계정은 요청할 수 없습니다"}), 403
-    task = get_production_task(task_id)
-    if not task:
-        return jsonify({"ok": False, "error": "과업을 찾을 수 없습니다"}), 404
-
-    data = request.get_json(force=True) or {}
+        return {"ok": False, "error": "열람 전용 계정은 요청할 수 없습니다"}, 403
     content = str(data.get("content", "")).replace("\r\n", "\n").strip()
     target_type = "users" if data.get("target_type") == "users" else "all"
     me = session.get("username", "")
@@ -6503,34 +6496,91 @@ def create_production_coop(task_id):
     if target_type == "users":
         targets = [t for t in dict.fromkeys(data.get("targets") or []) if t in users]
         if not targets:
-            return jsonify({"ok": False, "error": "요청할 사람을 한 명 이상 선택하세요"})
+            return {"ok": False, "error": "요청할 사람을 한 명 이상 선택하세요"}, 200
     if not content:
-        return jsonify({"ok": False, "error": "요청 내용을 입력하세요"})
+        return {"ok": False, "error": "요청 내용을 입력하세요"}, 200
 
+    task_id = task["id"] if task else 0
     req_id = create_coop_request(task_id, me, target_type, targets, content)
 
     # 알림: 지정한 사람 또는 (전체면) 요청자를 뺀 모든 사용자
     notify = targets if target_type == "users" else [u for u in users if u != me]
     preview = content if len(content) <= 60 else content[:60] + "…"
+    title = f"🤝 공조 — {task.get('project_name', '')}" if task else "🤝 공조 요청"
+    link = f"/production/tasks/{task_id}?tab=cooperation" if task else "/production/coop"
     for uname in notify:
         if uname == me:
             continue
         try:
-            create_notification(
-                user_id=users[uname],
-                title=f"🤝 공조요청 — {task.get('project_name', '')}",
-                message=f"{me}: {preview}",
-                link=f"/production/tasks/{task_id}?tab=cooperation",
-            )
+            create_notification(user_id=users[uname], title=title, message=f"{me}: {preview}", link=link)
         except Exception as e:
-            print(f"[경고] 공조요청 알림 실패 ({uname}): {e}")
-    return jsonify({"ok": True, "id": req_id})
+            print(f"[경고] 공조 알림 실패 ({uname}): {e}")
+    return {"ok": True, "id": req_id}, 200
+
+
+@app.route("/production/tasks/<int:task_id>/coop", methods=["POST"])
+@login_required
+def create_production_coop(task_id):
+    """과업 화면에서 공조 등록"""
+    from database.db import get_production_task
+    task = get_production_task(task_id)
+    if not task:
+        return jsonify({"ok": False, "error": "과업을 찾을 수 없습니다"}), 404
+    body, code = _create_coop(task, request.get_json(force=True) or {})
+    return jsonify(body), code
+
+
+@app.context_processor
+def _inject_coop_badge():
+    """제작부문 화면 상단 '공조' 메뉴에 나에게 온 미완료 공조 수 표시"""
+    try:
+        if request.path.startswith("/production") and session.get("username"):
+            from database.db import count_open_coop_for
+            return {"coop_open_count": count_open_coop_for(session["username"])}
+    except Exception:
+        pass
+    return {"coop_open_count": 0}
+
+
+@app.route("/production/coop", methods=["GET"])
+@login_required
+def production_coop_page():
+    """제작부문 상단 '공조' 메뉴 — 전체 공조 목록(나에게 온/내가 보낸/전체) + 작성"""
+    from database.db import list_all_coop_requests, list_production_task_options, list_people_for_picker
+    me = session.get("username", "")
+    reqs = list_all_coop_requests()
+    for r in reqs:
+        r["can_close"] = _can_close_coop(r)
+        r["is_for_me"] = (r["target_type"] == "all" or me in r["targets"]) and r["requester"] != me
+        r["is_mine"] = r["requester"] == me
+    return render_template("production_coop.html", reqs=reqs, me=me,
+                           tasks=[t for t in list_production_task_options() if t["status"] != "완료"],
+                           people=list_people_for_picker(),
+                           can_request=session.get("role") != "user")
+
+
+@app.route("/production/coop", methods=["POST"])
+@login_required
+def create_production_coop_global():
+    """공조 메뉴에서 등록 (과업 선택은 선택 사항)"""
+    from database.db import get_production_task
+    data = request.get_json(force=True) or {}
+    task = None
+    if data.get("task_id") not in (None, "", 0, "0"):
+        try:
+            task = get_production_task(int(data["task_id"]))
+        except (TypeError, ValueError):
+            task = None
+        if not task:
+            return jsonify({"ok": False, "error": "선택한 과업을 찾을 수 없습니다"}), 404
+    body, code = _create_coop(task, data)
+    return jsonify(body), code
 
 
 @app.route("/production/coop/<int:req_id>/status", methods=["POST"])
 @login_required
 def set_production_coop_status(req_id):
-    """공조요청 완료 처리 / 다시 열기"""
+    """공조 완료 처리 / 다시 열기"""
     from database.db import get_coop_request, set_coop_request_status
     req = get_coop_request(req_id)
     if not req:
