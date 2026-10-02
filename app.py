@@ -33,7 +33,7 @@ from core.dna import create_dna
 from database.db import (
     change_password, create_user, delete_user, get_case_detail, get_connection,
     get_telegram_chat_id, get_user_by_id, init_db, init_users, list_users,
-    save_case, set_telegram_chat_id, verify_user,
+    save_case, set_telegram_chat_id, verify_user, migrate_production_tasks,
     hide_case, unhide_case,
     save_learning_case, list_learning_cases, delete_learning_case,
     update_user_role,
@@ -125,6 +125,7 @@ for _d in [UPLOAD_DIR, Path(__file__).parent / "database",
 with app.app_context():
     init_db()
     init_users()
+    migrate_production_tasks()
     # 서버 재시작 시 stale 'running' 리서치 레코드 초기화
     try:
         from database.db import get_connection as _gc_init
@@ -6000,6 +6001,40 @@ def nara_result_add(confirmed_id):
     result = str(data.get("result", ""))
     try:
         add_nara_result(confirmed_id, result, notes)
+
+        # 기획부문 수주 시 제작부문 과업 자동 생성
+        if result == "수주":
+            from database.db import get_connection as _gc, create_production_task
+            try:
+                with _gc() as conn:
+                    # nara_confirmed에서 candidate_id 조회
+                    confirmed = conn.execute(
+                        "SELECT candidate_id FROM nara_confirmed WHERE id=?",
+                        (confirmed_id,)
+                    ).fetchone()
+
+                    if confirmed:
+                        candidate_id = confirmed["candidate_id"]
+                        # nara_candidates에서 사업 정보 조회
+                        candidate = conn.execute(
+                            """SELECT bid_ntce_nm, ntce_instt_nm
+                               FROM nara_candidates WHERE id=?""",
+                            (candidate_id,)
+                        ).fetchone()
+
+                        if candidate:
+                            # 제작부문 과업 자동 생성
+                            username = session.get("username", "system")
+                            create_production_task(
+                                project_name=candidate["bid_ntce_nm"],
+                                client_name=candidate["ntce_instt_nm"],
+                                bid_ntce_nm=candidate["bid_ntce_nm"],
+                                created_by=username,
+                                nara_confirmed_id=confirmed_id
+                            )
+            except Exception as auto_task_err:
+                print(f"[경고] 제작부문 과업 자동 생성 실패: {auto_task_err}")
+
         return jsonify({"ok": True})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
@@ -6141,6 +6176,44 @@ def production_tasks():
     status = request.args.get("status", None)
     paged = list_production_tasks(status=status, page=page, per_page=50)
     return render_template("production_tasks.html", tasks=paged["items"], pagination=paged)
+
+
+@app.route("/production/tasks/create", methods=["POST"])
+@login_required
+@operator_or_admin_required
+def production_task_create():
+    """제작부문 - 새 과업 생성 (수의계약용)"""
+    from database.db import create_production_task
+
+    try:
+        data = request.get_json()
+
+        # 필수 필드 검증
+        project_name = (data.get("project_name") or "").strip()
+        client_name = (data.get("client_name") or "").strip()
+        bid_ntce_nm = (data.get("bid_ntce_nm") or "").strip()
+        notes = (data.get("notes") or "").strip()
+
+        if not project_name or not client_name:
+            return jsonify({"ok": False, "error": "사업명과 발주처는 필수입니다"})
+
+        # 과업 생성
+        username = session.get("username", "unknown")
+        task_id = create_production_task(
+            project_name=project_name,
+            client_name=client_name,
+            bid_ntce_nm=bid_ntce_nm,
+            notes=notes,
+            created_by=username,
+            nara_confirmed_id=None  # 수의계약이므로 nara_confirmed_id 없음
+        )
+
+        return jsonify({"ok": True, "task_id": task_id})
+
+    except Exception as e:
+        print(f"[오류] 과업 생성 실패: {e}")
+        return jsonify({"ok": False, "error": str(e)})
+
 
 @app.route("/production/ongoing")
 @login_required

@@ -7,10 +7,11 @@
   <link rel="stylesheet" href="/static/style.css">
   <style>
   /* 부문 탭 */
-  .division-tabs{display:flex;gap:0;border-bottom:2px solid #dde0f0;}
-  .division-tab{padding:12px 20px;cursor:pointer;font-size:14px;font-weight:600;color:#6b7280;background:#f9fafb;border:none;border-bottom:2px solid transparent;transition:all .15s;}
-  .division-tab:hover{color:#4f46e5;background:#f3f1ff;}
-  .division-tab.active{color:#4f46e5;background:#f3f1ff;border-bottom-color:#4f46e5;}
+  .brand{display:flex;align-items:center;gap:14px;}
+  .division-switch{display:inline-flex;padding:3px;background:#eef0f7;border:1px solid #d7dbec;border-radius:10px;}
+  .division-tab{padding:6px 14px;cursor:pointer;font-size:14px;font-weight:700;color:#6b7280;background:transparent;border:none;border-radius:7px;transition:all .15s;letter-spacing:.2px;}
+  .division-tab:hover{color:#3730a3;}
+  .division-tab.active{color:#fff;background:#4f46e5;box-shadow:0 1px 3px rgba(79,70,229,.45);}
   /* 부문별 메뉴 */
   .division-menu{display:none;}
   .division-menu.active{display:flex;}
@@ -42,16 +43,21 @@
 {% set path = request.path %}
   <header>
     <div class="header-inner">
-      <a href="/ongoing" class="logo">Prointerz</a>
-      <nav>
-        <!-- 부문 탭 -->
-        <div style="display:flex;gap:0;border-bottom:2px solid #dde0f0;flex-grow:0;">
-          <button class="division-tab active" data-division="planning" onclick="switchDivision(event)">기획부문</button>
-          <button class="division-tab" data-division="production" onclick="switchDivision(event)">제작부문</button>
+      {# 현재 경로로 부문 결정. 공용 페이지(관리자·알림 등)는 None → 마지막 선택(localStorage) 유지 #}
+      {% if path.startswith('/production') %}{% set division = 'production' %}
+      {% elif path.startswith(('/ongoing','/nara','/schedule','/board','/proposal','/run/','/history','/db','/learning')) %}{% set division = 'planning' %}
+      {% else %}{% set division = None %}{% endif %}
+      <div class="brand">
+        <a href="/ongoing" class="logo">Prointerz</a>
+        <div class="division-switch" data-server-division="{{ division or '' }}">
+          <button type="button" class="division-tab {{ 'active' if division != 'production' }}" data-division="planning" onclick="switchDivision(event)">기획부문</button>
+          <button type="button" class="division-tab {{ 'active' if division == 'production' }}" data-division="production" onclick="switchDivision(event)">제작부문</button>
         </div>
+      </div>
+      <nav>
 
         <!-- 기획부문 메뉴 -->
-        <div class="division-menu active" id="planning-menu">
+        <div class="division-menu" id="planning-menu" style="display:{{ 'none' if division == 'production' else 'flex' }};">
           <a href="/ongoing" class="{{ 'nav-active' if path == '/ongoing' else '' }}">진행중</a>
           <a href="/nara" class="{{ 'nav-active' if path.startswith('/nara') else '' }}">과업</a>
           <a href="/schedule" class="{{ 'nav-active' if path == '/schedule' else '' }}">일정</a>
@@ -69,7 +75,7 @@
         </div>
 
         <!-- 제작부문 메뉴 -->
-        <div class="division-menu" id="production-menu" style="display:none;">
+        <div class="division-menu" id="production-menu" style="display:{{ 'flex' if division == 'production' else 'none' }};">
           <a href="/production/ongoing" class="{{ 'nav-active' if path == '/production/ongoing' else '' }}">진행중</a>
           <a href="/production/tasks" class="{{ 'nav-active' if path.startswith('/production/tasks') else '' }}">과업</a>
           <a href="/production/schedule" class="{{ 'nav-active' if path == '/production/schedule' else '' }}">일정</a>
@@ -154,16 +160,21 @@
     const targetMenu = document.getElementById(division + '-menu');
     if(targetMenu) {
       targetMenu.style.display = 'flex';
-      localStorage.setItem('prointerz_division', division);
+      try { localStorage.setItem('prointerz_division', division); } catch(err) {}
     }
   }
 
   // 페이지 로드 시 저장된 부문 복원
   document.addEventListener('DOMContentLoaded', function(){
-    const saved = localStorage.getItem('prointerz_division');
-    if(saved && saved !== 'planning') {
-      const btn = document.querySelector('[data-division="' + saved + '"]');
-      if(btn) switchDivision({target: btn, preventDefault: function(){}});
+    const server = document.querySelector('.division-switch').dataset.serverDivision;
+    let target = server;
+    try {
+      if (server) localStorage.setItem('prointerz_division', server);
+      else target = localStorage.getItem('prointerz_division');
+    } catch(e) {}
+    if (target && !server) {
+      const btn = document.querySelector('[data-division="' + target + '"]');
+      if (btn) switchDivision({target: btn, preventDefault: function(){}});
     }
   });
 

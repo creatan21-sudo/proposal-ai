@@ -16,7 +16,18 @@
           </span>
         </span>
         <span>생성자: {{ task.created_by }}</span>
+        <span style="padding: 1px 8px; border-radius: 4px; font-size: 12px; font-weight: 600;
+                     {% if task.nara_confirmed_id %}background: #e0e7ff; color: #3730a3;{% else %}background: #f3f4f6; color: #374151;{% endif %}">
+          {% if task.nara_confirmed_id %}나라장터 수주{% else %}수의계약{% endif %}
+        </span>
       </div>
+      {% if task.bid_ntce_nm %}
+      <div style="font-size: 13px; color: #6b7280; margin-top: 6px;">공고명: {{ task.bid_ntce_nm }}</div>
+      {% endif %}
+      {% if task.notes %}
+      <div style="font-size: 13px; color: #374151; margin-top: 10px; padding: 10px 12px; background: #f9fafb;
+                  border: 1px solid #e5e7eb; border-radius: 8px; white-space: pre-wrap; max-width: 700px;">{{ task.notes }}</div>
+      {% endif %}
     </div>
     {% if is_ops and task.status == '대기' %}
     <button onclick="openAssignModal()" style="padding: 10px 20px; background: #4f46e5; color: #fff;
@@ -27,86 +38,85 @@
     {% endif %}
   </div>
 
-  <!-- 탭 네비게이션 -->
+  {% set main_tabs = [
+       ("content",     "📋 과업내용"),
+       ("schedule",    "📅 제작일정"),
+       ("post",        "🎬 후반일정"),
+       ("cooperation", "🤝 공조요청"),
+     ] %}
+  {% set content_tabs = [
+       ("production_content",   "제작내용"),
+       ("rfp",                  "RFP"),
+       ("pre_negotiation",      "사전협상"),
+       ("proposal_overview",    "제안개요"),
+     ] %}
+  {% macro section_body(key) -%}
+    {% if sections[key] and sections[key].content %}
+      <div style="white-space: pre-wrap;">{{ sections[key].content }}</div>
+    {% else %}
+      <span style="color: #9ca3af;">아직 작성되지 않았습니다.</span>
+    {% endif %}
+  {%- endmacro %}
+
+  <!-- 상위 탭 -->
   <div style="display: flex; gap: 0; border-bottom: 2px solid #e5e7eb; margin-bottom: 24px;">
-    <button onclick="switchDetailTab('overview')" class="detail-tab active"
+    {% for key, label in main_tabs %}
+    <button type="button" class="detail-tab{% if loop.first %} active{% endif %}" data-tab="{{ key }}"
+            onclick="switchTab('detail-tab', 'tab-content', this)"
             style="padding: 12px 20px; border: none; background: transparent; cursor: pointer;
-                   font-size: 14px; font-weight: 600; color: #4f46e5; border-bottom: 2px solid #4f46e5;
-                   transition: all 0.15s;">
-      📋 안내 사항
+                   font-size: 14px; font-weight: 600; margin-bottom: -2px; transition: all 0.15s;
+                   color: {% if loop.first %}#4f46e5{% else %}#6b7280{% endif %};
+                   border-bottom: 2px solid {% if loop.first %}#4f46e5{% else %}transparent{% endif %};">
+      {{ label }}
     </button>
-    <button onclick="switchDetailTab('schedule')" class="detail-tab"
-            style="padding: 12px 20px; border: none; background: transparent; cursor: pointer;
-                   font-size: 14px; font-weight: 600; color: #6b7280; border-bottom: 2px solid transparent;
-                   transition: all 0.15s;">
-      📅 일정
-    </button>
-    <button onclick="switchDetailTab('discussion')" class="detail-tab"
-            style="padding: 12px 20px; border: none; background: transparent; cursor: pointer;
-                   font-size: 14px; font-weight: 600; color: #6b7280; border-bottom: 2px solid transparent;
-                   transition: all 0.15s;">
-      💬 기술협상
-    </button>
-    <button onclick="switchDetailTab('kickoff')" class="detail-tab"
-            style="padding: 12px 20px; border: none; background: transparent; cursor: pointer;
-                   font-size: 14px; font-weight: 600; color: #6b7280; border-bottom: 2px solid transparent;
-                   transition: all 0.15s;">
-      🚀 착수보고
-    </button>
+    {% endfor %}
   </div>
 
-  <!-- 탭 콘텐츠 -->
-  <div id="overview-tab" class="tab-content" style="display: block;">
-    <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
-      <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #1f2937;">제안 내용</h2>
-      <div id="proposal-content" style="color: #4b5563; line-height: 1.6; min-height: 200px;">
-        {% if sections.proposal_overview %}
-          {{ sections.proposal_overview.content or '아직 작성되지 않았습니다.' }}
-        {% else %}
-          아직 작성되지 않았습니다.
-        {% endif %}
-      </div>
+  <!-- 과업내용 (하위 탭) -->
+  <div id="content-tab" class="tab-content" style="display: block;">
+    <div style="display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap;">
+      {% for key, label in content_tabs %}
+      <button type="button" class="sub-tab{% if loop.first %} active{% endif %}" data-tab="{{ key }}"
+              onclick="switchTab('sub-tab', 'sub-content', this)"
+              style="padding: 7px 16px; border-radius: 999px; font-size: 13px; font-weight: 600; cursor: pointer;
+                     border: 1px solid {% if loop.first %}#4f46e5{% else %}#e5e7eb{% endif %};
+                     background: {% if loop.first %}#eef2ff{% else %}#fff{% endif %};
+                     color: {% if loop.first %}#4f46e5{% else %}#6b7280{% endif %};">
+        {{ label }}
+      </button>
+      {% endfor %}
     </div>
+    {% for key, label in content_tabs %}
+    <div id="{{ key }}-tab" class="sub-content" style="display: {% if loop.first %}block{% else %}none{% endif %};
+         background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
+      {% if key == "pre_negotiation" %}
+        {# 사전협상 = 착수보고 + 기술협상을 한 화면에 #}
+        {% for sub_key, sub_label in [("kickoff_report", "착수보고"), ("technical_discussion", "기술협상")] %}
+        <div style="{% if not loop.first %}margin-top: 24px; padding-top: 24px; border-top: 1px solid #f3f4f6;{% endif %}">
+          <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 12px; color: #1f2937;">{{ sub_label }}</h2>
+          <div style="color: #4b5563; line-height: 1.6; min-height: 80px;">{{ section_body(sub_key) }}</div>
+        </div>
+        {% endfor %}
+      {% else %}
+      <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #1f2937;">{{ label }}</h2>
+      <div style="color: #4b5563; line-height: 1.6; min-height: 200px;">{{ section_body(key) }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
   </div>
 
-  <div id="schedule-tab" class="tab-content" style="display: none;">
+  {% for key, label, section_key in [
+       ("schedule",    "제작일정", "production_schedule"),
+       ("post",        "후반일정", "post_schedule"),
+       ("cooperation", "공조요청", "cooperation_request"),
+     ] %}
+  <div id="{{ key }}-tab" class="tab-content" style="display: none;">
     <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
-      <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #1f2937;">제작 일정</h2>
-      <div id="schedule-content" style="color: #4b5563; line-height: 1.6; min-height: 200px;">
-        {% if sections.production_schedule %}
-          {{ sections.production_schedule.content or '아직 작성되지 않았습니다.' }}
-        {% else %}
-          아직 작성되지 않았습니다.
-        {% endif %}
-      </div>
+      <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #1f2937;">{{ label }}</h2>
+      <div style="color: #4b5563; line-height: 1.6; min-height: 200px;">{{ section_body(section_key) }}</div>
     </div>
   </div>
-
-  <div id="discussion-tab" class="tab-content" style="display: none;">
-    <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
-      <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #1f2937;">기술협상 내용</h2>
-      <div id="discussion-content" style="color: #4b5563; line-height: 1.6; min-height: 200px;">
-        {% if sections.technical_discussion %}
-          {{ sections.technical_discussion.content or '아직 작성되지 않았습니다.' }}
-        {% else %}
-          아직 작성되지 않았습니다.
-        {% endif %}
-      </div>
-    </div>
-  </div>
-
-  <div id="kickoff-tab" class="tab-content" style="display: none;">
-    <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
-      <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #1f2937;">착수보고 내용</h2>
-      <div id="kickoff-content" style="color: #4b5563; line-height: 1.6; min-height: 200px;">
-        {% if sections.kickoff_report %}
-          {{ sections.kickoff_report.content or '아직 작성되지 않았습니다.' }}
-        {% else %}
-          아직 작성되지 않았습니다.
-        {% endif %}
-      </div>
-    </div>
-  </div>
+  {% endfor %}
 </div>
 
 <!-- 담당자 배정 모달 -->
@@ -159,16 +169,21 @@
 </div>
 
 <script>
-function switchDetailTab(tab) {
-  document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
-  document.getElementById(tab + '-tab').style.display = 'block';
-
-  document.querySelectorAll('.detail-tab').forEach(btn => {
-    btn.style.color = '#6b7280';
-    btn.style.borderBottomColor = 'transparent';
+// 탭 전환 (상위/하위 공용). 버튼 스타일 규칙: 상위=밑줄, 하위=pill
+function switchTab(btnClass, panelClass, btn) {
+  document.querySelectorAll('.' + panelClass).forEach(el => el.style.display = 'none');
+  document.getElementById(btn.dataset.tab + '-tab').style.display = 'block';
+  document.querySelectorAll('.' + btnClass).forEach(b => {
+    const on = (b === btn);
+    b.classList.toggle('active', on);
+    b.style.color = on ? '#4f46e5' : '#6b7280';
+    if (btnClass === 'sub-tab') {
+      b.style.borderColor = on ? '#4f46e5' : '#e5e7eb';
+      b.style.background  = on ? '#eef2ff' : '#fff';
+    } else {
+      b.style.borderBottomColor = on ? '#4f46e5' : 'transparent';
+    }
   });
-  event.target.style.color = '#4f46e5';
-  event.target.style.borderBottomColor = '#4f46e5';
 }
 
 function openAssignModal() {

@@ -470,7 +470,7 @@ def init_db() -> None:
 
             CREATE TABLE IF NOT EXISTS production_tasks (
                 id                  INTEGER PRIMARY KEY AUTOINCREMENT,
-                nara_confirmed_id   INTEGER NOT NULL UNIQUE,
+                nara_confirmed_id   INTEGER,
                 project_name        TEXT NOT NULL,
                 client_name         TEXT DEFAULT '',
                 bid_ntce_nm         TEXT DEFAULT '',
@@ -480,6 +480,7 @@ def init_db() -> None:
                 created_at          TEXT DEFAULT (datetime('now','localtime')),
                 updated_at          TEXT DEFAULT (datetime('now','localtime')),
                 completed_at        TEXT DEFAULT '',
+                notes               TEXT DEFAULT '',
                 FOREIGN KEY(nara_confirmed_id) REFERENCES nara_confirmed(id)
             );
 
@@ -780,6 +781,80 @@ def init_db() -> None:
                 "INSERT OR IGNORE INTO notification_settings (trigger_type, target_user_ids) VALUES (?,?)",
                 (_tt, '[]'),
             )
+
+
+def migrate_production_tasks() -> None:
+    """제작부문 과업 테이블 마이그레이션 - nara_confirmed_id를 nullable로 변경"""
+    with get_connection() as conn:
+        cursor = conn.cursor()
+
+        # 테이블이 존재하는지 확인
+        cursor.execute("""
+            SELECT name FROM sqlite_master
+            WHERE type='table' AND name='production_tasks'
+        """)
+        if not cursor.fetchone():
+            return  # 테이블이 없으면 마이그레이션 불필요
+
+        cols = {r[1]: r for r in cursor.execute("PRAGMA table_info(production_tasks)").fetchall()}
+
+        # notes 컬럼 추가 (ALTER로 충분 — 재생성 불필요)
+        if "notes" not in cols:
+            cursor.execute("ALTER TABLE production_tasks ADD COLUMN notes TEXT DEFAULT ''")
+            conn.commit()
+            print("[migration] production_tasks.notes 컬럼 추가")
+
+        # nara_confirmed_id가 이미 nullable이면 재생성하지 않음 (멱등성)
+        if not cols.get("nara_confirmed_id") or cols["nara_confirmed_id"][3] == 0:
+            return
+
+        # 기존 데이터 백업
+        cursor.execute("DROP TABLE IF EXISTS production_tasks_backup")
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS production_tasks_backup AS
+            SELECT * FROM production_tasks
+        """)
+        conn.commit()
+
+        # 기존 테이블 삭제
+        cursor.execute("DROP TABLE IF EXISTS production_tasks")
+
+        # 새로운 스키마로 테이블 생성 (nara_confirmed_id는 nullable)
+        conn.execute("""
+            CREATE TABLE production_tasks (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                nara_confirmed_id   INTEGER,
+                project_name        TEXT NOT NULL,
+                client_name         TEXT DEFAULT '',
+                bid_ntce_nm         TEXT DEFAULT '',
+                status              TEXT DEFAULT '대기',
+                assigned_to         TEXT DEFAULT '',
+                created_by          TEXT NOT NULL,
+                created_at          TEXT DEFAULT (datetime('now','localtime')),
+                updated_at          TEXT DEFAULT (datetime('now','localtime')),
+                completed_at        TEXT DEFAULT '',
+                notes               TEXT DEFAULT '',
+                FOREIGN KEY(nara_confirmed_id) REFERENCES nara_confirmed(id)
+            )
+        """)
+
+        # 백업 데이터 복원
+        conn.execute("""
+            INSERT INTO production_tasks
+            (id, nara_confirmed_id, project_name, client_name, bid_ntce_nm,
+             status, assigned_to, created_by, created_at, updated_at, completed_at, notes)
+            SELECT
+            id, nara_confirmed_id, project_name, client_name, bid_ntce_nm,
+             status, assigned_to, created_by, created_at, updated_at, completed_at, notes
+            FROM production_tasks_backup
+        """)
+
+        # 백업 테이블 삭제
+        cursor.execute("DROP TABLE IF EXISTS production_tasks_backup")
+
+        conn.commit()
+        print("[migration] production_tasks 테이블 마이그레이션 완료")
+
 
 def save_case(client_name: str, project_name: str, video_type: str,
               dna_json: str, result_json: str = "{}",
@@ -3530,15 +3605,16 @@ def list_confirmed_for_board() -> list:
 
 # ==================== 제작부문 (Production Division) Functions ====================
 
-def create_production_task(nara_confirmed_id: int, project_name: str, client_name: str,
-                          bid_ntce_nm: str, created_by: str) -> int:
-    """제작부문 새 과업 생성"""
+def create_production_task(project_name: str, client_name: str, created_by: str,
+                          nara_confirmed_id: int = None, bid_ntce_nm: str = "",
+                          notes: str = "") -> int:
+    """제작부문 새 과업 생성 (NARA 연동 또는 수의계약)"""
     with get_connection() as conn:
         cursor = conn.execute(
             """INSERT INTO production_tasks
-               (nara_confirmed_id, project_name, client_name, bid_ntce_nm, created_by, status)
-               VALUES (?, ?, ?, ?, ?, '대기')""",
-            (nara_confirmed_id, project_name, client_name, bid_ntce_nm, created_by),
+               (nara_confirmed_id, project_name, client_name, bid_ntce_nm, created_by, status, notes)
+               VALUES (?, ?, ?, ?, ?, '대기', ?)""",
+            (nara_confirmed_id, project_name, client_name, bid_ntce_nm, created_by, notes),
         )
         conn.commit()
         return cursor.lastrowid

@@ -5,3 +5,8 @@ __pycache__/
 database/rfp_cases.db
 output/proposals/
 .env.save
+
+# SQLite 임시 파일 (로컬 DB 상태 — 커밋 금지)
+*.db-shm
+*.db-wal
+server.log
