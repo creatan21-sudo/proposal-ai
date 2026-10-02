@@ -853,10 +853,14 @@ def ongoing():
     if not all_tasks:
         return redirect(url_for("nara_dashboard"))
 
+    # 최근 진행: 마지막 활동(확정·RFP·리서치·내러티브·제안설계·일정·입찰정보·코멘트·완료요청) 순 최대 12건
+    recent_tasks = _with_last_activity(tasks)[:12]
+
     from datetime import datetime as _dt, timedelta as _td
     _now = _dt.now()
     return render_template(
         "ongoing.html",
+        recent_tasks=recent_tasks,
         my_tasks=my_tasks,
         all_tasks=all_tasks,
         username=username,
@@ -866,6 +870,41 @@ def ongoing():
         now=_now.strftime("%Y-%m-%d %H:%M"),
         cutoff_d3=(_now + _td(days=3)).strftime("%Y-%m-%d"),
     )
+
+def _with_last_activity(tasks: list) -> list:
+    """기획부문 진행 과업에 last_activity / last_activity_label을 붙여 최근 활동 순으로 정렬"""
+    ids = [t["id"] for t in tasks]
+    if not ids:
+        return []
+    ph = ",".join("?" * len(ids))
+    sources = [
+        ("RFP 업로드",     f"SELECT confirmed_id, MAX(uploaded_at) FROM confirmed_rfp_files WHERE confirmed_id IN ({ph}) GROUP BY confirmed_id"),
+        ("리서치",         f"SELECT confirmed_id, MAX(COALESCE(NULLIF(completed_at,''), started_at)) FROM confirmed_research WHERE confirmed_id IN ({ph}) GROUP BY confirmed_id"),
+        ("내러티브 작성",   f"SELECT confirmed_id, MAX(updated_at) FROM confirmed_narratives WHERE confirmed_id IN ({ph}) GROUP BY confirmed_id"),
+        ("제안설계 작성",   f"SELECT confirmed_id, MAX(COALESCE(updated_at, created_at)) FROM proposal_design WHERE confirmed_id IN ({ph}) GROUP BY confirmed_id"),
+        ("일정 등록",       f"SELECT confirmed_id, MAX(created_at) FROM confirmed_schedule WHERE confirmed_id IN ({ph}) GROUP BY confirmed_id"),
+        ("입찰 정보 수정",  f"SELECT confirmed_id, MAX(updated_at) FROM confirmed_bid_info WHERE confirmed_id IN ({ph}) GROUP BY confirmed_id"),
+        ("코멘트",          f"SELECT confirmed_id, MAX(created_at) FROM confirmed_comments WHERE confirmed_id IN ({ph}) GROUP BY confirmed_id"),
+        ("완료 요청",       f"SELECT id, completion_requested_at FROM nara_confirmed WHERE id IN ({ph})"),
+    ]
+    acts = {i: [] for i in ids}
+    with get_connection() as conn:
+        for label, sql in sources:
+            try:
+                for cid, ts in conn.execute(sql, ids).fetchall():
+                    if ts:
+                        acts.setdefault(cid, []).append((str(ts)[:19], label))
+            except Exception as e:      # 일부 테이블/컬럼이 없는 구버전 DB 대비
+                print(f"[recent] {label} 조회 건너뜀: {e}")
+    out = []
+    for t in tasks:
+        cands = [(str(t.get("created_at") or "")[:19], "과업 확정")] + acts.get(t["id"], [])
+        ts, label = max(cands, key=lambda x: x[0])
+        t = dict(t, last_activity=ts, last_activity_label=label)
+        out.append(t)
+    out.sort(key=lambda t: t["last_activity"], reverse=True)
+    return out
+
 
 @app.route("/proposal")
 @login_required

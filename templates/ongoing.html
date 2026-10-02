@@ -10,14 +10,12 @@
 
   <!-- 탭 -->
   <div class="og-tabs">
-    <a class="og-tab active" id="tab-my" href="javascript:void(0)" onclick="switchTab('my')">👤 내 진행 <span style="background:#f3f4f6;color:#6b7280;border-radius:99px;padding:1px 7px;font-size:11px;font-weight:600;margin-left:4px;" id="cnt-my">{{ my_tasks|length }}</span></a>
+    <a class="og-tab active" id="tab-recent" href="javascript:void(0)" onclick="switchTab('recent')">🕑 최근 진행 <span style="background:#f3f4f6;color:#6b7280;border-radius:99px;padding:1px 7px;font-size:11px;font-weight:600;margin-left:4px;">{{ recent_tasks|length }}</span></a>
+    <a class="og-tab" id="tab-my" href="javascript:void(0)" onclick="switchTab('my')">👤 내 진행 <span style="background:#f3f4f6;color:#6b7280;border-radius:99px;padding:1px 7px;font-size:11px;font-weight:600;margin-left:4px;" id="cnt-my">{{ my_tasks|length }}</span></a>
     <a class="og-tab" id="tab-all" href="javascript:void(0)" onclick="switchTab('all')">🏢 전체 진행 <span style="background:#f3f4f6;color:#6b7280;border-radius:99px;padding:1px 7px;font-size:11px;font-weight:600;margin-left:4px;" id="cnt-all">{{ all_tasks|length }}</span></a>
   </div>
 
-  <!-- 내 과업 탭 -->
-  <div id="pane-my">
-    {% if my_tasks %}
-      {% for t in my_tasks %}
+  {% macro og_card(t, recent=false) -%}
       {% set clse = (t.bid_clse_dt or '')[:10] %}
       <div class="og-card" id="og-card-{{ t.id }}" data-clse="{{ clse }}" onclick="location.href='/nara/confirmed/{{ t.id }}'">
         <span class="og-id">{{ t.id }}</span>
@@ -49,6 +47,9 @@
             {% if t.assignee %}
             <span class="assignee">{{ t.assignee }}</span>
             {% endif %}
+            {% if recent %}
+            <span class="recent-act" data-ts="{{ t.last_activity }}" style="color:#4f46e5;font-weight:600;">🕑 {{ t.last_activity_label }} · {{ (t.last_activity or '')[:16] }}</span>
+            {% endif %}
             {% if t.completion_status == 'requested' %}
             <span class="cs-badge cs-requested">⏳ 완료대기</span>
             {% elif t.completion_status == 'approved' %}
@@ -68,70 +69,28 @@
           {% endif %}
         </div>
       </div>
-      {% endfor %}
-    {% else %}
+  {%- endmacro %}
+
+  <!-- 최근 진행 탭 (기본) -->
+  <div id="pane-recent">
+    {% for t in recent_tasks %}{{ og_card(t, true) }}{% else %}
+      <div class="og-empty">최근 활동이 있는 과업이 없습니다</div>
+    {% endfor %}
+    {% if recent_tasks %}<div style="font-size:12px;color:#9ca3af;margin-top:6px;">진행 중인 과업을 마지막 활동(RFP·리서치·내러티브·제안설계·일정·코멘트 등) 순으로 최대 12건 보여줍니다.</div>{% endif %}
+  </div>
+
+  <!-- 내 과업 탭 -->
+  <div id="pane-my" style="display:none;">
+    {% for t in my_tasks %}{{ og_card(t) }}{% else %}
       <div class="og-empty">담당 과업이 없습니다</div>
-    {% endif %}
+    {% endfor %}
   </div>
 
   <!-- 전체 진행 탭 -->
   <div id="pane-all" style="display:none;">
-    {% if all_tasks %}
-      {% for t in all_tasks %}
-      {% set clse = (t.bid_clse_dt or '')[:10] %}
-      <div class="og-card" id="og-card-{{ t.id }}" data-clse="{{ clse }}" onclick="location.href='/nara/confirmed/{{ t.id }}'">
-        <span class="og-id">{{ t.id }}</span>
-        <div class="og-card-left">
-          <div class="og-card-name" title="{{ t.bid_ntce_nm or '-' }}">
-            {{ t.bid_ntce_nm or '-' }}
-            {% if t.badge_rfp %}
-            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=research"
-               onclick="event.stopPropagation();" title="RFP 등록됨">RFP분석</a>
-            {% endif %}
-            {% if t.badge_research %}
-            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=research"
-               onclick="event.stopPropagation();" title="리서치 완료">리서치</a>
-            {% endif %}
-            {% if t.badge_narrative %}
-            <a class="badge-status" href="/nara/confirmed/{{ t.id }}/workspace?tab=narrative"
-               onclick="event.stopPropagation();" title="내러티브 작성됨">내러티브</a>
-            {% endif %}
-            {% if t.badge_proposal %}
-            <a class="badge-status" href="/nara/confirmed/{{ t.id }}?tab=proposal_design"
-               onclick="event.stopPropagation();" title="제안서 설계 작성됨">제안설계</a>
-            {% endif %}
-          </div>
-          <div class="og-card-meta">
-            <span class="org">{{ t.ntce_instt_nm or '-' }}</span>
-            {% if clse %}
-            <span class="due{% if clse <= cutoff_d3 %} urgent{% endif %}">마감 {{ clse }}</span>
-            {% endif %}
-            {% if t.assignee %}
-            <span class="assignee">{{ t.assignee }}</span>
-            {% endif %}
-            {% if t.completion_status == 'requested' %}
-            <span class="cs-badge cs-requested">⏳ 완료대기</span>
-            {% elif t.completion_status == 'approved' %}
-            <span class="cs-badge cs-approved">✅ 완료 승인</span>
-            {% endif %}
-          </div>
-        </div>
-        <div class="og-card-icons">
-          {% for item in t.incomplete %}
-          <a class="og-icon-btn" href="{{ item.link }}" onclick="event.stopPropagation();" title="{{ item.label }}">
-            {{ item.icon }}<span class="tip">{{ item.label }}</span>
-          </a>
-          {% endfor %}
-          {% if is_ops %}
-          <button class="og-del-btn"
-            onclick="event.stopPropagation();openDelModal({{ t.id }},'{{ t.bid_ntce_nm | e }}')">[삭제]</button>
-          {% endif %}
-        </div>
-      </div>
-      {% endfor %}
-    {% else %}
+    {% for t in all_tasks %}{{ og_card(t) }}{% else %}
       <div class="og-empty">진행 중인 과업이 없습니다 🎉</div>
-    {% endif %}
+    {% endfor %}
   </div>
 
 </div>
@@ -208,7 +167,7 @@ function confirmDelete(){
 }
 
 function switchTab(name){
-  ['my','all'].forEach(t=>{
+  ['recent','my','all'].forEach(t=>{
     document.getElementById('pane-'+t).style.display=t===name?'block':'none';
     document.getElementById('tab-'+t).classList.toggle('active',t===name);
   });
@@ -218,7 +177,15 @@ function switchTab(name){
   initExpiredCards('pane-my');
   initExpiredCards('pane-all');
   const tab = new URLSearchParams(location.search).get('tab');
-  if(tab === 'all') switchTab('all');
+  if(tab === 'all' || tab === 'my' || tab === 'mine') switchTab(tab === 'all' ? 'all' : 'my');
+  // 최근 활동 시각 → '3시간 전'
+  const _now = new Date();
+  document.querySelectorAll('.recent-act[data-ts]').forEach(el => {
+    const d = new Date(el.dataset.ts.replace(' ', 'T')); if(isNaN(d)) return;
+    const m = Math.round((_now - d) / 60000);
+    const rel = m < 1 ? '방금' : m < 60 ? `${m}분 전` : m < 1440 ? `${Math.round(m/60)}시간 전` : `${Math.round(m/1440)}일 전`;
+    el.textContent = el.textContent.replace(/ · .*$/, ' · ' + rel); el.title = el.dataset.ts;
+  });
 })();
 </script>
 {% endblock %}
