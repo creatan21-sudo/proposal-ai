@@ -106,6 +106,8 @@
   .tsc-cell.today .tsc-day{color:#4f46e5;font-weight:800;}
   .tsc-ev{display:block;font-size:10px;padding:1px 5px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#dbeafe;color:#1e40af;cursor:pointer;line-height:1.5;}
   .tsc-ev.sel{background:#4f46e5;color:#fff;font-weight:700;}
+  .tsc-ev.post{background:#f3e8ff;color:#7e22ce;}
+  .tsc-ev.post.sel{background:#9333ea;color:#fff;}
   </style>
 
   <!-- 상위 탭 -->
@@ -185,47 +187,47 @@
     {% endfor %}
   </div>
 
-  {% for key, label, section_key in [
-       ("schedule",    "제작일정", "production_schedule"),
-       ("post",        "후반일정", "post_schedule"),
+  {# 제작일정 / 후반일정: 일정 메뉴에서 이 과업에 연결한 일정(구분별)이 캘린더로 모임 — 두 탭 같은 형태 #}
+  {% for key, label, section_key, cat, px in [
+       ("schedule", "제작일정", "production_schedule", "production", "tsc"),
+       ("post",     "후반일정", "post_schedule",       "post",       "tsp"),
      ] %}
+  {% set items = task_schedules | selectattr('category', 'equalto', cat) | list %}
   <div id="{{ key }}-tab" class="tab-content" style="display: none;">
-    {% if key == 'schedule' %}
-    {# 제작부문 일정 메뉴에서 이 과업에 연결한 일정이 자동으로 모임 #}
-        <div style="background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:20px 24px; margin-bottom:16px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:12px;">
-        <h2 style="font-size:16px; font-weight:700; color:#1f2937; margin:0;">제작일정
-          <span style="font-size:12px; color:#6b7280; font-weight:600; margin-left:4px;">{{ task_schedules|length }}건</span></h2>
+    <div style="background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:20px 24px; margin-bottom:16px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:12px; flex-wrap:wrap;">
+        <h2 style="font-size:16px; font-weight:700; color:#1f2937; margin:0;">{{ label }}
+          <span style="font-size:12px; color:#6b7280; font-weight:600; margin-left:4px;">{{ items|length }}건</span></h2>
         <div style="display:flex; gap:8px; align-items:center;">
-          <div class="tsc-seg">
-            <button type="button" class="on" data-v="cal" onclick="tscView('cal')">📅 캘린더</button>
-            <button type="button" data-v="list" onclick="tscView('list')">📋 목록</button>
+          <div class="tsc-seg" id="{{ px }}-seg">
+            <button type="button" class="on" data-v="cal" onclick="TCAL['{{ px }}'].view('cal')">📅 캘린더</button>
+            <button type="button" data-v="list" onclick="TCAL['{{ px }}'].view('list')">📋 목록</button>
           </div>
-          <a href="/production/schedule?f={{ task.id }}{% if task_schedules %}&month={{ task_schedules[0].start_date[:7] }}{% endif %}"
+          <a href="/production/schedule?f={{ task.id }}{% if items %}&month={{ items[0].start_date[:7] }}{% endif %}"
              style="padding:6px 12px; border:1px solid #d1d5db; background:#fff; border-radius:7px; font-size:12px; font-weight:600; color:#374151; text-decoration:none;">일정 메뉴에서 편집</a>
           {% if can_request %}
-          <a href="/production/schedule?task={{ task.id }}&back=task"
-             style="padding:6px 12px; background:#4f46e5; color:#fff; border-radius:7px; font-size:12px; font-weight:600; text-decoration:none;">+ 일정 추가</a>
+          <a href="/production/schedule?task={{ task.id }}&cat={{ cat }}&back=task"
+             style="padding:6px 12px; background:{{ '#9333ea' if cat == 'post' else '#4f46e5' }}; color:#fff; border-radius:7px; font-size:12px; font-weight:600; text-decoration:none;">+ {{ label }} 추가</a>
           {% endif %}
         </div>
       </div>
-      <div id="tsc-cal-wrap">
+      <div id="{{ px }}-cal-wrap">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
-          <button type="button" class="tsc-nav" onclick="tscMove(-1)">‹ 이전</button>
-          <span id="tsc-month" style="font-size:15px; font-weight:700;"></span>
+          <button type="button" class="tsc-nav" onclick="TCAL['{{ px }}'].move(-1)">‹ 이전</button>
+          <span id="{{ px }}-month" style="font-size:15px; font-weight:700;"></span>
           <div style="display:flex; gap:6px;">
-            <button type="button" class="tsc-nav" onclick="tscMove(1)">다음 ›</button>
-            <button type="button" class="tsc-nav" onclick="tscToday()">오늘</button>
+            <button type="button" class="tsc-nav" onclick="TCAL['{{ px }}'].move(1)">다음 ›</button>
+            <button type="button" class="tsc-nav" onclick="TCAL['{{ px }}'].today()">오늘</button>
           </div>
         </div>
-        <div id="tsc-cal"></div>
-        <div id="tsc-detail" style="display:none; margin-top:14px; padding:14px 16px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px;"></div>
+        <div id="{{ px }}-cal"></div>
+        <div id="{{ px }}-detail" style="display:none; margin-top:14px; padding:14px 16px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px;"></div>
       </div>
-      <div id="tsc-list" style="display:none;">
-      {% for sc in task_schedules %}
+      <div id="{{ px }}-list" style="display:none;">
+      {% for sc in items %}
       {% set past = (sc.end_date or '') < (today or '') %}
       <div style="display:flex; gap:14px; padding:11px 0; {% if not loop.first %}border-top:1px solid #f3f4f6;{% endif %} {% if past %}opacity:.55;{% endif %}">
-        <div style="min-width:150px; font-size:12px; font-weight:700; color:#4f46e5;">
+        <div style="min-width:150px; font-size:12px; font-weight:700; color:{{ '#9333ea' if cat == 'post' else '#4f46e5' }};">
           {% if sc.dates|length == 1 %}{{ sc.dates[0] }}
           {% elif sc.date_mode == 'range' %}{{ sc.start_date[5:] }} ~ {{ sc.end_date[5:] }} · {{ sc.dates|length }}일
           {% else %}{% for d in sc.dates %}{{ d[5:] }}{% if not loop.last %}, {% endif %}{% endfor %} · {{ sc.dates|length }}일{% endif %}
@@ -238,18 +240,13 @@
         </div>
       </div>
       {% else %}
-      <div style="color:#9ca3af; font-size:14px; padding:16px 0;">아직 연결된 일정이 없습니다. [+ 일정 추가]로 등록하면 캘린더와 여기에 함께 보입니다.</div>
+      <div style="color:#9ca3af; font-size:14px; padding:16px 0;">아직 연결된 {{ label }}이 없습니다. [+ {{ label }} 추가]로 등록하면 캘린더와 여기에 함께 보입니다.</div>
       {% endfor %}
       </div>
     </div>
     <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
-      {{ section_block(section_key, '일정 메모', 80) }}
+      {{ section_block(section_key, label ~ ' 메모', 80) }}
     </div>
-    {% else %}
-    <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
-      {{ section_block(section_key, label) }}
-    </div>
-    {% endif %}
   </div>
   {% endfor %}
 
@@ -519,58 +516,62 @@ function fillAssignee(){
 }
 fillAssignee();
 
-// ── 제작일정 탭: 이 과업 일정 캘린더 (기본) / 목록 ──
-const TSC = {{ task_schedules | tojson }};
+// ── 제작일정 / 후반일정 탭: 이 과업 일정 캘린더 (기본) / 목록 — 같은 형태 ──
+const TSC_ALL = {{ task_schedules | tojson }};
 const TSC_WD = ['일','월','화','수','목','금','토'];
 const TSC_TODAY = (d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'))(new Date());
-let tscY, tscM, tscSel = null;
-(function tscInit(){
-  // 가장 가까운 예정 일정이 있는 달 → 없으면 마지막 일정의 달 → 없으면 이번 달
-  const up = TSC.find(s => (s.end_date||'') >= TSC_TODAY) || TSC[TSC.length-1];
-  const base = up ? up.start_date : TSC_TODAY;
-  tscY = +base.slice(0,4); tscM = +base.slice(5,7) - 1;
-})();
 function _tscEsc(v){ return (v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-function tscView(v){
-  document.querySelectorAll('.tsc-seg button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
-  document.getElementById('tsc-cal-wrap').style.display = v === 'cal' ? '' : 'none';
-  document.getElementById('tsc-list').style.display = v === 'list' ? '' : 'none';
-}
-function tscMove(n){ tscM += n; if(tscM < 0){ tscM = 11; tscY--; } if(tscM > 11){ tscM = 0; tscY++; } tscRender(); }
-function tscToday(){ const t = new Date(); tscY = t.getFullYear(); tscM = t.getMonth(); tscRender(); }
-function tscRender(){
-  const el = document.getElementById('tsc-cal'); if(!el) return;
-  document.getElementById('tsc-month').textContent = `${tscY}년 ${String(tscM+1).padStart(2,'0')}월`;
-  const first = new Date(tscY, tscM, 1), last = new Date(tscY, tscM+1, 0);
-  const total = Math.ceil((first.getDay() + last.getDate()) / 7) * 7;
-  let h = '<div class="tsc-grid">' + TSC_WD.map((d,i) => `<div class="tsc-dh${i===0||i===6?' we':''}">${d}</div>`).join('');
-  for(let i = 0; i < total; i++){
-    const dn = i - first.getDay() + 1, inM = dn >= 1 && dn <= last.getDate();
-    const d = new Date(tscY, tscM, dn);
-    const ds = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
-    const evs = inM ? TSC.filter(s => (s.dates||[]).includes(ds)) : [];
-    h += `<div class="tsc-cell${!inM ? ' other' : (ds === TSC_TODAY ? ' today' : '')}"><div class="tsc-day">${d.getDate()}</div>`
-       + evs.slice(0, evs.length > 3 ? 2 : 3).map(s => `<span class="tsc-ev${s.id===tscSel?' sel':''}" title="${_tscEsc(s.title)}" onclick="tscShow(${s.id})">${_tscEsc(s.title)}</span>`).join('')
-       + (evs.length > 3 ? `<span style="font-size:10px;color:#6366f1;font-weight:600;">+${evs.length-2}개 더</span>` : '')
-       + '</div>';
+function TaskCal(px, cat){
+  const items = TSC_ALL.filter(s => (s.category || 'production') === cat);
+  const evCls = cat === 'post' ? 'tsc-ev post' : 'tsc-ev';
+  // 가장 가까운 예정 일정이 있는 달 → 없으면 마지막 일정의 달 → 없으면 이번 달
+  const up = items.find(s => (s.end_date||'') >= TSC_TODAY) || items[items.length-1];
+  const base = up ? up.start_date : TSC_TODAY;
+  let y = +base.slice(0,4), m = +base.slice(5,7) - 1, sel = null;
+  const $ = id => document.getElementById(px + '-' + id);
+  function render(){
+    const el = $('cal'); if(!el) return;
+    $('month').textContent = `${y}년 ${String(m+1).padStart(2,'0')}월`;
+    const first = new Date(y, m, 1), last = new Date(y, m+1, 0);
+    const total = Math.ceil((first.getDay() + last.getDate()) / 7) * 7;
+    let h = '<div class="tsc-grid">' + TSC_WD.map((d,i) => `<div class="tsc-dh${i===0||i===6?' we':''}">${d}</div>`).join('');
+    for(let i = 0; i < total; i++){
+      const dn = i - first.getDay() + 1, inM = dn >= 1 && dn <= last.getDate();
+      const d = new Date(y, m, dn);
+      const ds = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+      const evs = inM ? items.filter(s => (s.dates||[]).includes(ds)) : [];
+      h += `<div class="tsc-cell${!inM ? ' other' : (ds === TSC_TODAY ? ' today' : '')}"><div class="tsc-day">${d.getDate()}</div>`
+         + evs.slice(0, evs.length > 3 ? 2 : 3).map(s => `<span class="${evCls}${s.id===sel?' sel':''}" title="${_tscEsc(s.title)}" onclick="TCAL['${px}'].show(${s.id})">${_tscEsc(s.title)}</span>`).join('')
+         + (evs.length > 3 ? `<span style="font-size:10px;color:#6366f1;font-weight:600;">+${evs.length-2}개 더</span>` : '')
+         + '</div>';
+    }
+    el.innerHTML = h + '</div>';
   }
-  el.innerHTML = h + '</div>';
+  function show(id){
+    const s = items.find(x => x.id === id); if(!s) return;
+    sel = id; render();
+    const ds = s.dates || [];
+    const when = ds.length === 1 ? ds[0] : (s.date_mode === 'range' ? `${ds[0].slice(5)} ~ ${ds[ds.length-1].slice(5)} · ${ds.length}일` : ds.map(x => x.slice(5)).join(', ') + ` · ${ds.length}일`);
+    const row = (k, v) => v ? `<div style="margin-top:8px;"><div style="font-size:11px;font-weight:700;color:#9ca3af;">${k}</div><div style="font-size:13px;color:#374151;white-space:pre-wrap;line-height:1.6;">${_tscEsc(v)}</div></div>` : '';
+    const box = $('detail');
+    box.innerHTML = `<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+        <div><div style="font-size:15px;font-weight:700;color:#111827;">${_tscEsc(s.title)}</div>
+        <div style="font-size:12px;font-weight:700;color:${cat==='post'?'#9333ea':'#4f46e5'};margin-top:2px;">📅 ${_tscEsc(when)}</div></div>
+        <a href="/production/schedule?f={{ task.id }}&month=${s.start_date.slice(0,7)}" style="font-size:12px;color:#6b7280;white-space:nowrap;">일정 메뉴에서 열기 →</a></div>`
+      + row('내용', s.content) + row('제작진', (s.crew||[]).join(', ')) + row('기타', s.etc);
+    box.style.display = '';
+  }
+  function view(v){
+    document.querySelectorAll('#' + px + '-seg button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+    $('cal-wrap').style.display = v === 'cal' ? '' : 'none';
+    $('list').style.display = v === 'list' ? '' : 'none';
+  }
+  function move(n){ m += n; if(m < 0){ m = 11; y--; } if(m > 11){ m = 0; y++; } render(); }
+  function today(){ const t = new Date(); y = t.getFullYear(); m = t.getMonth(); render(); }
+  render();
+  return {show, view, move, today};
 }
-function tscShow(id){
-  const s = TSC.find(x => x.id === id); if(!s) return;
-  tscSel = id; tscRender();
-  const ds = s.dates || [];
-  const when = ds.length === 1 ? ds[0] : (s.date_mode === 'range' ? `${ds[0].slice(5)} ~ ${ds[ds.length-1].slice(5)} · ${ds.length}일` : ds.map(x => x.slice(5)).join(', ') + ` · ${ds.length}일`);
-  const row = (k, v) => v ? `<div style="margin-top:8px;"><div style="font-size:11px;font-weight:700;color:#9ca3af;">${k}</div><div style="font-size:13px;color:#374151;white-space:pre-wrap;line-height:1.6;">${_tscEsc(v)}</div></div>` : '';
-  const box = document.getElementById('tsc-detail');
-  box.innerHTML = `<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
-      <div><div style="font-size:15px;font-weight:700;color:#111827;">${_tscEsc(s.title)}</div>
-      <div style="font-size:12px;font-weight:700;color:#4f46e5;margin-top:2px;">📅 ${_tscEsc(when)}</div></div>
-      <a href="/production/schedule?f={{ task.id }}&month=${s.start_date.slice(0,7)}" style="font-size:12px;color:#6b7280;white-space:nowrap;">일정 메뉴에서 열기 →</a></div>`
-    + row('내용', s.content) + row('제작진', (s.crew||[]).join(', ')) + row('기타', s.etc);
-  box.style.display = '';
-}
-tscRender();
+const TCAL = {tsc: TaskCal('tsc', 'production'), tsp: TaskCal('tsp', 'post')};
 
 function openAssignModal() {
   document.getElementById('assign-modal').style.display = 'flex';

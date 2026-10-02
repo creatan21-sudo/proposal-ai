@@ -833,6 +833,8 @@ def migrate_production_tasks() -> None:
         _sc = [r[1] for r in conn.execute("PRAGMA table_info(production_schedules)").fetchall()]
         if "task_id" not in _sc:   # 연결된 제작부문 과업 (선택)
             conn.execute("ALTER TABLE production_schedules ADD COLUMN task_id INTEGER")
+        if "category" not in _sc:  # 'production'(제작) | 'post'(후반)
+            conn.execute("ALTER TABLE production_schedules ADD COLUMN category TEXT DEFAULT 'production'")
         conn.commit()
 
         # 테이블이 존재하는지 확인
@@ -3802,6 +3804,7 @@ def set_coop_request_status(req_id: int, status: str, by: str) -> None:
 
 def _schedule_row(r) -> dict:
     d = dict(r)
+    d["category"] = d.get("category") or "production"
     for k, out in (("dates_json", "dates"), ("crew_json", "crew")):
         try:
             d[out] = json.loads(d.get(k) or "[]")
@@ -3846,13 +3849,13 @@ def save_production_schedule(data: dict, username: str, sid: int = None) -> int:
     dates = sorted(set(data["dates"]))
     vals = (data["title"], data["date_mode"], json.dumps(dates), dates[0], dates[-1],
             data.get("content", ""), json.dumps(data.get("crew", []), ensure_ascii=False),
-            data.get("etc", ""), data.get("task_id"))
+            data.get("etc", ""), data.get("task_id"), data.get("category", "production"))
     with get_connection() as conn:
         if sid:
             conn.execute(
                 """UPDATE production_schedules
                    SET title=?, date_mode=?, dates_json=?, start_date=?, end_date=?,
-                       content=?, crew_json=?, etc=?, task_id=?, updated_by=?,
+                       content=?, crew_json=?, etc=?, task_id=?, category=?, updated_by=?,
                        updated_at=datetime('now','localtime')
                    WHERE id=?""",
                 vals + (username, sid),
@@ -3861,8 +3864,8 @@ def save_production_schedule(data: dict, username: str, sid: int = None) -> int:
             cur = conn.execute(
                 """INSERT INTO production_schedules
                    (title, date_mode, dates_json, start_date, end_date, content, crew_json, etc,
-                    task_id, created_by, updated_by)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
+                    task_id, category, created_by, updated_by)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
                 vals + (username, username),
             )
             sid = cur.lastrowid

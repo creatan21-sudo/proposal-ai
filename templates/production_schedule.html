@@ -29,6 +29,10 @@
 .cal-event{font-size:10px;padding:1px 5px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;line-height:1.5;background:#dbeafe;color:#1e40af;cursor:pointer;}
 .cal-event:hover{filter:brightness(.95);}
 .cal-event.sel{background:#4f46e5;color:#fff;font-weight:700;}
+.cal-event.post{background:#f3e8ff;color:#7e22ce;}
+.cal-event.post.sel{background:#9333ea;color:#fff;}
+.legend{display:flex;gap:14px;font-size:12px;color:#6b7280;margin-bottom:10px;}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
 .d-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;}
 .d-new{padding:6px 12px;border:none;background:#4f46e5;color:#fff;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
 .d-title{font-size:17px;font-weight:700;color:#111827;margin:0 0 6px;line-height:1.4;word-break:keep-all;}
@@ -105,6 +109,7 @@
 
   <div class="sch-body">
     <div>
+      <div class="legend"><span><i style="background:#3b82f6;"></i>제작</span><span><i style="background:#a855f7;"></i>후반</span></div>
       <div class="filter-note" id="filter-note" style="display:none;"></div>
       <div id="view-cal"></div>
       {% if can_write %}<div class="cal-hint" id="cal-hint">빈 칸을 누르면 작성란에 날짜가 들어갑니다 · 일정을 누르면 내용을 볼 수 있습니다</div>{% endif %}
@@ -125,6 +130,12 @@
         <option value="">과업 연결 안 함</option>
         {% for t in tasks %}<option value="{{ t.id }}"{% if preset_task == t.id %} selected{% endif %}>{{ t.project_name }}{% if t.status == '완료' %} (완료){% endif %}</option>{% endfor %}
       </select>
+
+      <label class="f-label">구분</label>
+      <div class="seg" id="f-cat" style="margin-bottom:0;">
+        <button type="button" data-cat="production" onclick="setCat('production')">🎥 제작</button>
+        <button type="button" data-cat="post" onclick="setCat('post')">🎬 후반</button>
+      </div>
 
       <label class="f-label" for="f-title">제목</label>
       <input class="f-input" id="f-title" maxlength="200" placeholder="예: 하남시 홍보영상 1차 촬영">
@@ -257,7 +268,7 @@ function renderCal(){
     html += `<div class="${cls}" onclick="onCellClick('${ds}')"><div class="cal-day">${dObj.getDate()}</div>`;
     const showN = evs.length > 3 ? 2 : 3;          // 넘치면 2개 + '+N개 더' (칸 높이 안에 맞춤)
     evs.slice(0,showN).forEach(s=>{
-      html += `<span class="cal-event${s.id===selectedId?' sel':''}" title="${_hesc(s.title + (s.task_name ? ' · ' + s.task_name : ''))}" onclick="event.stopPropagation();openDetail(${s.id})">${_hesc(s.title)}</span>`;
+      html += `<span class="cal-event${s.category==='post'?' post':''}${s.id===selectedId?' sel':''}" title="${_hesc(s.title + (s.task_name ? ' · ' + s.task_name : ''))}" onclick="event.stopPropagation();openDetail(${s.id})">${_hesc(s.title)}</span>`;
     });
     if(evs.length>showN) html += `<div class="cal-more" onclick="event.stopPropagation();openDay('${ds}')">+${evs.length-showN}개 더</div>`;
     html += '</div>';
@@ -287,7 +298,7 @@ function renderList(){
     return `<div class="list-item${past?' past':''}" onclick="openDetail(${s.id})">
       <div class="list-date">${_hesc(dateLabel(s))}</div>
       <div style="flex:1;min-width:0;">
-        <div class="list-nm">${_hesc(s.title)}${s.task_name?` <span style="font-size:11px;font-weight:600;color:#6b7280;background:#f3f4f6;border-radius:5px;padding:1px 6px;margin-left:4px;">📁 ${_hesc(s.task_name)}</span>`:''}</div>
+        <div class="list-nm">${s.category==='post'?'<span style="font-size:11px;font-weight:700;color:#7e22ce;margin-right:4px;">[후반]</span>':''}${_hesc(s.title)}${s.task_name?` <span style="font-size:11px;font-weight:600;color:#6b7280;background:#f3f4f6;border-radius:5px;padding:1px 6px;margin-left:4px;">📁 ${_hesc(s.task_name)}</span>`:''}</div>
         ${(s.crew||[]).length?`<div class="list-sub">👥 ${_hesc(s.crew.join(', '))}</div>`:''}
         ${s.content?`<div class="list-sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_hesc(s.content.split('\n')[0])}</div>`:''}
       </div></div>`;
@@ -325,9 +336,10 @@ function openDetail(id){
   const crew = (s.crew||[]).map(c=>`<span class="chip on" style="cursor:default;">${_hesc(c)}</span>`).join(' ');
   _showDetailPanel(
     `<div class="d-head"><span style="font-size:12px;font-weight:700;color:#6b7280;">일정 상세</span>${_newBtn()}</div>
+     <div style="margin-bottom:4px;">${s.category==='post'?'<span style="font-size:11px;font-weight:700;color:#7e22ce;background:#f3e8ff;border-radius:5px;padding:1px 7px;">🎬 후반</span>':'<span style="font-size:11px;font-weight:700;color:#1e40af;background:#dbeafe;border-radius:5px;padding:1px 7px;">🎥 제작</span>'}</div>
      <div class="d-title">${_hesc(s.title)}</div>
      <div style="font-size:13px;color:#4f46e5;font-weight:700;">📅 ${_hesc(dateLabel(s))}</div>`
-    + (s.task_id ? `<a href="/production/tasks/${s.task_id}?tab=schedule" style="display:inline-block;margin-top:8px;font-size:12px;font-weight:600;color:#374151;background:#f3f4f6;border-radius:6px;padding:3px 9px;text-decoration:none;">📁 ${_hesc(s.task_name||'과업')} →</a>` : '')
+    + (s.task_id ? `<a href="/production/tasks/${s.task_id}?tab=${s.category==='post'?'post':'schedule'}" style="display:inline-block;margin-top:8px;font-size:12px;font-weight:600;color:#374151;background:#f3f4f6;border-radius:6px;padding:3px 9px;text-decoration:none;">📁 ${_hesc(s.task_name||'과업')} →</a>` : '')
     + sec('내용', _hesc(s.content))
     + (crew ? `<div class="pop-sec"><div class="k">제작진</div><div class="chips">${crew}</div></div>` : '')
     + sec('기타', _hesc(s.etc))
@@ -340,7 +352,8 @@ function openDetail(id){
 }
 
 // ── 작성란 ──
-let mode = 'single', multiDates = [], editingId = null;
+let mode = 'single', multiDates = [], editingId = null, cat = {{ preset_cat | tojson }};
+function setCat(c){ cat = c; document.querySelectorAll('#f-cat button').forEach(b => b.classList.toggle('on', b.dataset.cat === c)); }
 // 제작진: 왼쪽 팀(전체 포함) → 오른쪽 팀원, 명단에 없는 사람은 직접 입력
 const crewPicker = CAN_WRITE ? PeoplePicker(document.getElementById('f-crew-picker'), {people: {{ people | tojson }}, allowFree: true}) : null;
 
@@ -377,7 +390,7 @@ function resetForm(){
   const keepTask = document.getElementById('f-task').dataset.preset || '';
   document.getElementById('f-task').value = keepTask;
   ['f-title','f-date','f-start','f-end','f-content','f-etc','f-multi-pick'].forEach(id=>document.getElementById(id).value='');
-  crewPicker.clear();
+  crewPicker.clear(); setCat({{ preset_cat | tojson }});
   renderMulti(); setMode('single');
   document.getElementById('form-heading').textContent = '✍️ 일정 작성';
   document.getElementById('f-submit').textContent = '등록';
@@ -387,6 +400,7 @@ function startEdit(id){
   const s = SCHEDULES.find(x=>x.id===id); if(!s) return;
   showForm(false); resetForm(); editingId = id; selectedId = id;
   document.getElementById('f-task').value = s.task_id || '';
+  setCat(s.category || 'production');
   document.getElementById('f-title').value = s.title;
   setMode(s.date_mode || 'single');
   if(mode==='single') document.getElementById('f-date').value = s.dates[0]||'';
@@ -405,7 +419,7 @@ function startEdit(id){
 async function submitSchedule(){
   const title = document.getElementById('f-title').value.trim();
   if(!title){ alert('제목을 입력하세요'); return; }
-  const body = {title, task_id: document.getElementById('f-task').value || null, date_mode: mode, content: document.getElementById('f-content').value,
+  const body = {title, category: cat, task_id: document.getElementById('f-task').value || null, date_mode: mode, content: document.getElementById('f-content').value,
                 etc: document.getElementById('f-etc').value, crew: collectCrew()};
   if(mode==='range'){
     body.start = document.getElementById('f-start').value; body.end = document.getElementById('f-end').value;
@@ -421,7 +435,7 @@ async function submitSchedule(){
     const d = await r.json();
     if(d.ok){
       const back = new URLSearchParams(location.search).get('back');
-      if(back==='task' && body.task_id){ location.href = '/production/tasks/' + body.task_id + '?tab=schedule'; return; }
+      if(back==='task' && body.task_id){ location.href = '/production/tasks/' + body.task_id + '?tab=' + (cat==='post' ? 'post' : 'schedule'); return; }
       location.href = location.pathname + '?month=' + d.first_date.slice(0,7) + (curView==='list'?'&view=list':'') + _filterParam(); return;
     }
     alert(d.error || '저장 실패');
@@ -438,7 +452,7 @@ async function deleteSchedule(id){
   }catch(e){ alert('삭제 실패: '+e.message); }
 }
 
-if(CAN_WRITE){ const ft=document.getElementById('f-task'); ft.dataset.preset = ft.value; }
+if(CAN_WRITE){ const ft=document.getElementById('f-task'); ft.dataset.preset = ft.value; setCat(cat); }
 (function initFilter(){
   const f = new URLSearchParams(location.search).get('f');
   if(f && document.querySelector(`#task-filter option[value="${CSS.escape(f)}"]`)){

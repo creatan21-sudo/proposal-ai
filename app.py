@@ -6270,6 +6270,7 @@ def production_schedule():
                            tasks=list_production_task_options(),
                            people=list_people_for_picker(),
                            preset_task=request.args.get("task", type=int),
+                           preset_cat="post" if request.args.get("cat") == "post" else "production",
                            can_write=session.get("role") != "user")
 
 
@@ -6322,6 +6323,7 @@ def _parse_schedule_payload(data: dict):
             return None, "선택한 과업을 찾을 수 없습니다"
     return {
         "task_id": task_id,
+        "category": "post" if data.get("category") == "post" else "production",
         "title": title[:200], "date_mode": mode, "dates": dates,
         "content": str(data.get("content", "")).replace("\r\n", "\n").strip(),
         "crew": crew[:50],
