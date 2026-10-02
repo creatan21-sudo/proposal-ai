@@ -87,13 +87,12 @@
        ("cooperation", "🤝 공조"),
      ] %}
   {% set content_tabs = [
-       ("production_content",   "제작내용"),
        ("basis",                "과업기초"),
-       ("pre_negotiation",      "사전협상"),
-       ("proposal_overview",    "제안개요"),
+       ("production_content",   "제안내용"),
+       ("pre_negotiation",      "확정내용"),
      ] %}
   {# 섹션 블록: 제목 + (AI 생성/수정 정보) + [편집] → 제자리 textarea 편집 #}
-  {% macro section_block(key, label, min_h=200) -%}
+  {% macro section_block(key, label, min_h=200, upload=none) -%}
     {% set sec = sections[key] if sections[key] else none %}
     <div class="sec" data-key="{{ key }}">
       <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px;">
@@ -107,13 +106,36 @@
           {% endif %}
         </div>
         {% if can_edit %}
-        <button type="button" class="sec-edit-btn" onclick="editSection(this)"
-                style="padding:5px 12px; border:1px solid #d1d5db; background:#fff; border-radius:6px;
-                       font-size:12px; font-weight:600; color:#374151; cursor:pointer; flex-shrink:0;">편집</button>
+        <div style="display:flex; gap:6px; flex-shrink:0;">
+          {% if upload == 'proposal' %}
+          <button type="button" class="proposal-btn" onclick="openTaskProposalUpload()"
+                  style="padding:5px 12px; border:none; background:#4f46e5; border-radius:6px; font-size:12px; font-weight:600; color:#fff; cursor:pointer;">
+            📄 {{ '제안 자료로 다시 채우기' if task.proposal_filename else '제안 자료로 채우기' }}</button>
+          {% elif upload == 'minutes' %}
+          <button type="button" class="minutes-btn" data-sec="{{ key }}" data-label="{{ label }}" onclick="openMinutesUpload(this)"
+                  style="padding:5px 12px; border:none; background:#0f766e; border-radius:6px; font-size:12px; font-weight:600; color:#fff; cursor:pointer;">
+            📝 회의록 올리기</button>
+          {% endif %}
+          <button type="button" class="sec-edit-btn" onclick="editSection(this)"
+                  style="padding:5px 12px; border:1px solid #d1d5db; background:#fff; border-radius:6px;
+                         font-size:12px; font-weight:600; color:#374151; cursor:pointer;">편집</button>
+        </div>
         {% endif %}
       </div>
+      {% if upload == 'proposal' and task.proposal_filename %}
+      <div style="font-size:12px; color:#6b7280; margin:-6px 0 12px;" title="원본은 보관하지 않습니다 (AI 정리에만 사용 후 삭제)">
+        📄 반영된 제안 자료: {{ (task.proposal_uploaded_at or '')[:10] }} · {{ task.proposal_filename }}</div>
+      {% elif upload == 'minutes' and section_jobs.get(key) and section_jobs[key].filenames %}
+      <div style="font-size:12px; color:#6b7280; margin:-6px 0 12px;" title="원본은 보관하지 않습니다 (AI 정리에만 사용 후 삭제)">
+        📝 마지막 반영 회의록: {{ (section_jobs[key].done_at or '')[:10] }} · {{ section_jobs[key].filenames }}</div>
+      {% endif %}
+      {% if upload == 'minutes' %}
+      <div class="minutes-status" id="ms-{{ key }}" style="display:none; margin-bottom:12px; padding:10px 14px; border-radius:8px; font-size:13px; font-weight:500;"></div>
+      {% endif %}
       <div class="sec-view" style="color:#4b5563; line-height:1.7; min-height:{{ min_h }}px;">
         {% if sec and sec.content %}<div style="white-space:pre-wrap;">{{ sec.content }}</div>
+        {% elif upload == 'proposal' %}<span style="color:#9ca3af;">아직 작성되지 않았습니다. <b>제안 자료로 채우기</b>로 최종 제안서와 관련 자료를 올리면 제안내용과 제안개요가 함께 채워집니다.</span>
+        {% elif upload == 'minutes' %}<span style="color:#9ca3af;">아직 작성되지 않았습니다. <b>회의록 올리기</b>로 회의록 파일을 올리면 AI가 정리해서 채웁니다.</span>
         {% else %}<span style="color:#9ca3af;">아직 작성되지 않았습니다.</span>{% endif %}
       </div>
       {% if can_edit %}
@@ -169,17 +191,6 @@
     {% endfor %}
   </div>
 
-  {% if task.nara_confirmed_id and not task.proposal_filename %}
-  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; padding:12px 16px;
-              background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; font-size:13px; color:#9a3412;">
-    <span>📄 기획부문 수주로 등록된 과업입니다. <b>최종 제안서가 아직 등록되지 않았습니다.</b> 제안서와 관련 자료를 올리면 제작내용·제안개요가 자동으로 정리됩니다.</span>
-    {% if can_edit %}
-    <button type="button" onclick="openTaskProposalUpload()"
-            style="flex-shrink:0; padding:7px 14px; background:#ea580c; color:#fff; border:none; border-radius:7px; font-size:12px; font-weight:700; cursor:pointer;">제안 자료 올리기</button>
-    {% endif %}
-  </div>
-  {% endif %}
-
   <!-- 과업내용 (하위 탭) -->
   <div id="content-tab" class="tab-content" style="display: block;">
     <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
@@ -195,19 +206,6 @@
       </button>
       {% endfor %}
     </div>
-    {% if can_edit %}
-    <div style="display:flex; align-items:center; gap:10px;">
-      {% if task.proposal_filename %}
-      <span style="font-size:12px; color:#6b7280; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
-            title="제안서 원본은 보관하지 않습니다 (AI 정리에만 사용 후 삭제)">✔ 제안서 반영 {{ (task.proposal_uploaded_at or '')[:10] }} · {{ task.proposal_filename }}</span>
-      {% endif %}
-      <button type="button" id="proposal-btn" onclick="openTaskProposalUpload()"
-              style="padding:8px 14px; background:#4f46e5; color:#fff; border:none; border-radius:8px;
-                     font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap;">
-        📄 {{ '제안 자료 다시 올리기' if task.proposal_filename else '제안 자료 올리기' }}
-      </button>
-    </div>
-    {% endif %}
     </div>
     <div id="proposal-status" style="display:none; margin-bottom:16px; padding:12px 16px; border-radius:8px;
          background:#eef2ff; color:#3730a3; font-size:13px; font-weight:500;"></div>
@@ -215,19 +213,22 @@
     <div id="{{ key }}-tab" class="sub-content" style="display: {% if loop.first %}block{% else %}none{% endif %};
          background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
       {% if key == "pre_negotiation" %}
-        {# 사전협상 = 착수보고 + 기술협상을 한 화면에 #}
+        {# 확정내용 = 착수보고 + 기술협상을 한 화면에 #}
         {% for sub_key, sub_label in [("kickoff_report", "착수보고"), ("technical_discussion", "기술협상")] %}
         <div style="{% if not loop.first %}margin-top: 24px; padding-top: 24px; border-top: 1px solid #f3f4f6;{% endif %}">
-          {{ section_block(sub_key, sub_label, 80) }}
+          {{ section_block(sub_key, sub_label, 80, 'minutes') }}
         </div>
         {% endfor %}
       {% elif key == "basis" %}
         {% include "_task_basis.html" %}
         <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid #f3f4f6;">
+          {{ section_block("proposal_overview", "제안개요", 120, 'proposal') }}
+        </div>
+        <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid #f3f4f6;">
           {{ section_block("rfp", "메모", 80) }}
         </div>
       {% else %}
-      {{ section_block(key, label) }}
+      {{ section_block(key, label, 200, 'proposal' if key == 'production_content' else none) }}
       {% endif %}
     </div>
     {% endfor %}
@@ -511,7 +512,7 @@ function _propStatus(msg, kind){
   st.style.background = c[0]; st.style.color = c[1];
 }
 function _propBusy(b){
-  const btn = document.getElementById('proposal-btn'); if(btn){ btn.disabled = b; btn.style.opacity = b ? .6 : 1; }
+  document.querySelectorAll('.proposal-btn').forEach(btn => { btn.disabled = b; btn.style.opacity = b ? .6 : 1; });
 }
 function _watchProposal(startedSec){
   let sec = startedSec || 0, stage = '제안서를 정리하는 중';
@@ -524,7 +525,7 @@ function _watchProposal(startedSec){
       if(d.status === 'running'){ stage = d.message || stage; setTimeout(poll, 3000); return; }
       clearInterval(_propTimer); _propBusy(false);
       if(d.status === 'done'){
-        _propStatus('✅ 정리 완료 — 제작내용·제안개요를 확인하세요', 'ok');
+        _propStatus('✅ 정리 완료 — 제안내용·제안개요를 확인하세요', 'ok');
         setTimeout(() => { location.href = location.pathname + '?tab=content&sub=production_content'; }, 700);
       } else _propStatus('⚠️ ' + (d.message || '정리 실패'), 'err');
     }catch(e){ setTimeout(poll, 5000); }
@@ -533,11 +534,11 @@ function _watchProposal(startedSec){
 }
 // 제안 자료 올리기: 공용 입력 창(여러 파일 끌어다 놓기) 사용
 function openTaskProposalUpload(){
-  if(document.getElementById('proposal-btn') && document.getElementById('proposal-btn').disabled) return;
+  if(document.querySelector('.proposal-btn[disabled]')) return;
   openProposalModal({
     taskId: {{ task.id }},
     heading: '📄 제안 자료 올리기',
-    sub: '최종 제안서와 과업지시서·발표자료·콘티 이미지 등을 함께 올리면 제작내용·제안개요가 자동으로 정리됩니다.',
+    sub: '최종 제안서와 과업지시서·발표자료·콘티 이미지 등을 함께 올리면 제안내용·제안개요가 자동으로 정리됩니다.',
     laterLabel: '닫기',
     confirmOverwrite: {{ 'true' if (sections.production_content and sections.production_content.content) or (sections.proposal_overview and sections.proposal_overview.content) else 'false' }},
     onDone: () => { location.href = location.pathname + '?tab=content&sub=production_content'; },
@@ -545,6 +546,56 @@ function openTaskProposalUpload(){
 }
 {% if task.proposal_status == 'running' %}_watchProposal(0);{% elif task.proposal_status == 'error' and task.proposal_message %}
 _propStatus('⚠️ 마지막 제안서 정리 실패: ' + {{ task.proposal_message | tojson }} + ' — 다시 올려 주세요', 'err');{% endif %}
+
+// ── 사전협상 회의록 → AI 정리 → 착수보고/기술협상 등재 ──
+function _msStatus(key, msg, kind){
+  const st = document.getElementById('ms-' + key); if(!st) return;
+  st.style.display = msg ? 'block' : 'none'; st.textContent = msg || '';
+  const c = {info:['#ecfdf5','#065f46'], ok:['#dcfce7','#166534'], err:['#fee2e2','#991b1b']}[kind||'info'];
+  st.style.background = c[0]; st.style.color = c[1];
+}
+function _msBusy(key, b){
+  const btn = document.querySelector('.minutes-btn[data-sec="' + key + '"]');
+  if(btn){ btn.disabled = b; btn.style.opacity = b ? .6 : 1; }
+}
+function _watchMinutes(key){
+  let sec = 0, stage = '회의록을 정리하는 중';
+  _msBusy(key, true);
+  const t = setInterval(() => { sec++; _msStatus(key, `⏳ ${stage}… ${sec}초 (화면을 닫아도 계속 진행됩니다)`); }, 1000);
+  const poll = async () => {
+    try{
+      const d = await (await fetch('/production/tasks/{{ task.id }}/minutes/' + key + '/status')).json();
+      if(d.status === 'running'){ stage = d.message || stage; setTimeout(poll, 3000); return; }
+      clearInterval(t); _msBusy(key, false);
+      if(d.status === 'done'){
+        _msStatus(key, '✅ 회의록 정리 완료', 'ok');
+        setTimeout(() => { location.href = location.pathname + '?tab=content&sub=pre_negotiation'; }, 700);
+      } else _msStatus(key, '⚠️ ' + (d.message || '정리 실패'), 'err');
+    }catch(e){ setTimeout(poll, 5000); }
+  };
+  setTimeout(poll, 1500);
+}
+function openMinutesUpload(btn){
+  if(btn.disabled) return;
+  const key = btn.dataset.sec, label = btn.dataset.label;
+  const has = !!(document.querySelector('.sec[data-key="' + key + '"] .sec-input') || {}).defaultValue;
+  openProposalModal({
+    taskId: {{ task.id }},
+    heading: '📝 ' + label + ' 회의록 올리기',
+    sub: label + ' 회의록(문서·PDF·사진 등 여러 개 가능)을 올리면 AI가 정리해서 ' + label + ' 항목에 채웁니다.'
+         + (has ? ' 이미 쓴 내용은 그대로 두고 아래에 이어 붙입니다.' : ''),
+    dropText: '회의록 파일을 끌어다 놓거나 클릭해서 고르세요 (여러 개 가능)',
+    dropSub: 'PDF·HWP·HWPX·DOCX·PPTX·TXT·MD·CSV·JPG·PNG 등 · 최대 10개 · 원본은 정리 후 보관하지 않습니다',
+    uploadUrl: '/production/tasks/{{ task.id }}/minutes/' + key,
+    statusUrl: '/production/tasks/{{ task.id }}/minutes/' + key + '/status',
+    doneText: label + ' 항목에 등록되었습니다',
+    laterLabel: '닫기',
+    onDone: () => { location.href = location.pathname + '?tab=content&sub=pre_negotiation'; },
+  });
+}
+{% for k, j in section_jobs.items() %}{% if j.status == 'running' %}_watchMinutes({{ k | tojson }});
+{% elif j.status == 'error' and j.message %}_msStatus({{ k | tojson }}, '⚠️ 마지막 회의록 정리 실패: ' + {{ j.message | tojson }} + ' — 다시 올려 주세요', 'err');
+{% endif %}{% endfor %}
 
 // ── 공조요청 ──
 const coopFiles = document.getElementById('coop-files') ? CoopFiles(document.getElementById('coop-files')) : null;

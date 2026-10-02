@@ -6712,7 +6712,7 @@ def production_task_detail(task_id):
 
     can_edit = is_ops or (task.get("assigned_to") and task.get("assigned_to") == session.get("username"))
 
-    from database.db import list_coop_requests, list_production_schedules, list_people_for_picker
+    from database.db import list_coop_requests, list_production_schedules, list_people_for_picker, get_section_jobs
     me = session.get("username", "")
     task_schedules = list_production_schedules(task_id)
     coop_requests = list_coop_requests(task_id)
@@ -6724,6 +6724,7 @@ def production_task_detail(task_id):
                          task=task, sections=sections, users=users, is_ops=is_ops,
                          can_edit=can_edit, coop_requests=coop_requests,
                          task_schedules=task_schedules, basis=basis,
+                         section_jobs={k: _section_job_state(v) for k, v in get_section_jobs(task_id).items()},
                          people=list_people_for_picker(),
                          today=datetime.now().strftime('%Y-%m-%d'),
                          can_request=session.get("role") != "user", me=me)
@@ -6922,7 +6923,7 @@ def set_production_coop_status(req_id):
 
 # 화면에서 편집 가능한 섹션 (section_type → 표시명)
 PRODUCTION_EDITABLE_SECTIONS = {
-    "production_content":   "제작내용",
+    "production_content":   "제안내용",
     "rfp":                  "과업기초 메모",   # 과업기초 탭의 직접 입력란 (예전 'RFP' 탭 내용 그대로 이어짐)
     "kickoff_report":       "착수보고",
     "technical_discussion": "기술협상",
@@ -7065,6 +7066,107 @@ def production_proposal_status(task_id):
     if not task:
         return jsonify({"ok": False, "error": "과업을 찾을 수 없습니다"}), 404
     return jsonify({"ok": True, **_proposal_state(task)})
+
+
+# ── 사전협상 회의록(착수보고 / 기술협상) → AI 정리 → 해당 항목에 등재 ──
+MINUTES_SECTION_KEYS = ("kickoff_report", "technical_discussion")
+
+
+def _section_job_state(job: dict) -> dict:
+    job = job or {}
+    status, msg = job.get("status") or "", job.get("message") or ""
+    if status == "running" and job.get("started_at"):
+        try:
+            started = datetime.strptime(job["started_at"], "%Y-%m-%d %H:%M:%S")
+            if (datetime.now() - started).total_seconds() > _PROPOSAL_STALE_MIN * 60:
+                status, msg = "error", "정리 작업이 중단되었습니다(서버 재시작 등). 다시 올려 주세요."
+        except Exception:
+            pass
+    return {"status": status, "message": msg, "filenames": job.get("filenames") or "",
+            "done_at": job.get("done_at") or ""}
+
+
+def _run_minutes_summary(task_id: int, section_type: str, files: list, project: str, client: str, by: str):
+    """백그라운드: 회의록 AI 정리 → 항목에 등재. 기존 내용이 있으면 지우지 않고 아래에 이어 붙임.
+    원본 임시파일은 성공/실패와 무관하게 삭제."""
+    from database.db import add_production_task_section, get_production_task_sections, set_section_job
+    try:
+        from agents.minutes_summarizer import summarize_minutes_files
+        result = summarize_minutes_files(
+            [(str(p), n) for p, n in files], section_type, project, client,
+            progress=lambda m: set_section_job(task_id, section_type, "running", m))
+        names = [n for _, n in files]
+        label = names[0] if len(names) == 1 else f"{names[0]} 외 {len(names) - 1}개"
+        cur = ((get_production_task_sections(task_id).get(section_type) or {}).get("content") or "").strip()
+        new = result["content"].strip()
+        if cur:
+            new = f"{cur}\n\n━━━━━━━━━━ 회의록 정리 · {datetime.now().strftime('%Y-%m-%d')} · {label} ━━━━━━━━━━\n\n{new}"
+        add_production_task_section(task_id, section_type, new, auto_generated=1, generated_by=by)
+        msg = "정리 완료"
+        if result.get("skipped"):
+            msg += " · 제외: " + ", ".join(result["skipped"])[:300]
+        set_section_job(task_id, section_type, "done", msg, filenames=label)
+        print(f"[minutes] task {task_id} {section_type} 정리 완료 mode={result.get('mode')} files={len(files)}")
+    except Exception as e:
+        print(f"[오류] 회의록 정리 실패 (task {task_id} {section_type}): {type(e).__name__}: {e}")
+        set_section_job(task_id, section_type, "error", str(e)[:500] or type(e).__name__)
+    finally:
+        for p, _ in files:
+            try:
+                Path(p).unlink(missing_ok=True)
+            except Exception as e:
+                print(f"[경고] 회의록 임시파일 삭제 실패: {e}")
+
+
+@app.route("/production/tasks/<int:task_id>/minutes/<section_type>", methods=["POST"])
+@login_required
+def upload_production_minutes(task_id, section_type):
+    """착수보고·기술협상 회의록 업로드(여러 파일) → 백그라운드 AI 정리 → 항목 등재"""
+    from database.db import get_production_task, get_section_jobs, set_section_job
+    from agents.proposal_summarizer import ALLOWED_EXT
+    if section_type not in MINUTES_SECTION_KEYS:
+        return jsonify({"ok": False, "error": "회의록을 올릴 수 없는 항목입니다"}), 400
+    task = get_production_task(task_id)
+    if not task:
+        return jsonify({"ok": False, "error": "과업을 찾을 수 없습니다"}), 404
+    if not _can_edit_production_task(task):
+        return jsonify({"ok": False, "error": "업로드 권한이 없습니다"}), 403
+    if _section_job_state(get_section_jobs(task_id).get(section_type))["status"] == "running":
+        return jsonify({"ok": False, "error": "이미 회의록을 정리하고 있습니다. 끝난 뒤 다시 시도하세요."}), 409
+
+    uploads = [f for f in request.files.getlist("files") if f and f.filename]
+    if not uploads:
+        return jsonify({"ok": False, "error": "파일을 선택하세요"})
+    if len(uploads) > PROPOSAL_MAX_FILES:
+        return jsonify({"ok": False, "error": f"한 번에 {PROPOSAL_MAX_FILES}개까지 올릴 수 있습니다"})
+    bad = [f.filename for f in uploads if Path(f.filename).suffix.lower() not in ALLOWED_EXT]
+    if bad:
+        return jsonify({"ok": False, "error": f"지원하지 않는 형식: {', '.join(bad)}"})
+
+    tmp_dir = UPLOAD_DIR / "production_minutes_tmp"
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    saved = []
+    for f in uploads:
+        tmp = tmp_dir / _safe_upload_name(f.filename, Path(f.filename).suffix.lower())
+        f.save(str(tmp))
+        saved.append((tmp, f.filename))
+    set_section_job(task_id, section_type, "running", f"회의록 {len(saved)}개를 받았습니다", started=True)
+    threading.Thread(
+        target=_run_minutes_summary,
+        args=(task_id, section_type, saved, task.get("project_name", ""), task.get("client_name", ""),
+              session.get("username", "system")),
+        daemon=True,
+    ).start()
+    return jsonify({"ok": True, "status": "running", "files": len(saved)})
+
+
+@app.route("/production/tasks/<int:task_id>/minutes/<section_type>/status")
+@login_required
+def production_minutes_status(task_id, section_type):
+    from database.db import get_section_jobs
+    if section_type not in MINUTES_SECTION_KEYS:
+        return jsonify({"ok": False, "error": "알 수 없는 항목"}), 400
+    return jsonify({"ok": True, **_section_job_state(get_section_jobs(task_id).get(section_type))})
 
 
 # ── 제작부문 과업 종료: 담당자 요청 → 관리자·운영자 승인(납품 완료/중단) 또는 반려 ──

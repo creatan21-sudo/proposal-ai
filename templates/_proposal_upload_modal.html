@@ -3,6 +3,7 @@
          openProposalModal({taskId, title, heading, sub, laterLabel, confirmOverwrite, onLater, onClose, onDone})
    - 여러 파일을 끌어다 놓거나 골라서 목록 확인 → [정리 시작]
    - 형식: PDF·HWP·HWPX·DOCX·PPTX·TXT·MD·CSV·JPG·PNG·GIF·WEBP·BMP (최대 10개, 합계 95MB)
+   - 다른 용도(회의록 등): uploadUrl·statusUrl·dropText·dropSub·doneText 로 바꿔서 사용
    - 업로드: /production/tasks/<id>/proposal (원본은 AI 정리 후 서버에서 즉시 삭제, 정리는 창을 닫아도 계속)
    - [나중에 하기]: 결과 메뉴 또는 제작부문 과업 화면에서 언제든 다시 올릴 수 있음 #}
 <style>
@@ -40,8 +41,8 @@
            accept=".pdf,.hwp,.hwpx,.docx,.pptx,.txt,.md,.csv,.jpg,.jpeg,.png,.gif,.webp,.bmp" style="display:none">
     <div class="pum-drop" id="pum-drop">
       <div class="big">📂</div>
-      <div class="t">제안 자료를 끌어다 놓거나 클릭해서 고르세요 (여러 개 가능)</div>
-      <div class="s">최종 제안서 PDF와 과업지시서·발표자료·콘티 이미지 등을 함께 올릴 수 있습니다<br>
+      <div class="t" id="pum-drop-t">제안 자료를 끌어다 놓거나 클릭해서 고르세요 (여러 개 가능)</div>
+      <div class="s" id="pum-drop-s">최종 제안서 PDF와 과업지시서·발표자료·콘티 이미지 등을 함께 올릴 수 있습니다<br>
         PDF·HWP·HWPX·DOCX·PPTX·TXT·MD·CSV·JPG·PNG·GIF·WEBP·BMP · 최대 10개 · 원본은 정리 후 보관하지 않습니다</div>
     </div>
     <div class="pum-list" id="pum-list"></div>
@@ -59,6 +60,7 @@
   const IMG = ['.jpg','.jpeg','.png','.gif','.webp','.bmp'];
   const MAX_FILES = 10, MAX_TOTAL = 95 * 1024 * 1024;
   let opts = {}, busy = false, timer = null, files = [];
+  let dropT0 = null, dropS0 = null;
   const $ = id => document.getElementById(id);
   const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   const ext = n => ((n.match(/\.[^.]+$/) || [''])[0]).toLowerCase();
@@ -94,7 +96,10 @@
   window.openProposalModal = function(o){
     opts = o || {}; files = []; busy = false; clearInterval(timer);
     $('pum-heading').textContent = opts.heading || '🏆 수주 처리 완료';
-    $('pum-sub').textContent = opts.sub || '제작부문에 과업이 등록되었습니다. 최종 제안서와 관련 자료를 올리면 제작내용·제안개요가 자동으로 정리됩니다.';
+    $('pum-sub').textContent = opts.sub || '제작부문에 과업이 등록되었습니다. 최종 제안서와 관련 자료를 올리면 제안내용·제안개요가 자동으로 정리됩니다.';
+    if(dropT0 === null){ dropT0 = $('pum-drop-t').textContent; dropS0 = $('pum-drop-s').innerHTML; }
+    $('pum-drop-t').textContent = opts.dropText || dropT0;
+    if(opts.dropSub) $('pum-drop-s').textContent = opts.dropSub; else $('pum-drop-s').innerHTML = dropS0;
     $('pum-proj').textContent = opts.title || '';
     $('pum-proj').style.display = opts.title ? '' : 'none';
     $('pum-drop').style.display = '';
@@ -121,13 +126,13 @@
   }
   async function start(){
     if(!files.length || busy) return;
-    if(opts.confirmOverwrite && !confirm('제작내용과 제안개요를 새 자료 기준으로 다시 작성합니다.\n지금 내용(직접 고친 부분 포함)은 덮어씁니다. 진행할까요?')) return;
+    if(opts.confirmOverwrite && !confirm('제안내용과 제안개요를 새 자료 기준으로 다시 작성합니다.\n지금 내용(직접 고친 부분 포함)은 덮어씁니다. 진행할까요?')) return;
     busy = true; $('pum-later').disabled = true; $('pum-drop').style.pointerEvents = 'none'; $('pum-drop').style.opacity = .5; render();
     let sec = 0; status(`⏳ 자료 ${files.length}개를 올리는 중…`, 'info');
     const fd = new FormData(); files.forEach(f => fd.append('files', f));
     const fail = (m) => { clearInterval(timer); status('⚠️ ' + m + ' — 다시 시도하거나 [' + $('pum-later').textContent + ']를 누르세요', 'err'); };
     try{
-      const r = await fetch('/production/tasks/' + opts.taskId + '/proposal', {method:'POST', body: fd});
+      const r = await fetch(opts.uploadUrl || ('/production/tasks/' + opts.taskId + '/proposal'), {method:'POST', body: fd});
       let d; try{ d = await r.json(); }catch(e){ d = {ok:false, error: r.status === 413 ? '파일 용량이 너무 큽니다' : '업로드 실패'}; }
       if(!d.ok){ fail(d.error || '업로드 실패'); }
       else {
@@ -137,7 +142,7 @@
         const final = await new Promise(resolve => {
           const poll = async () => {
             try{
-              const s2 = await (await fetch('/production/tasks/' + opts.taskId + '/proposal/status')).json();
+              const s2 = await (await fetch(opts.statusUrl || ('/production/tasks/' + opts.taskId + '/proposal/status'))).json();
               if(s2.status === 'running'){ stage = s2.message || stage; setTimeout(poll, 3000); }
               else resolve(s2);
             }catch(e){ setTimeout(poll, 5000); }
@@ -146,7 +151,7 @@
         });
         clearInterval(timer);
         if(final.status === 'done'){
-          status('✅ ' + (final.message || '정리 완료') + ' — 제작내용·제안개요가 등록되었습니다', 'ok');
+          status('✅ ' + (final.message || '정리 완료') + ' — ' + (opts.doneText || '제안내용·제안개요가 등록되었습니다'), 'ok');
           busy = false; done(); return;
         }
         fail(final.message || '정리 실패');

@@ -810,6 +810,20 @@ def migrate_production_tasks() -> None:
                 created_at  TEXT DEFAULT (datetime('now','localtime'))
             )
         """)
+        # 회의록 등 항목별 AI 정리 작업 상태 (과업 × 항목 1행)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS production_section_jobs (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id       INTEGER NOT NULL,
+                section_type  TEXT NOT NULL,
+                status        TEXT DEFAULT '',
+                message       TEXT DEFAULT '',
+                started_at    TEXT DEFAULT '',
+                filenames     TEXT DEFAULT '',
+                done_at       TEXT DEFAULT '',
+                UNIQUE(task_id, section_type)
+            )
+        """)
         # 이전 방식(사용자별 팀명 직접 입력)으로 들어간 팀명을 팀 목록으로 옮김
         if _uc:
             conn.execute("""INSERT OR IGNORE INTO teams (name)
@@ -4115,6 +4129,30 @@ def sync_production_task_basis(task: dict) -> "dict | None":
                             WHERE id=?""", (_json.dumps(fresh, ensure_ascii=False), task["id"]))
             conn.commit()
     return fresh
+
+
+def set_section_job(task_id: int, section_type: str, status: str, message: str = "",
+                    started: bool = False, filenames: str = None) -> None:
+    """항목별 AI 정리 작업 상태 기록 (회의록 → 착수보고/기술협상)"""
+    with get_connection() as conn:
+        conn.execute("INSERT OR IGNORE INTO production_section_jobs (task_id, section_type) VALUES (?, ?)",
+                     (task_id, section_type))
+        sets, args = ["status=?", "message=?"], [status, message]
+        if started:
+            sets.append("started_at=datetime('now','localtime')")
+        if status == "done":
+            sets.append("done_at=datetime('now','localtime')")
+        if filenames is not None:
+            sets.append("filenames=?"); args.append(filenames)
+        conn.execute(f"UPDATE production_section_jobs SET {', '.join(sets)} WHERE task_id=? AND section_type=?",
+                     (*args, task_id, section_type))
+        conn.commit()
+
+
+def get_section_jobs(task_id: int) -> dict:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM production_section_jobs WHERE task_id=?", (task_id,)).fetchall()
+    return {r["section_type"]: dict(r) for r in rows}
 
 
 def get_production_tasks_by_confirmed(confirmed_ids: list) -> dict:
