@@ -88,7 +88,7 @@
      ] %}
   {% set content_tabs = [
        ("production_content",   "제작내용"),
-       ("rfp",                  "RFP"),
+       ("basis",                "과업기초"),
        ("pre_negotiation",      "사전협상"),
        ("proposal_overview",    "제안개요"),
      ] %}
@@ -221,6 +221,11 @@
           {{ section_block(sub_key, sub_label, 80) }}
         </div>
         {% endfor %}
+      {% elif key == "basis" %}
+        {% include "_task_basis.html" %}
+        <div style="margin-top: 24px; padding-top: 24px; border-top: 1px solid #f3f4f6;">
+          {{ section_block("rfp", "메모", 80) }}
+        </div>
       {% else %}
       {{ section_block(key, label) }}
       {% endif %}

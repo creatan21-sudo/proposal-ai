@@ -1,0 +1,92 @@
+{# 과업기초: 기획부문 수주 과업의 기본정보·입찰정보·리서치 (자동 세팅, 읽기 전용) #}
+<style>
+.tb-h{font-size:16px;font-weight:700;color:#1f2937;margin:0;}
+.tb-sub{font-size:12px;color:#9ca3af;}
+.tb-card{border:1px solid #e5e7eb;border-radius:10px;padding:16px 18px;margin-top:14px;}
+.tb-card-t{font-size:13px;font-weight:700;color:#4f46e5;margin-bottom:10px;}
+.tb-grid{display:grid;grid-template-columns:110px 1fr;gap:7px 14px;font-size:13px;}
+.tb-grid .k{color:#9ca3af;font-size:12px;padding-top:1px;}
+.tb-grid .v{color:#1f2937;word-break:break-all;}
+.tb-sec{border:1px solid #f3f4f6;border-radius:8px;margin-top:8px;overflow:hidden;}
+.tb-sec-h{display:flex;justify-content:space-between;padding:10px 14px;background:#f9fafb;font-size:13px;font-weight:700;color:#374151;cursor:pointer;user-select:none;}
+.tb-sec-b{display:none;padding:12px 16px;font-size:13px;color:#4b5563;line-height:1.7;}
+.tb-sec.open .tb-sec-b{display:block;}
+@media(max-width:640px){.tb-grid{grid-template-columns:90px 1fr;}}
+</style>
+<div style="display:flex; justify-content:space-between; align-items:baseline; gap:12px; flex-wrap:wrap;">
+  <h2 class="tb-h">과업기초</h2>
+  {% if basis %}<span class="tb-sub">🔗 기획부문 과업에서 자동으로 불러온 내용 · 기획부문에서 고치면 여기에도 반영됩니다</span>{% endif %}
+</div>
+
+{% if not basis %}
+<div style="margin-top:14px; padding:18px; background:#f9fafb; border-radius:8px; font-size:13px; color:#6b7280;">
+  제작부문에서 직접 등록한 과업이라 기획부문 자료(기본정보·리서치)가 없습니다. 필요한 내용은 아래 메모에 정리하세요.
+</div>
+{% else %}
+{% set i = basis.info %}{% set b = basis.bid %}{% set r = basis.research %}
+<div class="tb-card">
+  <div class="tb-card-t">📋 기본정보</div>
+  <div class="tb-grid">
+    <div class="k">사업명</div><div class="v" style="font-weight:600;">{{ i.bid_ntce_nm or '-' }}</div>
+    <div class="k">발주기관</div><div class="v">{{ i.ntce_instt_nm or '-' }}</div>
+    <div class="k">공고번호</div><div class="v">{{ i.bid_ntce_no or '-' }}
+      {% if i.ntce_url %}<a href="{{ i.ntce_url }}" target="_blank" rel="noopener" style="margin-left:8px; font-size:12px; color:#4f46e5;">나라장터 원문 →</a>{% endif %}</div>
+    <div class="k">추정가격</div><div class="v">{% if i.presmpt_prce %}{% set _p = (i.presmpt_prce|string).replace(',', '') %}{% if _p.split('.')[0].isdigit() %}{{ "{:,}".format(_p.split('.')[0]|int) }}원{% else %}{{ i.presmpt_prce }}{% endif %}{% else %}-{% endif %}</div>
+    <div class="k">입찰 마감</div><div class="v">{{ (i.bid_clse_dt or '-')[:16] }}</div>
+    <div class="k">기획 담당</div><div class="v">{{ i.assignee or '-' }}</div>
+    <div class="k">수주 처리</div><div class="v">{% if i.won_at %}{{ i.won_at[:10] }}{% if i.won_by %} · {{ i.won_by }}{% endif %}{% else %}-{% endif %}</div>
+  </div>
+</div>
+
+<div class="tb-card">
+  <div class="tb-card-t">🗂 입찰·제안 정보</div>
+  <div class="tb-grid">
+    <div class="k">제안서 제출</div><div class="v">{{ (b.proposal_submit_date or b.submit_deadline or '-')|replace('T', ' ') }}{% if b.submit_method %} · {{ b.submit_method }}{% endif %}</div>
+    <div class="k">PT</div><div class="v">{% if b.pt_date %}{{ b.pt_date|replace('T', ' ') }}{% if b.pt_location %} @ {{ b.pt_location }}{% endif %}{% else %}-{% endif %}</div>
+    <div class="k">가격투찰</div><div class="v">{{ (b.price_bid_date or '-')|replace('T', ' ') }}</div>
+    <div class="k">제출 서류</div><div class="v">{{ b.docs|join(', ') if b.docs else '-' }}</div>
+    <div class="k">RFP 파일</div><div class="v">{% if basis.rfp_files %}{% for f in basis.rfp_files %}📄 {{ f }}{% if not loop.last %}<br>{% endif %}{% endfor %}{% else %}-{% endif %}</div>
+  </div>
+</div>
+
+<div class="tb-card">
+  <div class="tb-card-t" style="display:flex; justify-content:space-between;">
+    <span>🔍 리서치</span>
+    {% if r.status == 'done' and r.completed_at %}<span class="tb-sub" style="font-weight:400;">분석 {{ r.completed_at[:10] }}</span>{% endif %}
+  </div>
+  {% if r.status == 'done' and (r.rfp_analysis or r.research_result) %}
+  <div id="tb-research"></div>
+  {% elif r.status == 'running' %}
+  <div style="font-size:13px; color:#1d4ed8;">기획부문에서 리서치 분석이 진행 중입니다. 끝나면 여기에 자동으로 나타납니다.</div>
+  {% else %}
+  <div style="font-size:13px; color:#9ca3af;">기획부문 리서치가 아직 없습니다.</div>
+  {% endif %}
+</div>
+
+<script type="application/json" id="tb-data">{{ {"a": r.rfp_analysis, "r": r.research_result} | tojson }}</script>
+<script>
+(function(){
+  const box = document.getElementById('tb-research');
+  if (!box) return;
+  const d = JSON.parse(document.getElementById('tb-data').textContent || '{}');
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const inl = s => esc(s).replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');
+  const md = text => (text||'').split('\n').map(line => {
+    const t = line.trim();
+    if (!t) return '<div style="height:6px;"></div>';
+    if (/^#{3,} /.test(t)) return `<div style="font-weight:700;color:#374151;margin:8px 0 2px;">${esc(t.replace(/^#+ /,''))}</div>`;
+    if (/^## /.test(t)) return `<div style="font-weight:700;color:#4f46e5;margin:12px 0 4px;">${esc(t.replace(/^## /,''))}</div>`;
+    if (/^[-*] /.test(t)) return `<div style="padding-left:10px;">• ${inl(t.replace(/^[-*] /,''))}</div>`;
+    return `<div>${inl(t)}</div>`;
+  }).join('');
+  const secs = [];
+  if (d.a) secs.push(['📄 RFP 분석 결과', d.a]);
+  const m = [...(d.r||'').matchAll(/##\s*(①|②|③|④|⑤)([^\n]*)\n([\s\S]*?)(?=\n##\s*(?:①|②|③|④|⑤)|$)/g)];
+  if (m.length) m.forEach(x => secs.push([(x[1] + x[2]).trim(), x[3].trim()]));
+  else if (d.r) secs.push(['리서치 결과', d.r]);
+  box.innerHTML = secs.map((s, n) =>
+    `<div class="tb-sec${n === 0 ? ' open' : ''}"><div class="tb-sec-h" onclick="this.parentNode.classList.toggle('open')">${esc(s[0])}<span>▾</span></div>` +
+    `<div class="tb-sec-b">${md(s[1])}</div></div>`).join('');
+})();
+</script>
+{% endif %}

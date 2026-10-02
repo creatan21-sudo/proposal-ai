@@ -906,6 +906,9 @@ def migrate_production_tasks() -> None:
             ("close_note",           "TEXT DEFAULT ''"),   # 승인 시 비고/중단 사유
             ("closed_by",            "TEXT DEFAULT ''"),
             ("close_reject_note",    "TEXT DEFAULT ''"),   # 마지막 반려 사유
+            # 과업기초: 기획부문 기본정보·리서치 사본(JSON) — 기획부문 과업이 삭제돼도 남도록 보관
+            ("basis_snapshot",       "TEXT DEFAULT ''"),
+            ("basis_synced_at",      "TEXT DEFAULT ''"),
         ]:
             if _col not in cols:
                 cursor.execute(f"ALTER TABLE production_tasks ADD COLUMN {_col} {_ddl}")
@@ -4026,10 +4029,92 @@ def ensure_production_task_for_confirmed(confirmed_id: int, created_by: str) -> 
     if not row:
         return None
     name = row["bid_ntce_nm"] or f"수주 과업 #{confirmed_id}"
-    return create_production_task(
+    task_id = create_production_task(
         project_name=name, client_name=row["ntce_instt_nm"] or "",
         created_by=created_by, nara_confirmed_id=confirmed_id, bid_ntce_nm=row["bid_ntce_nm"] or "",
     )
+    # 과업기초(기본정보·리서치) 자동 세팅 — 실패해도 과업 생성은 유지
+    try:
+        if task_id:
+            sync_production_task_basis({"id": task_id, "nara_confirmed_id": confirmed_id})
+    except Exception as e:
+        print(f"[경고] 과업기초 세팅 실패 (task {task_id}): {e}")
+    return task_id
+
+
+def build_planning_basis(confirmed_id: int) -> "dict | None":
+    """기획부문 수주 과업의 기본정보 + 입찰정보 + 리서치 → 제작부문 '과업기초' 용 데이터"""
+    c = get_confirmed_by_id(confirmed_id)
+    if not c:
+        return None
+    bi = get_confirmed_bid_info(confirmed_id) or {}
+    rs = get_confirmed_research(confirmed_id) or {}
+    with get_connection() as conn:
+        won = conn.execute("SELECT completion_approved_by, completion_approved_at FROM nara_confirmed WHERE id=?",
+                           (confirmed_id,)).fetchone()
+        rfp_names = [r[0] for r in conn.execute(
+            "SELECT filename FROM confirmed_rfp_files WHERE confirmed_id=? ORDER BY uploaded_at", (confirmed_id,)
+        ).fetchall()]
+    docs = [label for key, label in [
+        ("doc_qualitative", "정성평가"), ("doc_quantitative", "정량평가"), ("doc_presentation", "발표자료"),
+        ("doc_summary", "요약본"), ("doc_sample_video", "샘플영상"), ("doc_pt", "PT 발표")] if bi.get(key)]
+    if bi.get("doc_other"):
+        docs.append(bi["doc_other"])
+    research_done = rs.get("status") == "done"
+    return {
+        "info": {
+            "bid_ntce_nm":   c.get("bid_ntce_nm") or "",
+            "bid_ntce_no":   c.get("bid_ntce_no") or "",
+            "ntce_instt_nm": c.get("ntce_instt_nm") or "",
+            "presmpt_prce":  c.get("presmpt_prce") or "",
+            "bid_clse_dt":   c.get("bid_clse_dt") or "",
+            "ntce_url":      c.get("ntce_url") or "",
+            "assignee":      c.get("assignee") or "",
+            "confirmed_by":  c.get("confirmed_by") or "",
+            "confirmed_at":  c.get("created_at") or "",
+            "won_by":        (won["completion_approved_by"] if won else "") or "",
+            "won_at":        (won["completion_approved_at"] if won else "") or "",
+        },
+        "bid": {
+            "submit_deadline":      bi.get("submit_deadline") or "",
+            "submit_method":        bi.get("submit_method") or "",
+            "proposal_submit_date": bi.get("proposal_submit_date") or "",
+            "pt_date":              bi.get("pt_date") or "",
+            "pt_location":          bi.get("pt_location") or "",
+            "price_bid_date":       bi.get("price_bid_date") or "",
+            "docs":                 docs,
+        },
+        "rfp_files": rfp_names,
+        "research": {
+            "status":          rs.get("status") or "",
+            "rfp_analysis":    (rs.get("rfp_analysis") or "") if research_done else "",
+            "research_result": (rs.get("research_result") or "") if research_done else "",
+            "completed_at":    rs.get("completed_at") or "",
+        },
+    }
+
+
+def sync_production_task_basis(task: dict) -> "dict | None":
+    """과업기초 자동 세팅: 기획부문 과업이 있으면 최신 내용으로 사본 갱신, 없으면(삭제 등) 마지막 사본 사용"""
+    import json as _json
+    cid = task.get("nara_confirmed_id")
+    saved = None
+    if task.get("basis_snapshot"):
+        try:
+            saved = _json.loads(task["basis_snapshot"])
+        except Exception:
+            saved = None
+    if not cid:
+        return saved
+    fresh = build_planning_basis(cid)
+    if not fresh:
+        return saved
+    if fresh != saved:
+        with get_connection() as conn:
+            conn.execute("""UPDATE production_tasks SET basis_snapshot=?, basis_synced_at=datetime('now','localtime')
+                            WHERE id=?""", (_json.dumps(fresh, ensure_ascii=False), task["id"]))
+            conn.commit()
+    return fresh
 
 
 def get_production_tasks_by_confirmed(confirmed_ids: list) -> dict:

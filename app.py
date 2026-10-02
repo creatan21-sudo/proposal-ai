@@ -6702,6 +6702,14 @@ def production_task_detail(task_id):
     users = list_users()
     is_ops = session.get("role") in ("admin", "operator")
 
+    # 과업기초: 기획부문 기본정보·리서치 자동 세팅 (실패해도 화면은 열림)
+    basis = None
+    try:
+        from database.db import sync_production_task_basis
+        basis = sync_production_task_basis(task)
+    except Exception as e:
+        print(f"[경고] 과업기초 불러오기 실패 (task {task_id}): {e}")
+
     can_edit = is_ops or (task.get("assigned_to") and task.get("assigned_to") == session.get("username"))
 
     from database.db import list_coop_requests, list_production_schedules, list_people_for_picker
@@ -6715,7 +6723,7 @@ def production_task_detail(task_id):
     return render_template("production_task_detail.html",
                          task=task, sections=sections, users=users, is_ops=is_ops,
                          can_edit=can_edit, coop_requests=coop_requests,
-                         task_schedules=task_schedules,
+                         task_schedules=task_schedules, basis=basis,
                          people=list_people_for_picker(),
                          today=datetime.now().strftime('%Y-%m-%d'),
                          can_request=session.get("role") != "user", me=me)
@@ -6915,7 +6923,7 @@ def set_production_coop_status(req_id):
 # 화면에서 편집 가능한 섹션 (section_type → 표시명)
 PRODUCTION_EDITABLE_SECTIONS = {
     "production_content":   "제작내용",
-    "rfp":                  "RFP",
+    "rfp":                  "과업기초 메모",   # 과업기초 탭의 직접 입력란 (예전 'RFP' 탭 내용 그대로 이어짐)
     "kickoff_report":       "착수보고",
     "technical_discussion": "기술협상",
     "proposal_overview":    "제안개요",
