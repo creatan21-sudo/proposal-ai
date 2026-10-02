@@ -6283,8 +6283,92 @@ def production_task_detail(task_id):
     users = list_users()
     is_ops = session.get("role") in ("admin", "operator")
 
+    can_edit = is_ops or (task.get("assigned_to") and task.get("assigned_to") == session.get("username"))
+
     return render_template("production_task_detail.html",
-                         task=task, sections=sections, users=users, is_ops=is_ops)
+                         task=task, sections=sections, users=users, is_ops=is_ops,
+                         can_edit=can_edit)
+
+
+# 화면에서 편집 가능한 섹션 (section_type → 표시명)
+PRODUCTION_EDITABLE_SECTIONS = {
+    "production_content":   "제작내용",
+    "rfp":                  "RFP",
+    "kickoff_report":       "착수보고",
+    "technical_discussion": "기술협상",
+    "proposal_overview":    "제안개요",
+    "production_schedule":  "제작일정",
+    "post_schedule":        "후반일정",
+    "cooperation_request":  "공조요청",
+}
+
+
+def _can_edit_production_task(task: dict) -> bool:
+    """관리자·운영자 또는 해당 과업 담당자만 편집 가능"""
+    if session.get("role") in ("admin", "operator"):
+        return True
+    return bool(task.get("assigned_to")) and task.get("assigned_to") == session.get("username")
+
+
+@app.route("/production/tasks/<int:task_id>/sections/<section_type>", methods=["POST"])
+@login_required
+def save_production_section(task_id, section_type):
+    """제작부문 과업 — 탭 내용 직접 저장"""
+    from database.db import get_production_task, add_production_task_section
+    if section_type not in PRODUCTION_EDITABLE_SECTIONS:
+        return jsonify({"ok": False, "error": "알 수 없는 항목입니다"}), 400
+    task = get_production_task(task_id)
+    if not task:
+        return jsonify({"ok": False, "error": "과업을 찾을 수 없습니다"}), 404
+    if not _can_edit_production_task(task):
+        return jsonify({"ok": False, "error": "편집 권한이 없습니다"}), 403
+
+    data = request.get_json(force=True) or {}
+    content = str(data.get("content", "")).replace("\r\n", "\n").strip()
+    add_production_task_section(task_id, section_type, content,
+                                auto_generated=0, generated_by=session.get("username", ""))
+    return jsonify({"ok": True})
+
+
+@app.route("/production/tasks/<int:task_id>/proposal", methods=["POST"])
+@login_required
+def upload_production_proposal(task_id):
+    """제작부문 과업 — 최종 제안서 PDF 업로드 → AI가 제작내용·제안개요 생성"""
+    from database.db import (get_production_task, add_production_task_section,
+                             set_production_task_proposal)
+    task = get_production_task(task_id)
+    if not task:
+        return jsonify({"ok": False, "error": "과업을 찾을 수 없습니다"}), 404
+    if not _can_edit_production_task(task):
+        return jsonify({"ok": False, "error": "업로드 권한이 없습니다"}), 403
+
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify({"ok": False, "error": "파일을 선택하세요"})
+    if Path(f.filename).suffix.lower() != ".pdf":
+        return jsonify({"ok": False, "error": "PDF 파일만 올릴 수 있습니다"})
+
+    dest_dir = UPLOAD_DIR / "production_proposals" / str(task_id)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest = dest_dir / _safe_upload_name(f.filename, ".pdf")
+    f.save(str(dest))
+    set_production_task_proposal(task_id, f.filename, str(dest))
+
+    try:
+        from agents.proposal_summarizer import summarize_proposal_pdf
+        result = summarize_proposal_pdf(str(dest), task.get("project_name", ""),
+                                        task.get("client_name", ""))
+    except Exception as e:
+        print(f"[오류] 제안서 정리 실패 (task {task_id}): {e}")
+        return jsonify({"ok": False,
+                        "error": f"파일은 올라갔지만 AI 정리에 실패했습니다: {e}"}), 500
+
+    by = session.get("username", "system")
+    for key in ("production_content", "proposal_overview"):
+        if result.get(key):
+            add_production_task_section(task_id, key, result[key],
+                                        auto_generated=1, generated_by=by)
+    return jsonify({"ok": True, "mode": result.get("mode")})
 
 
 @app.route("/production/tasks/<int:task_id>/assign", methods=["POST"])

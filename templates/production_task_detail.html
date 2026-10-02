@@ -50,12 +50,44 @@
        ("pre_negotiation",      "사전협상"),
        ("proposal_overview",    "제안개요"),
      ] %}
-  {% macro section_body(key) -%}
-    {% if sections[key] and sections[key].content %}
-      <div style="white-space: pre-wrap;">{{ sections[key].content }}</div>
-    {% else %}
-      <span style="color: #9ca3af;">아직 작성되지 않았습니다.</span>
-    {% endif %}
+  {# 섹션 블록: 제목 + (AI 생성/수정 정보) + [편집] → 제자리 textarea 편집 #}
+  {% macro section_block(key, label, min_h=200) -%}
+    {% set sec = sections[key] if sections[key] else none %}
+    <div class="sec" data-key="{{ key }}">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:12px;">
+        <div style="display:flex; align-items:baseline; gap:10px; flex-wrap:wrap;">
+          <h2 style="font-size:16px; font-weight:700; color:#1f2937; margin:0;">{{ label }}</h2>
+          {% if sec and sec.content %}
+          <span style="font-size:12px; color:#9ca3af;">
+            {% if sec.auto_generated %}🤖 AI 정리 · {{ (sec.generated_at or '')[:16] }}
+            {% else %}✏️ {{ sec.updated_by or '' }} · {{ (sec.updated_at or '')[:16] }}{% endif %}
+          </span>
+          {% endif %}
+        </div>
+        {% if can_edit %}
+        <button type="button" class="sec-edit-btn" onclick="editSection(this)"
+                style="padding:5px 12px; border:1px solid #d1d5db; background:#fff; border-radius:6px;
+                       font-size:12px; font-weight:600; color:#374151; cursor:pointer; flex-shrink:0;">편집</button>
+        {% endif %}
+      </div>
+      <div class="sec-view" style="color:#4b5563; line-height:1.7; min-height:{{ min_h }}px;">
+        {% if sec and sec.content %}<div style="white-space:pre-wrap;">{{ sec.content }}</div>
+        {% else %}<span style="color:#9ca3af;">아직 작성되지 않았습니다.</span>{% endif %}
+      </div>
+      {% if can_edit %}
+      <div class="sec-edit" style="display:none;">
+        <textarea class="sec-input" style="width:100%; min-height:{{ [min_h, 160]|max + 120 }}px; padding:12px; border:1px solid #c7d2fe;
+                  border-radius:8px; font-size:14px; line-height:1.7; box-sizing:border-box; resize:vertical;
+                  font-family:inherit;">{{ sec.content if sec else '' }}</textarea>
+        <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:10px;">
+          <button type="button" onclick="cancelSection(this)"
+                  style="padding:8px 16px; border:1px solid #d1d5db; background:#fff; border-radius:8px; font-size:13px; font-weight:600; color:#374151; cursor:pointer;">취소</button>
+          <button type="button" onclick="saveSection(this)"
+                  style="padding:8px 16px; border:none; background:#4f46e5; color:#fff; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;">저장</button>
+        </div>
+      </div>
+      {% endif %}
+    </div>
   {%- endmacro %}
 
   <!-- 상위 탭 -->
@@ -74,7 +106,8 @@
 
   <!-- 과업내용 (하위 탭) -->
   <div id="content-tab" class="tab-content" style="display: block;">
-    <div style="display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap;">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
+    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
       {% for key, label in content_tabs %}
       <button type="button" class="sub-tab{% if loop.first %} active{% endif %}" data-tab="{{ key }}"
               onclick="switchTab('sub-tab', 'sub-content', this)"
@@ -86,6 +119,23 @@
       </button>
       {% endfor %}
     </div>
+    {% if can_edit %}
+    <div style="display:flex; align-items:center; gap:10px;">
+      {% if task.proposal_filename %}
+      <span style="font-size:12px; color:#6b7280; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
+            title="{{ task.proposal_filename }}">📎 {{ task.proposal_filename }} · {{ (task.proposal_uploaded_at or '')[:10] }}</span>
+      {% endif %}
+      <input type="file" id="proposal-file" accept="application/pdf,.pdf" style="display:none" onchange="uploadProposal(this)">
+      <button type="button" id="proposal-btn" onclick="document.getElementById('proposal-file').click()"
+              style="padding:8px 14px; background:#4f46e5; color:#fff; border:none; border-radius:8px;
+                     font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap;">
+        📄 {{ '제안서 다시 올리기' if task.proposal_filename else '제안서 PDF 올리기' }}
+      </button>
+    </div>
+    {% endif %}
+    </div>
+    <div id="proposal-status" style="display:none; margin-bottom:16px; padding:12px 16px; border-radius:8px;
+         background:#eef2ff; color:#3730a3; font-size:13px; font-weight:500;"></div>
     {% for key, label in content_tabs %}
     <div id="{{ key }}-tab" class="sub-content" style="display: {% if loop.first %}block{% else %}none{% endif %};
          background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
@@ -93,13 +143,11 @@
         {# 사전협상 = 착수보고 + 기술협상을 한 화면에 #}
         {% for sub_key, sub_label in [("kickoff_report", "착수보고"), ("technical_discussion", "기술협상")] %}
         <div style="{% if not loop.first %}margin-top: 24px; padding-top: 24px; border-top: 1px solid #f3f4f6;{% endif %}">
-          <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 12px; color: #1f2937;">{{ sub_label }}</h2>
-          <div style="color: #4b5563; line-height: 1.6; min-height: 80px;">{{ section_body(sub_key) }}</div>
+          {{ section_block(sub_key, sub_label, 80) }}
         </div>
         {% endfor %}
       {% else %}
-      <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #1f2937;">{{ label }}</h2>
-      <div style="color: #4b5563; line-height: 1.6; min-height: 200px;">{{ section_body(key) }}</div>
+      {{ section_block(key, label) }}
       {% endif %}
     </div>
     {% endfor %}
@@ -112,8 +160,7 @@
      ] %}
   <div id="{{ key }}-tab" class="tab-content" style="display: none;">
     <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
-      <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #1f2937;">{{ label }}</h2>
-      <div style="color: #4b5563; line-height: 1.6; min-height: 200px;">{{ section_body(section_key) }}</div>
+      {{ section_block(section_key, label) }}
     </div>
   </div>
   {% endfor %}
@@ -184,6 +231,86 @@ function switchTab(btnClass, panelClass, btn) {
       b.style.borderBottomColor = on ? '#4f46e5' : 'transparent';
     }
   });
+}
+
+// ── 섹션 편집 ──
+function _sec(btn){ return btn.closest('.sec'); }
+function editSection(btn){
+  const sec = _sec(btn);
+  sec.querySelector('.sec-view').style.display = 'none';
+  sec.querySelector('.sec-edit').style.display = 'block';
+  sec.querySelector('.sec-edit-btn').style.display = 'none';
+  sec.querySelector('.sec-input').focus();
+}
+function cancelSection(btn){
+  const sec = _sec(btn);
+  const ta = sec.querySelector('.sec-input');
+  ta.value = ta.defaultValue;
+  sec.querySelector('.sec-edit').style.display = 'none';
+  sec.querySelector('.sec-view').style.display = 'block';
+  sec.querySelector('.sec-edit-btn').style.display = '';
+}
+async function saveSection(btn){
+  const sec = _sec(btn);
+  btn.disabled = true; btn.textContent = '저장 중…';
+  try {
+    const r = await fetch('/production/tasks/{{ task.id }}/sections/' + sec.dataset.key, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({content: sec.querySelector('.sec-input').value})
+    });
+    const d = await r.json();
+    if (d.ok) { _reloadKeepingTab(); return; }
+    alert('저장 실패: ' + (d.error || '알 수 없는 오류'));
+  } catch (e) { alert('저장 실패: ' + e.message); }
+  btn.disabled = false; btn.textContent = '저장';
+}
+// 새로고침 후에도 보던 탭 유지
+function _reloadKeepingTab(){
+  const main = document.querySelector('.detail-tab.active')?.dataset.tab || '';
+  const sub  = document.querySelector('.sub-tab.active')?.dataset.tab || '';
+  location.href = location.pathname + '?tab=' + main + '&sub=' + sub;
+}
+(function restoreTab(){
+  const q = new URLSearchParams(location.search);
+  const m = document.querySelector('.detail-tab[data-tab="' + q.get('tab') + '"]');
+  if (m) switchTab('detail-tab', 'tab-content', m);
+  const s = document.querySelector('.sub-tab[data-tab="' + q.get('sub') + '"]');
+  if (s) switchTab('sub-tab', 'sub-content', s);
+})();
+
+// ── 제안서 PDF 업로드 → AI 정리 ──
+async function uploadProposal(input){
+  const f = input.files[0];
+  if (!f) return;
+  const hasContent = {{ 'true' if (sections.production_content and sections.production_content.content) or (sections.proposal_overview and sections.proposal_overview.content) else 'false' }};
+  if (hasContent && !confirm('제작내용과 제안개요를 새 제안서 기준으로 다시 작성합니다.\n지금 내용(직접 고친 부분 포함)은 덮어씁니다. 진행할까요?')) {
+    input.value = ''; return;
+  }
+  const btn = document.getElementById('proposal-btn');
+  const st = document.getElementById('proposal-status');
+  btn.disabled = true; btn.style.opacity = .6;
+  st.style.display = 'block'; st.style.background = '#eef2ff'; st.style.color = '#3730a3';
+  let sec = 0;
+  st.textContent = '⏳ 제안서를 읽고 정리하는 중입니다… (보통 1~3분)';
+  const timer = setInterval(() => { sec++; st.textContent = '⏳ 제안서를 읽고 정리하는 중입니다… ' + sec + '초 (보통 1~3분, 이 화면을 닫지 마세요)'; }, 1000);
+  const fd = new FormData(); fd.append('file', f);
+  try {
+    const r = await fetch('/production/tasks/{{ task.id }}/proposal', {method: 'POST', body: fd});
+    const d = await r.json();
+    clearInterval(timer);
+    if (d.ok) {
+      st.textContent = '✅ 정리 완료 — 제작내용·제안개요를 확인하세요';
+      setTimeout(() => { location.href = location.pathname + '?tab=content&sub=production_content'; }, 600);
+      return;
+    }
+    st.style.background = '#fee2e2'; st.style.color = '#991b1b';
+    st.textContent = '⚠️ ' + (d.error || '알 수 없는 오류');
+  } catch (e) {
+    clearInterval(timer);
+    st.style.background = '#fee2e2'; st.style.color = '#991b1b';
+    st.textContent = '⚠️ 업로드 실패: ' + e.message;
+  }
+  btn.disabled = false; btn.style.opacity = 1; input.value = '';
 }
 
 function openAssignModal() {

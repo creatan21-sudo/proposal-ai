@@ -799,10 +799,18 @@ def migrate_production_tasks() -> None:
         cols = {r[1]: r for r in cursor.execute("PRAGMA table_info(production_tasks)").fetchall()}
 
         # notes 컬럼 추가 (ALTER로 충분 — 재생성 불필요)
-        if "notes" not in cols:
-            cursor.execute("ALTER TABLE production_tasks ADD COLUMN notes TEXT DEFAULT ''")
-            conn.commit()
-            print("[migration] production_tasks.notes 컬럼 추가")
+        # 추가 컬럼 (ALTER로 충분 — 재생성 불필요)
+        for _col, _ddl in [
+            ("notes",                "TEXT DEFAULT ''"),
+            ("proposal_filename",    "TEXT DEFAULT ''"),   # 업로드한 제안서 원본 파일명
+            ("proposal_path",        "TEXT DEFAULT ''"),
+            ("proposal_uploaded_at", "TEXT DEFAULT ''"),
+        ]:
+            if _col not in cols:
+                cursor.execute(f"ALTER TABLE production_tasks ADD COLUMN {_col} {_ddl}")
+                conn.commit()
+                print(f"[migration] production_tasks.{_col} 컬럼 추가")
+        cols = {r[1]: r for r in cursor.execute("PRAGMA table_info(production_tasks)").fetchall()}
 
         # nara_confirmed_id가 이미 nullable이면 재생성하지 않음 (멱등성)
         if not cols.get("nara_confirmed_id") or cols["nara_confirmed_id"][3] == 0:
@@ -3665,6 +3673,20 @@ def list_production_tasks(status: str = None, page: int = 1, per_page: int = 50)
     }
 
 
+def set_production_task_proposal(task_id: int, filename: str, path: str) -> None:
+    """제작부문 과업에 업로드된 제안서 파일 정보 기록"""
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE production_tasks
+               SET proposal_filename=?, proposal_path=?,
+                   proposal_uploaded_at=datetime('now','localtime'),
+                   updated_at=datetime('now','localtime')
+               WHERE id=?""",
+            (filename, path, task_id),
+        )
+        conn.commit()
+
+
 def list_active_production_tasks() -> list:
     """완료되지 않은(대기·진행중) 제작부문 과업 전체 — 진행중 화면의 '전체 진행'"""
     with get_connection() as conn:
@@ -3716,21 +3738,33 @@ def add_production_task_section(task_id: int, section_type: str, content: str = 
         ).fetchone()
 
         if existing:
-            # 업데이트
-            conn.execute(
-                """UPDATE production_task_sections
-                   SET content=?, updated_at=datetime('now','localtime')
-                   WHERE id=?""",
-                (content, existing["id"]),
-            )
+            # 업데이트 — AI 생성이면 생성 정보 갱신, 사람이 고치면 수정자 기록
+            if auto_generated:
+                conn.execute(
+                    """UPDATE production_task_sections
+                       SET content=?, auto_generated=1, generated_by=?,
+                           generated_at=datetime('now','localtime'),
+                           updated_by=?, updated_at=datetime('now','localtime')
+                       WHERE id=?""",
+                    (content, generated_by, generated_by, existing["id"]),
+                )
+            else:
+                conn.execute(
+                    """UPDATE production_task_sections
+                       SET content=?, auto_generated=0, updated_by=?,
+                           updated_at=datetime('now','localtime')
+                       WHERE id=?""",
+                    (content, generated_by, existing["id"]),
+                )
             section_id = existing["id"]
         else:
             # 삽입
             cursor = conn.execute(
                 """INSERT INTO production_task_sections
-                   (production_task_id, section_type, content, auto_generated, generated_by, generated_at)
-                   VALUES (?, ?, ?, ?, ?, datetime('now','localtime'))""",
-                (task_id, section_type, content, auto_generated, generated_by),
+                   (production_task_id, section_type, content, auto_generated, generated_by,
+                    generated_at, updated_by)
+                   VALUES (?, ?, ?, ?, ?, datetime('now','localtime'), ?)""",
+                (task_id, section_type, content, auto_generated, generated_by, generated_by),
             )
             section_id = cursor.lastrowid
 
