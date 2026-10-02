@@ -1,0 +1,48 @@
+{# 진행중 화면 공용 스타일 (기획부문 ongoing.html / 제작부문 production_ongoing.html) #}
+<style>
+.og-wrap{max-width:900px;margin:0 auto;padding:24px 16px}
+
+/* 탭 */
+.og-tabs{display:flex;gap:2px;margin-bottom:24px;border-bottom:2px solid #e5e7eb;}
+.og-tab{padding:9px 20px;font-size:13px;font-weight:600;color:#6b7280;text-decoration:none;border-radius:6px 6px 0 0;border-bottom:2px solid transparent;margin-bottom:-2px;cursor:pointer;transition:all .15s;}
+.og-tab:hover{color:#4f46e5;background:#f5f3ff;}
+.og-tab.active{color:#4f46e5;border-bottom-color:#4f46e5;background:#fff;}
+
+.og-section-title{font-size:15px;font-weight:700;color:#374151;margin-bottom:14px;display:flex;align-items:center;gap:8px;}
+.og-section-title .cnt{background:#f3f4f6;color:#6b7280;border-radius:99px;padding:2px 10px;font-size:12px;font-weight:600;}
+.og-section-title .cnt.has-work{background:#fee2e2;color:#dc2626;}
+
+/* 카드 */
+.og-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:16px 20px;margin-bottom:10px;cursor:pointer;transition:box-shadow .15s,border-color .15s;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+.og-card:hover{box-shadow:0 2px 12px rgba(0,0,0,.08);border-color:#c7d2fe;}
+.og-card-left{flex:1;min-width:0;}
+.og-card-name{font-size:14px;font-weight:700;color:#111827;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:4px;}
+.og-card-meta{font-size:12px;color:#6b7280;display:flex;gap:10px;flex-wrap:wrap;align-items:center;}
+.og-card-meta .org{color:#374151;font-weight:500;}
+.og-card-meta .due.urgent{color:#dc2626;font-weight:700;}
+.og-card-meta .assignee{background:#ede9fe;color:#5b21b6;border-radius:99px;padding:1px 8px;font-size:11px;font-weight:600;}
+.og-card-meta .cs-badge{border-radius:99px;padding:1px 8px;font-size:11px;font-weight:600;}
+.og-card-meta .cs-requested{background:#fef3c7;color:#92400e;}
+.og-card-meta .cs-approved{background:#d1fae5;color:#065f46;}
+.og-card-icons{display:flex;gap:6px;flex-shrink:0;}
+.og-icon-btn{display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:8px;background:#f9fafb;border:1px solid #e5e7eb;font-size:16px;cursor:pointer;text-decoration:none;transition:background .12s,border-color .12s;position:relative;}
+.og-icon-btn:hover{background:#eff6ff;border-color:#bfdbfe;}
+.og-icon-btn .tip{display:none;position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;white-space:nowrap;font-size:11px;padding:4px 8px;border-radius:6px;pointer-events:none;z-index:10;}
+.og-icon-btn:hover .tip{display:block;}
+
+.og-empty{text-align:center;padding:48px 0;color:#9ca3af;font-size:14px;}
+.badge-status{display:inline-block;font-size:11px;padding:2px 7px;border-radius:10px;margin-left:4px;font-weight:500;cursor:pointer;background:#e8f5e9;color:#2e7d32;text-decoration:none;vertical-align:middle;}
+.badge-status:hover{background:#c8e6c9;}
+.og-id{font-size:12px;color:#999;font-weight:400;margin-right:8px;flex-shrink:0;}
+.og-del-btn{background:none;border:none;cursor:pointer;font-size:12px;color:#ef4444;padding:3px 7px;line-height:1;flex-shrink:0;font-weight:600;border-radius:4px;transition:background .12s;}
+.og-del-btn:hover{background:#fee2e2;}
+/* 마감 지난 카드 */
+.og-card.expired{opacity:.5;}
+.og-card.expired .og-card-name{text-decoration:line-through;}
+.expired-toggle{width:100%;padding:9px 16px;background:#f9fafb;border:1px dashed #d1d5db;border-radius:8px;font-size:13px;color:#6b7280;cursor:pointer;text-align:left;margin-bottom:10px;font-weight:500;transition:background .12s;}
+.expired-toggle:hover{background:#f3f4f6;color:#374151;}
+/* 삭제 확인 모달 */
+.del-modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;align-items:center;justify-content:center;}
+.del-modal-overlay.open{display:flex;}
+.del-modal-box{background:#fff;border-radius:12px;padding:24px;width:400px;max-width:92vw;box-shadow:0 20px 60px rgba(0,0,0,.25);}
+</style>

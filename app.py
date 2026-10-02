@@ -6219,10 +6219,12 @@ def production_task_create():
 @login_required
 def production_ongoing():
     """제작부문 - 진행 중인 과업"""
-    from database.db import list_my_production_tasks
+    from database.db import list_active_production_tasks
     username = session.get("username", "")
-    tasks = list_my_production_tasks(username)
-    return render_template("production_ongoing.html", tasks=tasks, username=username)
+    all_tasks = list_active_production_tasks()
+    my_tasks = [t for t in all_tasks if t.get("assigned_to") == username]
+    return render_template("production_ongoing.html",
+                           my_tasks=my_tasks, all_tasks=all_tasks, username=username)
 
 @app.route("/production/schedule")
 @login_required

@@ -3665,6 +3665,17 @@ def list_production_tasks(status: str = None, page: int = 1, per_page: int = 50)
     }
 
 
+def list_active_production_tasks() -> list:
+    """완료되지 않은(대기·진행중) 제작부문 과업 전체 — 진행중 화면의 '전체 진행'"""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT * FROM production_tasks
+               WHERE status IN ('진행중', '대기')
+               ORDER BY created_at DESC""",
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def list_my_production_tasks(username: str) -> list:
     """사용자의 배정된 제작부문 과업 목록"""
     with get_connection() as conn:
