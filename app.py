@@ -6091,6 +6091,51 @@ def nara_add_to_candidates():
         return jsonify({"ok": False, "error": str(e)})
 
 
+# ==================== 제작부문 (Production Division) Routes ====================
+
+@app.route("/production/tasks")
+@login_required
+def production_tasks():
+    """제작부문 - 과업 목록 (모든 현재 및 과거 과업)"""
+    return render_template("production_tasks.html", tasks=[], pagination={"total": 0, "pages": 1, "current": 1})
+
+@app.route("/production/ongoing")
+@login_required
+def production_ongoing():
+    """제작부문 - 진행 중인 과업"""
+    username = session.get("username", "")
+    return render_template("production_ongoing.html", tasks=[], username=username)
+
+@app.route("/production/schedule")
+@login_required
+def production_schedule():
+    """제작부문 - 스케줄 (캘린더/타임라인 뷰)"""
+    return render_template("production_schedule.html", schedules=[])
+
+@app.route("/production/board")
+@login_required
+def production_board():
+    """제작부문 - 게시판"""
+    is_ops = session.get("role") in ("admin", "operator")
+    return render_template("production_board.html", posts=[], is_ops=is_ops)
+
+@app.route("/production/db")
+@login_required
+def production_db():
+    """제작부문 - 데이터베이스 (과업 히스토리)"""
+    page = max(1, int(request.args.get("page", 1)))
+    return render_template("production_db.html", tasks=[], pagination={"total": 0, "pages": 1, "current": page})
+
+@app.route("/production/learning", methods=["GET", "POST"])
+@login_required
+@operator_or_admin_required
+def production_learning():
+    """제작부문 - 학습 데이터 입력"""
+    if request.method == "POST":
+        return jsonify({"ok": True, "message": "학습 데이터가 저장되었습니다"})
+    return render_template("production_learning.html", data=None)
+
+
 if __name__ == "__main__":
     init_db()
     init_users()

@@ -1,0 +1,202 @@
+{% extends "base.html" %}
+
+{% block title %}제작부문 - 입력 | Prointerz{% endblock %}
+
+{% block content %}
+<div style="max-width: 1100px; margin: 0 auto; padding: 24px;">
+  <div style="margin-bottom: 24px;">
+    <h1 style="font-size: 24px; font-weight: 700; margin-bottom: 8px;">제작부문 - 학습 데이터 입력</h1>
+    <p style="color: #6b7280; font-size: 14px;">제작 과업의 기술협상 및 착수보고 내용을 입력합니다.</p>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 250px 1fr; gap: 20px;">
+    <!-- 좌측: 내비게이션 -->
+    <div style="background: #f9fafb; border-radius: 10px; padding: 16px; height: fit-content;">
+      <div style="font-weight: 700; font-size: 14px; margin-bottom: 16px; color: #1f2937;">입력 항목</div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <button onclick="switchTab('technical')" class="learning-tab active"
+                style="padding: 10px 12px; text-align: left; border: none; background: #e0e7ff;
+                       color: #4f46e5; border-radius: 6px; cursor: pointer; font-size: 13px;
+                       font-weight: 600; transition: all 0.15s;">
+          🔧 기술협상
+        </button>
+        <button onclick="switchTab('kickoff')" class="learning-tab"
+                style="padding: 10px 12px; text-align: left; border: none; background: transparent;
+                       color: #6b7280; border-radius: 6px; cursor: pointer; font-size: 13px;
+                       font-weight: 600; transition: all 0.15s;">
+          🚀 착수보고
+        </button>
+      </div>
+    </div>
+
+    <!-- 우측: 콘텐츠 -->
+    <div>
+      <form method="POST" style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
+        <!-- 기술협상 탭 -->
+        <div id="technical-tab" class="tab-content" style="display: block;">
+          <div style="margin-bottom: 20px;">
+            <label style="display: block; font-size: 13px; font-weight: 700; color: #1f2937; margin-bottom: 8px;">
+              📋 과업 선택
+            </label>
+            <select name="task_id" required style="width: 100%; padding: 10px 12px; border: 1px solid #d1d5db;
+                                                    border-radius: 8px; font-size: 13px;">
+              <option value="">선택하세요</option>
+              <option value="1">프로젝트 A - 제작 과업 1</option>
+              <option value="2">프로젝트 B - 제작 과업 2</option>
+            </select>
+          </div>
+
+          <div style="margin-bottom: 20px;">
+            <label style="display: block; font-size: 13px; font-weight: 700; color: #1f2937; margin-bottom: 8px;">
+              🎤 녹음 입력 (기술협상)
+            </label>
+            <div style="border: 2px dashed #d1d5db; border-radius: 8px; padding: 24px; text-align: center;
+                       background: #f9fafb; cursor: pointer; transition: all 0.15s;"
+                 id="recording-drop-area">
+              <div style="font-size: 48px; margin-bottom: 8px;">🎙️</div>
+              <div style="font-size: 13px; font-weight: 600; color: #1f2937; margin-bottom: 4px;">
+                녹음 파일을 드래그하거나 클릭하여 업로드
+              </div>
+              <div style="font-size: 12px; color: #6b7280;">MP3, WAV, M4A 형식 지원</div>
+              <input type="file" name="recording_technical" accept="audio/*" style="display: none;" id="recording-input-technical">
+            </div>
+            <div id="technical-status" style="margin-top: 12px; font-size: 13px; color: #6b7280;"></div>
+          </div>
+
+          <div style="margin-bottom: 20px;">
+            <label style="display: block; font-size: 13px; font-weight: 700; color: #1f2937; margin-bottom: 8px;">
+              📝 기술협상 내용
+            </label>
+            <textarea name="technical_content" placeholder="기술협상 내용이 자동으로 정리됩니다..."
+                      style="width: 100%; min-height: 200px; padding: 12px; border: 1px solid #d1d5db;
+                             border-radius: 8px; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;"
+                      readonly></textarea>
+            <div style="font-size: 12px; color: #9ca3af; margin-top: 6px;">
+              💡 녹음 파일이 업로드되면 Claude API를 이용해 자동으로 정리됩니다
+            </div>
+          </div>
+        </div>
+
+        <!-- 착수보고 탭 -->
+        <div id="kickoff-tab" class="tab-content" style="display: none;">
+          <div style="margin-bottom: 20px;">
+            <label style="display: block; font-size: 13px; font-weight: 700; color: #1f2937; margin-bottom: 8px;">
+              🎤 녹음 입력 (착수보고)
+            </label>
+            <div style="border: 2px dashed #d1d5db; border-radius: 8px; padding: 24px; text-align: center;
+                       background: #f9fafb; cursor: pointer; transition: all 0.15s;"
+                 id="recording-drop-area-kickoff">
+              <div style="font-size: 48px; margin-bottom: 8px;">🎙️</div>
+              <div style="font-size: 13px; font-weight: 600; color: #1f2937; margin-bottom: 4px;">
+                녹음 파일을 드래그하거나 클릭하여 업로드
+              </div>
+              <div style="font-size: 12px; color: #6b7280;">MP3, WAV, M4A 형식 지원</div>
+              <input type="file" name="recording_kickoff" accept="audio/*" style="display: none;" id="recording-input-kickoff">
+            </div>
+            <div id="kickoff-status" style="margin-top: 12px; font-size: 13px; color: #6b7280;"></div>
+          </div>
+
+          <div style="margin-bottom: 20px;">
+            <label style="display: block; font-size: 13px; font-weight: 700; color: #1f2937; margin-bottom: 8px;">
+              📝 착수보고 내용
+            </label>
+            <textarea name="kickoff_content" placeholder="착수보고 내용이 자동으로 정리됩니다..."
+                      style="width: 100%; min-height: 200px; padding: 12px; border: 1px solid #d1d5db;
+                             border-radius: 8px; font-size: 13px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;"
+                      readonly></textarea>
+            <div style="font-size: 12px; color: #9ca3af; margin-top: 6px;">
+              💡 녹음 파일이 업로드되면 Claude API를 이용해 자동으로 정리됩니다
+            </div>
+          </div>
+        </div>
+
+        <!-- 저장 버튼 -->
+        <div style="display: flex; gap: 12px; justify-content: flex-end; margin-top: 24px;">
+          <button type="reset" style="padding: 10px 20px; border: 1px solid #d1d5db; background: #fff;
+                                     border-radius: 8px; font-size: 13px; font-weight: 600;
+                                     color: #374151; cursor: pointer;">
+            취소
+          </button>
+          <button type="submit" style="padding: 10px 20px; background: #4f46e5; color: #fff;
+                                      border: none; border-radius: 8px; font-size: 13px;
+                                      font-weight: 600; cursor: pointer;">
+            저장
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+function switchTab(tab) {
+  // 탭 콘텐츠 숨김
+  document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+  document.getElementById(tab + '-tab').style.display = 'block';
+
+  // 탭 버튼 스타일 변경
+  document.querySelectorAll('.learning-tab').forEach(btn => {
+    btn.style.background = 'transparent';
+    btn.style.color = '#6b7280';
+  });
+  event.target.style.background = '#e0e7ff';
+  event.target.style.color = '#4f46e5';
+}
+
+// 파일 드래그 & 드롭
+function setupFileUpload(dropAreaId, inputId, statusId) {
+  const dropArea = document.getElementById(dropAreaId);
+  const input = document.getElementById(inputId);
+  const statusDiv = document.getElementById(statusId);
+
+  if (!dropArea) return;
+
+  dropArea.addEventListener('click', () => input.click());
+
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    dropArea.addEventListener(eventName, preventDefaults, false);
+  });
+
+  function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+
+  ['dragenter', 'dragover'].forEach(eventName => {
+    dropArea.addEventListener(eventName, () => {
+      dropArea.style.borderColor = '#4f46e5';
+      dropArea.style.background = '#eff6ff';
+    });
+  });
+
+  ['dragleave', 'drop'].forEach(eventName => {
+    dropArea.addEventListener(eventName, () => {
+      dropArea.style.borderColor = '#d1d5db';
+      dropArea.style.background = '#f9fafb';
+    });
+  });
+
+  dropArea.addEventListener('drop', (e) => {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    input.files = files;
+    if (files.length > 0) {
+      statusDiv.textContent = '✅ ' + files[0].name + ' 업로드됨';
+      statusDiv.style.color = '#059669';
+    }
+  });
+
+  input.addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+      statusDiv.textContent = '✅ ' + e.target.files[0].name + ' 선택됨';
+      statusDiv.style.color = '#059669';
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+  setupFileUpload('recording-drop-area', 'recording-input-technical', 'technical-status');
+  setupFileUpload('recording-drop-area-kickoff', 'recording-input-kickoff', 'kickoff-status');
+});
+</script>
+{% endblock %}

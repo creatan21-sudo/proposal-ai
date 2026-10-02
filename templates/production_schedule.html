@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}제작부문 - 일정 | Prointerz{% endblock %}
+
+{% block content %}
+<div style="max-width: 1100px; margin: 0 auto; padding: 24px;">
+  <div style="margin-bottom: 24px;">
+    <h1 style="font-size: 24px; font-weight: 700; margin-bottom: 8px;">제작부문 - 일정</h1>
+    <p style="color: #6b7280; font-size: 14px;">제작 과업의 일정 및 마감일을 관리합니다.</p>
+  </div>
+
+  <div style="display: grid; grid-template-columns: 200px 1fr; gap: 20px;">
+    <!-- 좌측: 일정 필터 -->
+    <div style="background: #f9fafb; border-radius: 10px; padding: 16px; height: fit-content;">
+      <div style="font-weight: 700; font-size: 14px; margin-bottom: 16px; color: #1f2937;">보기 옵션</div>
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input type="radio" name="view" value="calendar" checked style="cursor: pointer;">
+          <span style="font-size: 13px;">캘린더</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input type="radio" name="view" value="timeline" style="cursor: pointer;">
+          <span style="font-size: 13px;">타임라인</span>
+        </label>
+        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+          <input type="radio" name="view" value="list" style="cursor: pointer;">
+          <span style="font-size: 13px;">목록</span>
+        </label>
+      </div>
+    </div>
+
+    <!-- 우측: 콘텐츠 -->
+    <div>
+      {% if schedules %}
+      <div style="display: grid; gap: 12px;">
+        {% for schedule in schedules %}
+        <div style="border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; background: #fff;">
+          <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px; color: #1f2937;">{{ schedule.task_name }}</div>
+          <div style="font-size: 13px; color: #6b7280; margin-bottom: 8px;">{{ schedule.description }}</div>
+          <div style="font-size: 12px; color: #6b7280;">📅 {{ schedule.due_date }}</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div style="text-align: center; padding: 60px 20px; background: #f9fafb; border-radius: 10px; border: 1px solid #e5e7eb;">
+        <div style="font-size: 48px; margin-bottom: 16px;">📅</div>
+        <div style="font-size: 15px; font-weight: 600; color: #1f2937; margin-bottom: 8px;">등록된 일정이 없습니다</div>
+        <div style="font-size: 13px; color: #6b7280;">과업이 생성되면 자동으로 일정이 추가됩니다</div>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  // 일정 보기 옵션 변경 로직
+  const viewRadios = document.querySelectorAll('input[name="view"]');
+  viewRadios.forEach(radio => {
+    radio.addEventListener('change', function(e){
+      // 향후 다양한 뷰 렌더링 로직 추가
+      console.log('선택된 보기:', e.target.value);
+    });
+  });
+});
+</script>
+{% endblock %}

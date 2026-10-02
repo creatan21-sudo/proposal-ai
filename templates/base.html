@@ -6,6 +6,15 @@
   <title>{% block title %}Prointerz{% endblock %}</title>
   <link rel="stylesheet" href="/static/style.css">
   <style>
+  /* 부문 탭 */
+  .division-tabs{display:flex;gap:0;border-bottom:2px solid #dde0f0;}
+  .division-tab{padding:12px 20px;cursor:pointer;font-size:14px;font-weight:600;color:#6b7280;background:#f9fafb;border:none;border-bottom:2px solid transparent;transition:all .15s;}
+  .division-tab:hover{color:#4f46e5;background:#f3f1ff;}
+  .division-tab.active{color:#4f46e5;background:#f3f1ff;border-bottom-color:#4f46e5;}
+  /* 부문별 메뉴 */
+  .division-menu{display:none;}
+  .division-menu.active{display:flex;}
+  .division-menu{gap:0;align-items:center;}
   nav a{font-size:15px;font-weight:700;letter-spacing:0.3px;}
   nav a.nav-active{background:var(--bg);color:var(--accent);font-weight:700;box-shadow:inset 0 -2px 0 var(--accent);}
   .sub-nav{background:#f0f1f8;border-bottom:1px solid #dde0f0;}
@@ -35,20 +44,47 @@
     <div class="header-inner">
       <a href="/ongoing" class="logo">Prointerz</a>
       <nav>
-        <a href="/ongoing" class="{{ 'nav-active' if path == '/ongoing' else '' }}">진행중</a>
-        <a href="/nara" class="{{ 'nav-active' if path.startswith('/nara') else '' }}">입찰</a>
-        <a href="/schedule" class="{{ 'nav-active' if path == '/schedule' else '' }}">일정</a>
-        <a href="/board" class="{{ 'nav-active' if path.startswith('/board') else '' }}">게시판</a>
-        {% if session.get('role') != 'user' %}
-        <a href="/proposal" class="{{ 'nav-active' if path.startswith('/proposal') or path.startswith('/run/') else '' }}">작성</a>
-        <a href="/history" class="{{ 'nav-active' if (path.startswith('/history') or path.startswith('/db')) else '' }}">DB</a>
-        <a href="/learning" class="{{ 'nav-active' if path.startswith('/learning') else '' }}">입력</a>
-        {% else %}
-        <a href="/history" class="{{ 'nav-active' if (path.startswith('/history') or path.startswith('/db')) else '' }}">DB</a>
-        {% endif %}
-        {% if session.get('is_admin') %}
-        <a href="/admin" class="nav-admin {{ 'nav-active' if path.startswith('/admin') else '' }}">관리자</a>
-        {% endif %}
+        <!-- 부문 탭 -->
+        <div style="display:flex;gap:0;border-bottom:2px solid #dde0f0;flex-grow:0;">
+          <button class="division-tab active" data-division="planning" onclick="switchDivision(event)">기획부문</button>
+          <button class="division-tab" data-division="production" onclick="switchDivision(event)">제작부문</button>
+        </div>
+
+        <!-- 기획부문 메뉴 -->
+        <div class="division-menu active" id="planning-menu">
+          <a href="/ongoing" class="{{ 'nav-active' if path == '/ongoing' else '' }}">진행중</a>
+          <a href="/nara" class="{{ 'nav-active' if path.startswith('/nara') else '' }}">과업</a>
+          <a href="/schedule" class="{{ 'nav-active' if path == '/schedule' else '' }}">일정</a>
+          <a href="/board" class="{{ 'nav-active' if path.startswith('/board') else '' }}">게시판</a>
+          {% if session.get('role') != 'user' %}
+          <a href="/proposal" class="{{ 'nav-active' if path.startswith('/proposal') or path.startswith('/run/') else '' }}">작성</a>
+          <a href="/history" class="{{ 'nav-active' if (path.startswith('/history') or path.startswith('/db')) else '' }}">DB</a>
+          <a href="/learning" class="{{ 'nav-active' if path.startswith('/learning') else '' }}">입력</a>
+          {% else %}
+          <a href="/history" class="{{ 'nav-active' if (path.startswith('/history') or path.startswith('/db')) else '' }}">DB</a>
+          {% endif %}
+          {% if session.get('is_admin') %}
+          <a href="/admin" class="nav-admin {{ 'nav-active' if path.startswith('/admin') else '' }}">관리자</a>
+          {% endif %}
+        </div>
+
+        <!-- 제작부문 메뉴 -->
+        <div class="division-menu" id="production-menu" style="display:none;">
+          <a href="/production/ongoing" class="{{ 'nav-active' if path == '/production/ongoing' else '' }}">진행중</a>
+          <a href="/production/tasks" class="{{ 'nav-active' if path.startswith('/production/tasks') else '' }}">과업</a>
+          <a href="/production/schedule" class="{{ 'nav-active' if path == '/production/schedule' else '' }}">일정</a>
+          <a href="/production/board" class="{{ 'nav-active' if path.startswith('/production/board') else '' }}">게시판</a>
+          {% if session.get('role') != 'user' %}
+          <a href="/production/db" class="{{ 'nav-active' if path.startswith('/production/db') else '' }}">DB</a>
+          <a href="/production/learning" class="{{ 'nav-active' if path.startswith('/production/learning') else '' }}">입력</a>
+          {% else %}
+          <a href="/production/db" class="{{ 'nav-active' if path.startswith('/production/db') else '' }}">DB</a>
+          {% endif %}
+          {% if session.get('is_admin') %}
+          <a href="/admin" class="nav-admin {{ 'nav-active' if path.startswith('/admin') else '' }}">관리자</a>
+          {% endif %}
+        </div>
+
         {% if session.get('role') != 'user' %}
         <a href="#" id="nav-active-run" style="display:none" title="">
           🔄 진행 중 <span id="nav-active-dot" style="display:inline-block;width:8px;height:8px;background:red;border-radius:50%;vertical-align:middle;margin-left:3px;"></span>
@@ -81,6 +117,13 @@
         <a href="/ongoing" class="{{ 'active' if path.startswith('/ongoing') else '' }}">📁 기과업</a>
       </div>
     </div>
+    {% elif path.startswith('/production/tasks') or path.startswith('/production/ongoing') %}
+    <div class="sub-nav">
+      <div class="sub-nav-inner">
+        <a href="/production/tasks" class="{{ 'active' if path == '/production/tasks' else '' }}">📋 모든 과업</a>
+        <a href="/production/ongoing" class="{{ 'active' if path.startswith('/production/ongoing') else '' }}">📁 진행 중</a>
+      </div>
+    </div>
     {% else %}
     {% block subnav %}{% endblock %}
     {% endif %}
@@ -98,6 +141,32 @@
     </div>
   </div>
   <script>
+  function switchDivision(e){
+    e.preventDefault();
+    const division = e.target.dataset.division;
+    const tabs = document.querySelectorAll('.division-tab');
+    const menus = document.querySelectorAll('.division-menu');
+
+    tabs.forEach(t => t.classList.remove('active'));
+    menus.forEach(m => m.style.display = 'none');
+
+    e.target.classList.add('active');
+    const targetMenu = document.getElementById(division + '-menu');
+    if(targetMenu) {
+      targetMenu.style.display = 'flex';
+      localStorage.setItem('prointerz_division', division);
+    }
+  }
+
+  // 페이지 로드 시 저장된 부문 복원
+  document.addEventListener('DOMContentLoaded', function(){
+    const saved = localStorage.getItem('prointerz_division');
+    if(saved && saved !== 'planning') {
+      const btn = document.querySelector('[data-division="' + saved + '"]');
+      if(btn) switchDivision({target: btn, preventDefault: function(){}});
+    }
+  });
+
   function toggleGearMenu(e){
     e.stopPropagation();
     const m=document.getElementById('nav-gear-menu');

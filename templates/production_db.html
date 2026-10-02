@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}제작부문 - DB | Prointerz{% endblock %}
+
+{% block content %}
+<div style="max-width: 1100px; margin: 0 auto; padding: 24px;">
+  <div style="margin-bottom: 24px;">
+    <h1 style="font-size: 24px; font-weight: 700; margin-bottom: 8px;">제작부문 - 데이터베이스</h1>
+    <p style="color: #6b7280; font-size: 14px;">완료된 과업 및 히스토리를 관리합니다.</p>
+  </div>
+
+  <!-- 필터 섹션 -->
+  <div style="background: #f9fafb; border-radius: 10px; padding: 16px; margin-bottom: 20px;">
+    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+      <div>
+        <label style="display: block; font-size: 13px; font-weight: 600; color: #1f2937; margin-bottom: 6px;">프로젝트명</label>
+        <input type="text" placeholder="검색..."
+               style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;">
+      </div>
+      <div>
+        <label style="display: block; font-size: 13px; font-weight: 600; color: #1f2937; margin-bottom: 6px;">담당자</label>
+        <select style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;">
+          <option value="">전체</option>
+          <option value="">담당자 1</option>
+          <option value="">담당자 2</option>
+        </select>
+      </div>
+      <div>
+        <label style="display: block; font-size: 13px; font-weight: 600; color: #1f2937; margin-bottom: 6px;">상태</label>
+        <select style="width: 100%; padding: 8px 12px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px;">
+          <option value="">전체</option>
+          <option value="completed">완료</option>
+          <option value="stopped">중단</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <!-- 과업 테이블 -->
+  {% if tasks %}
+  <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden;">
+    <table style="width: 100%; border-collapse: collapse;">
+      <thead>
+        <tr style="background: #f9fafb; border-bottom: 2px solid #e5e7eb;">
+          <th style="padding: 12px 16px; text-align: left; font-size: 13px; font-weight: 700; color: #374151;">프로젝트명</th>
+          <th style="padding: 12px 16px; text-align: left; font-size: 13px; font-weight: 700; color: #374151;">담당자</th>
+          <th style="padding: 12px 16px; text-align: center; font-size: 13px; font-weight: 700; color: #374151;">상태</th>
+          <th style="padding: 12px 16px; text-align: left; font-size: 13px; font-weight: 700; color: #374151;">완료일</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for task in tasks %}
+        <tr style="border-bottom: 1px solid #e5e7eb; transition: background 0.1s;"
+            onmouseover="this.style.background='#f9fafb'" onmouseout="this.style.background=''">
+          <td style="padding: 12px 16px; font-size: 13px; color: #1f2937; font-weight: 500;">
+            <a href="/production/tasks/{{ task.id }}" style="color: #4f46e5; text-decoration: none;">{{ task.name }}</a>
+          </td>
+          <td style="padding: 12px 16px; font-size: 13px; color: #6b7280;">{{ task.assignee }}</td>
+          <td style="padding: 12px 16px; text-align: center;">
+            <span style="display: inline-block; padding: 4px 10px; border-radius: 6px; font-size: 12px; font-weight: 600;
+                        background: {% if task.status == 'completed' %}#d1fae5{% else %}#fee2e2{% endif %};
+                        color: {% if task.status == 'completed' %}#065f46{% else %}#991b1b{% endif %};">
+              {% if task.status == 'completed' %}완료{% else %}중단{% endif %}
+            </span>
+          </td>
+          <td style="padding: 12px 16px; font-size: 13px; color: #6b7280;">{{ task.completed_at }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div style="text-align: center; padding: 60px 20px; background: #f9fafb; border-radius: 10px; border: 1px solid #e5e7eb;">
+    <div style="font-size: 48px; margin-bottom: 16px;">🗂️</div>
+    <div style="font-size: 15px; font-weight: 600; color: #1f2937; margin-bottom: 8px;">완료된 과업이 없습니다</div>
+    <div style="font-size: 13px; color: #6b7280;">과업이 완료되면 여기에 표시됩니다</div>
+  </div>
+  {% endif %}
+
+  <!-- 페이지네이션 -->
+  {% if pagination.pages > 1 %}
+  <div style="display: flex; justify-content: center; gap: 8px; margin-top: 24px;">
+    {% for page_num in range(1, pagination.pages + 1) %}
+    <a href="?page={{ page_num }}"
+       style="padding: 8px 12px; border: 1px solid {% if page_num == pagination.current %}#4f46e5{% else %}#e5e7eb{% endif %};
+              background: {% if page_num == pagination.current %}#4f46e5{% else %}#fff{% endif %};
+              color: {% if page_num == pagination.current %}#fff{% else %}#6b7280{% endif %};
+              border-radius: 6px; font-size: 13px; font-weight: 600; text-decoration: none;">
+      {{ page_num }}
+    </a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function(){
+  // DB 페이지 로직 (필요시)
+});
+</script>
+{% endblock %}
