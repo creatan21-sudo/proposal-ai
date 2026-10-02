@@ -74,13 +74,15 @@ def get_client() -> anthropic.Anthropic:
     """Anthropic 클라이언트 인스턴스 반환 (싱글톤)."""
     global _client
     if _client is None:
-        import httpx
         api_key = os.environ.get("ANTHROPIC_API_KEY")
         if not api_key:
             raise RuntimeError("ANTHROPIC_API_KEY 환경변수가 설정되지 않았습니다.")
+        # timeout은 숫자(초)로 지정 — anthropic SDK 1.x는 httpx 대신 httpx2를 써서
+        # httpx.Timeout 객체를 넘기면 TypeError로 클라이언트 생성 자체가 실패함 (2026-10 장애 원인).
+        # 숫자는 0.x / 1.x 모든 버전에서 동작.
         _client = anthropic.Anthropic(
             api_key=api_key,
-            timeout=httpx.Timeout(600.0, connect=30.0),  # 시나리오 등 긴 응답 대비
+            timeout=600.0,  # 시나리오 등 긴 응답 대비
         )
     return _client
 
