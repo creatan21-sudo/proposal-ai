@@ -15,7 +15,7 @@
 {% block content %}
 <div class="og-wrap">
 
-  {% macro task_card(t) -%}
+  {% macro task_card(t, recent=false) -%}
   <div class="og-card" onclick="location.href='/production/tasks/{{ t.id }}'">
     <span class="og-id">{{ t.id }}</span>
     <div class="og-card-left">
@@ -30,19 +30,39 @@
         <span class="st {{ 'st-run' if t.status == '진행중' else 'st-wait' }}">{{ t.status }}</span>
         {% if t.assigned_to %}<span class="assignee">{{ t.assigned_to }}</span>
         {% else %}<span class="unassigned">담당자 미배정</span>{% endif %}
+        {% if recent %}
+        <span class="recent-act" data-ts="{{ t.last_activity }}">🕑 {{ t.last_activity_label }} · {{ (t.last_activity or '')[:16] }}</span>
+        {% else %}
         <span>등록 {{ (t.created_at or '')[:10] }}</span>
+        {% endif %}
       </div>
     </div>
   </div>
   {%- endmacro %}
+  {% set cnt_style = "background:#f3f4f6;color:#6b7280;border-radius:99px;padding:1px 7px;font-size:11px;font-weight:600;margin-left:4px;" %}
 
-  <!-- 탭 -->
-  <div class="og-tabs">
-    <a class="og-tab active" id="tab-my" href="javascript:void(0)" onclick="switchTab('my')">👤 내 진행 <span style="background:#f3f4f6;color:#6b7280;border-radius:99px;padding:1px 7px;font-size:11px;font-weight:600;margin-left:4px;">{{ my_tasks|length }}</span></a>
-    <a class="og-tab" id="tab-all" href="javascript:void(0)" onclick="switchTab('all')">🏢 전체 진행 <span style="background:#f3f4f6;color:#6b7280;border-radius:99px;padding:1px 7px;font-size:11px;font-weight:600;margin-left:4px;">{{ all_tasks|length }}</span></a>
+  <!-- 탭: 최근 진행(기본) / 내 진행 / 전체 진행 -->
+  <div style="display:flex; justify-content:space-between; align-items:flex-end; gap:12px;">
+    <div class="og-tabs" style="flex:1; margin-bottom:24px;">
+      <a class="og-tab active" id="tab-recent" href="javascript:void(0)" onclick="switchTab('recent')">🕑 최근 진행 <span style="{{ cnt_style }}">{{ recent_tasks|length }}</span></a>
+      <a class="og-tab" id="tab-my" href="javascript:void(0)" onclick="switchTab('my')">👤 내 진행 <span style="{{ cnt_style }}">{{ my_tasks|length }}</span></a>
+      <a class="og-tab" id="tab-all" href="javascript:void(0)" onclick="switchTab('all')">🏢 전체 진행 <span style="{{ cnt_style }}">{{ all_tasks|length }}</span></a>
+    </div>
+    {% if can_create %}
+    <button type="button" onclick="openCreateTaskModal()"
+            style="margin-bottom:30px; padding:8px 16px; background:#4f46e5; color:#fff; border:none; border-radius:8px;
+                   font-size:13px; font-weight:700; cursor:pointer; white-space:nowrap;">➕ 새 과업</button>
+    {% endif %}
   </div>
 
-  <div id="pane-my">
+  <div id="pane-recent">
+    {% for t in recent_tasks %}{{ task_card(t, true) }}{% else %}
+      <div class="og-empty">최근 활동이 있는 과업이 없습니다</div>
+    {% endfor %}
+    {% if recent_tasks %}<div style="font-size:12px; color:#9ca3af; margin-top:6px;">진행 중인 과업을 마지막 활동(내용 작성·일정·공조요청·배정 등) 순으로 최대 12건 보여줍니다.</div>{% endif %}
+  </div>
+
+  <div id="pane-my" style="display:none;">
     {% for t in my_tasks %}{{ task_card(t) }}{% else %}
       <div class="og-empty">담당 과업이 없습니다</div>
     {% endfor %}
@@ -52,20 +72,35 @@
     {% for t in all_tasks %}{{ task_card(t) }}{% else %}
       <div class="og-empty">진행 중인 과업이 없습니다</div>
     {% endfor %}
+    <div style="text-align:right; margin-top:8px;">
+      <a href="/production/tasks" style="font-size:12px; color:#6b7280;">완료된 과업까지 전체 목록 보기 →</a>
+    </div>
   </div>
 
 </div>
 
+{% include "_new_task_modal.html" %}
+
 <script>
 function switchTab(name){
-  ['my','all'].forEach(t=>{
+  ['recent','my','all'].forEach(t=>{
     document.getElementById('pane-'+t).style.display = t===name ? 'block' : 'none';
     document.getElementById('tab-'+t).classList.toggle('active', t===name);
   });
 }
 (function(){
   const tab = new URLSearchParams(location.search).get('tab');
-  if (tab === 'all') switchTab('all');
+  if (tab === 'my' || tab === 'all') switchTab(tab);
+  // 최근 활동 시각을 '3시간 전'처럼 표시
+  const now = new Date();
+  document.querySelectorAll('.recent-act[data-ts]').forEach(el => {
+    const ts = el.dataset.ts; if(!ts) return;
+    const d = new Date(ts.replace(' ', 'T'));
+    const m = Math.round((now - d) / 60000);
+    const rel = m < 1 ? '방금' : m < 60 ? `${m}분 전` : m < 1440 ? `${Math.round(m/60)}시간 전` : `${Math.round(m/1440)}일 전`;
+    el.textContent = el.textContent.replace(/ · .*$/, ' · ' + rel);
+    el.title = ts;
+  });
 })();
 </script>
 {% endblock %}

@@ -76,8 +76,7 @@
 
         <!-- 제작부문 메뉴 -->
         <div class="division-menu" id="production-menu" style="display:{{ 'flex' if division == 'production' else 'none' }};">
-          <a href="/production/ongoing" class="{{ 'nav-active' if path == '/production/ongoing' else '' }}">진행중</a>
-          <a href="/production/tasks" class="{{ 'nav-active' if path.startswith('/production/tasks') else '' }}">과업</a>
+          <a href="/production/ongoing" class="{{ 'nav-active' if path.startswith('/production/ongoing') or path.startswith('/production/tasks') else '' }}">진행중</a>
           <a href="/production/schedule" class="{{ 'nav-active' if path == '/production/schedule' else '' }}">일정</a>
           <a href="/production/board" class="{{ 'nav-active' if path.startswith('/production/board') else '' }}">게시판</a>
           {% if session.get('role') != 'user' %}
@@ -121,13 +120,6 @@
         <a href="/nara/confirmed" class="{{ 'active' if path.startswith('/nara/confirmed') else '' }}">✅ 확정</a>
         <a href="/nara/results" class="{{ 'active' if path == '/nara/results' else '' }}">🏆 결과</a>
         <a href="/ongoing" class="{{ 'active' if path.startswith('/ongoing') else '' }}">📁 기과업</a>
-      </div>
-    </div>
-    {% elif path.startswith('/production/tasks') or path.startswith('/production/ongoing') %}
-    <div class="sub-nav">
-      <div class="sub-nav-inner">
-        <a href="/production/tasks" class="{{ 'active' if path == '/production/tasks' else '' }}">📋 모든 과업</a>
-        <a href="/production/ongoing" class="{{ 'active' if path.startswith('/production/ongoing') else '' }}">📁 진행 중</a>
       </div>
     </div>
     {% else %}

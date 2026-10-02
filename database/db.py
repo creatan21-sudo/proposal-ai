@@ -3953,6 +3953,38 @@ def list_people_for_picker() -> list:
     return sorted(people, key=lambda p: (p["team"] == "", p["team"], p["name"]))
 
 
+def list_recent_production_tasks(limit: int = 12) -> list:
+    """최근 진행: 완료되지 않은 과업을 '마지막 활동' 순으로.
+    활동 = 과업 등록·정보 변경·배정, 탭 내용 작성/수정, 일정 등록/수정, 공조요청 등록/완료.
+    각 행에 last_activity(시각), last_activity_label(무엇이 있었는지) 포함."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT t.*,
+                 (SELECT MAX(updated_at) FROM production_task_sections
+                    WHERE production_task_id=t.id AND content!='')                       AS a_sec,
+                 (SELECT MAX(updated_at) FROM production_schedules WHERE task_id=t.id)    AS a_sch,
+                 (SELECT MAX(MAX(created_at, COALESCE(NULLIF(completed_at,''), created_at)))
+                    FROM production_coop_requests WHERE production_task_id=t.id)         AS a_coop
+               FROM production_tasks t
+               WHERE t.status IN ('진행중', '대기')""",
+        ).fetchall()
+    out = []
+    for r in rows:
+        d = dict(r)
+        created = d.get("created_at") or ""
+        updated = d.get("updated_at") or ""
+        cands = [(created, "과업 등록"),
+                 (updated if updated > created else "", "과업 정보 변경·배정"),
+                 (d.get("a_sec") or "", "과업내용 작성"),
+                 (d.get("a_sch") or "", "일정 등록·수정"),
+                 (d.get("a_coop") or "", "공조요청")]
+        ts, label = max(cands, key=lambda x: x[0])
+        d["last_activity"], d["last_activity_label"] = ts, label
+        out.append(d)
+    out.sort(key=lambda d: d["last_activity"], reverse=True)
+    return out[:limit]
+
+
 def list_active_production_tasks() -> list:
     """완료되지 않은(대기·진행중) 제작부문 과업 전체 — 진행중 화면의 '전체 진행'"""
     with get_connection() as conn:
