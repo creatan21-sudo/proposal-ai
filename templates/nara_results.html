@@ -136,7 +136,7 @@ async function startProposal(cid, title){
     openProposalModal({
       taskId: d.production_task_id, title,
       heading: '📄 최종 제안서 등록',
-      sub: '최종 제안서 PDF를 올리면 제작부문 과업에 제작내용·제안개요가 자동으로 정리됩니다.',
+      sub: '최종 제안서와 관련 자료(여러 파일·이미지 가능)를 올리면 제작부문 과업에 제작내용·제안개요가 자동으로 정리됩니다.',
       onLater: () => location.reload(), onClose: () => location.reload(),
     });
   }catch(e){ showToast('오류: '+e, false); }

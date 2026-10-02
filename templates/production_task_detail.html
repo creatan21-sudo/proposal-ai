@@ -172,10 +172,10 @@
   {% if task.nara_confirmed_id and not task.proposal_filename %}
   <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; padding:12px 16px;
               background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; font-size:13px; color:#9a3412;">
-    <span>📄 기획부문 수주로 등록된 과업입니다. <b>최종 제안서가 아직 등록되지 않았습니다.</b> 올리면 제작내용·제안개요가 자동으로 정리됩니다.</span>
+    <span>📄 기획부문 수주로 등록된 과업입니다. <b>최종 제안서가 아직 등록되지 않았습니다.</b> 제안서와 관련 자료를 올리면 제작내용·제안개요가 자동으로 정리됩니다.</span>
     {% if can_edit %}
-    <button type="button" onclick="document.getElementById('proposal-file').click()"
-            style="flex-shrink:0; padding:7px 14px; background:#ea580c; color:#fff; border:none; border-radius:7px; font-size:12px; font-weight:700; cursor:pointer;">제안서 PDF 올리기</button>
+    <button type="button" onclick="openTaskProposalUpload()"
+            style="flex-shrink:0; padding:7px 14px; background:#ea580c; color:#fff; border:none; border-radius:7px; font-size:12px; font-weight:700; cursor:pointer;">제안 자료 올리기</button>
     {% endif %}
   </div>
   {% endif %}
@@ -201,11 +201,10 @@
       <span style="font-size:12px; color:#6b7280; max-width:260px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;"
             title="제안서 원본은 보관하지 않습니다 (AI 정리에만 사용 후 삭제)">✔ 제안서 반영 {{ (task.proposal_uploaded_at or '')[:10] }} · {{ task.proposal_filename }}</span>
       {% endif %}
-      <input type="file" id="proposal-file" accept="application/pdf,.pdf" style="display:none" onchange="uploadProposal(this)">
-      <button type="button" id="proposal-btn" onclick="document.getElementById('proposal-file').click()"
+      <button type="button" id="proposal-btn" onclick="openTaskProposalUpload()"
               style="padding:8px 14px; background:#4f46e5; color:#fff; border:none; border-radius:8px;
                      font-size:13px; font-weight:600; cursor:pointer; white-space:nowrap;">
-        📄 {{ '제안서 다시 올리기' if task.proposal_filename else '제안서 PDF 올리기' }}
+        📄 {{ '제안 자료 다시 올리기' if task.proposal_filename else '제안 자료 올리기' }}
       </button>
     </div>
     {% endif %}
@@ -433,6 +432,7 @@
 </div>
 
 {% include "_people_picker.html" %}
+{% include "_proposal_upload_modal.html" %}
 {% include "_coop_files.html" %}
 <script>
 // 탭 전환 (상위/하위 공용). 버튼 스타일 규칙: 상위=밑줄, 하위=pill
@@ -526,22 +526,17 @@ function _watchProposal(startedSec){
   };
   setTimeout(poll, 1500);
 }
-async function uploadProposal(input){
-  const f = input.files[0];
-  if (!f) return;
-  const hasContent = {{ 'true' if (sections.production_content and sections.production_content.content) or (sections.proposal_overview and sections.proposal_overview.content) else 'false' }};
-  if (hasContent && !confirm('제작내용과 제안개요를 새 제안서 기준으로 다시 작성합니다.\n지금 내용(직접 고친 부분 포함)은 덮어씁니다. 진행할까요?')) {
-    input.value = ''; return;
-  }
-  _propBusy(true); _propStatus('⏳ 제안서를 올리는 중…');
-  const fd = new FormData(); fd.append('file', f);
-  try {
-    const r = await fetch('/production/tasks/{{ task.id }}/proposal', {method: 'POST', body: fd});
-    const d = await r.json();
-    if (d.ok) _watchProposal(0);
-    else { _propBusy(false); _propStatus('⚠️ ' + (d.error || '업로드 실패'), 'err'); }
-  } catch (e) { _propBusy(false); _propStatus('⚠️ 업로드 실패: ' + e.message, 'err'); }
-  input.value = '';
+// 제안 자료 올리기: 공용 입력 창(여러 파일 끌어다 놓기) 사용
+function openTaskProposalUpload(){
+  if(document.getElementById('proposal-btn') && document.getElementById('proposal-btn').disabled) return;
+  openProposalModal({
+    taskId: {{ task.id }},
+    heading: '📄 제안 자료 올리기',
+    sub: '최종 제안서와 과업지시서·발표자료·콘티 이미지 등을 함께 올리면 제작내용·제안개요가 자동으로 정리됩니다.',
+    laterLabel: '닫기',
+    confirmOverwrite: {{ 'true' if (sections.production_content and sections.production_content.content) or (sections.proposal_overview and sections.proposal_overview.content) else 'false' }},
+    onDone: () => { location.href = location.pathname + '?tab=content&sub=production_content'; },
+  });
 }
 {% if task.proposal_status == 'running' %}_watchProposal(0);{% elif task.proposal_status == 'error' and task.proposal_message %}
 _propStatus('⚠️ 마지막 제안서 정리 실패: ' + {{ task.proposal_message | tojson }} + ' — 다시 올려 주세요', 'err');{% endif %}

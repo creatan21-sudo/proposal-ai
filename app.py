@@ -6969,37 +6969,48 @@ def _proposal_state(task: dict) -> dict:
             "uploaded_at": task.get("proposal_uploaded_at") or ""}
 
 
-def _run_proposal_summary(task_id: int, tmp: Path, filename: str, project: str, client: str, by: str):
-    """백그라운드: 제안서 AI 정리 → 섹션 저장. 원본 임시파일은 성공/실패와 무관하게 삭제."""
+def _run_proposal_summary(task_id: int, files: list, project: str, client: str, by: str):
+    """백그라운드: 제안 자료(여러 파일) AI 정리 → 섹션 저장. 원본 임시파일은 성공/실패와 무관하게 삭제.
+    files: [(임시 경로 Path, 원래 파일명)]"""
     from database.db import (add_production_task_section, set_production_task_proposal,
                              set_production_proposal_status)
     try:
-        from agents.proposal_summarizer import summarize_proposal_pdf
-        result = summarize_proposal_pdf(
-            str(tmp), project, client,
+        from agents.proposal_summarizer import summarize_proposal_files
+        result = summarize_proposal_files(
+            [(str(p), n) for p, n in files], project, client,
             progress=lambda m: set_production_proposal_status(task_id, "running", m))
         for key in ("production_content", "proposal_overview"):
             if result.get(key):
                 add_production_task_section(task_id, key, result[key], auto_generated=1, generated_by=by)
-        set_production_task_proposal(task_id, filename, "")      # 파일명·시각만 기록, 경로 없음
-        set_production_proposal_status(task_id, "done", f"정리 완료 ({result.get('mode')})")
-        print(f"[proposal] task {task_id} 정리 완료 mode={result.get('mode')}")
+        names = [n for _, n in files]
+        label = names[0] if len(names) == 1 else f"{names[0]} 외 {len(names) - 1}개"
+        set_production_task_proposal(task_id, label, "")      # 파일명·시각만 기록, 경로 없음
+        msg = "정리 완료"
+        if result.get("skipped"):
+            msg += " · 제외: " + ", ".join(result["skipped"])[:300]
+        set_production_proposal_status(task_id, "done", msg)
+        print(f"[proposal] task {task_id} 정리 완료 mode={result.get('mode')} files={len(files)}")
     except Exception as e:
         print(f"[오류] 제안서 정리 실패 (task {task_id}): {type(e).__name__}: {e}")
         set_production_proposal_status(task_id, "error", str(e)[:500] or type(e).__name__)
     finally:
-        try:
-            tmp.unlink(missing_ok=True)
-        except Exception as e:
-            print(f"[경고] 제안서 임시파일 삭제 실패: {e}")
+        for p, _ in files:
+            try:
+                Path(p).unlink(missing_ok=True)
+            except Exception as e:
+                print(f"[경고] 제안서 임시파일 삭제 실패: {e}")
+
+
+PROPOSAL_MAX_FILES = 10
 
 
 @app.route("/production/tasks/<int:task_id>/proposal", methods=["POST"])
 @login_required
 def upload_production_proposal(task_id):
-    """제작부문 과업 — 최종 제안서 PDF 업로드 → 백그라운드에서 AI가 제작내용·제안개요 생성.
+    """제작부문 과업 — 제안 자료 업로드(여러 파일: PDF·문서·이미지) → 백그라운드에서 AI가 제작내용·제안개요 생성.
     진행 상황은 /proposal/status 로 조회 (화면을 닫아도 계속 진행)."""
     from database.db import get_production_task, set_production_proposal_status
+    from agents.proposal_summarizer import ALLOWED_EXT
     task = get_production_task(task_id)
     if not task:
         return jsonify({"ok": False, "error": "과업을 찾을 수 없습니다"}), 404
@@ -7008,26 +7019,34 @@ def upload_production_proposal(task_id):
     if _proposal_state(task)["status"] == "running":
         return jsonify({"ok": False, "error": "이미 제안서를 정리하고 있습니다. 끝난 뒤 다시 시도하세요."}), 409
 
-    f = request.files.get("file")
-    if not f or not f.filename:
+    uploads = [f for f in (request.files.getlist("files") or request.files.getlist("file")) if f and f.filename]
+    if not uploads:
         return jsonify({"ok": False, "error": "파일을 선택하세요"})
-    if Path(f.filename).suffix.lower() != ".pdf":
-        return jsonify({"ok": False, "error": "PDF 파일만 올릴 수 있습니다"})
+    if len(uploads) > PROPOSAL_MAX_FILES:
+        return jsonify({"ok": False, "error": f"한 번에 {PROPOSAL_MAX_FILES}개까지 올릴 수 있습니다"})
+    bad = [f.filename for f in uploads if Path(f.filename).suffix.lower() not in ALLOWED_EXT]
+    if bad:
+        return jsonify({"ok": False, "error": f"지원하지 않는 형식: {', '.join(bad)} "
+                                              "(PDF·HWP·HWPX·DOCX·PPTX·TXT·MD·CSV·JPG·PNG·GIF·WEBP·BMP)"})
 
     # 제안서 원본은 '입력 전용' — AI 정리에만 쓰고 서버에 남기지 않는다 (열람·다운로드 경로 없음)
     tmp_dir = UPLOAD_DIR / "production_proposals_tmp"
     tmp_dir.mkdir(parents=True, exist_ok=True)
-    tmp = tmp_dir / _safe_upload_name(f.filename, ".pdf")
-    f.save(str(tmp))
+    saved = []
+    for f in uploads:
+        ext = Path(f.filename).suffix.lower()
+        tmp = tmp_dir / _safe_upload_name(f.filename, ext)
+        f.save(str(tmp))
+        saved.append((tmp, f.filename))
 
-    set_production_proposal_status(task_id, "running", "제안서를 받았습니다", started=True)
+    set_production_proposal_status(task_id, "running", f"자료 {len(saved)}개를 받았습니다", started=True)
     threading.Thread(
         target=_run_proposal_summary,
-        args=(task_id, tmp, f.filename, task.get("project_name", ""), task.get("client_name", ""),
+        args=(task_id, saved, task.get("project_name", ""), task.get("client_name", ""),
               session.get("username", "system")),
         daemon=True,
     ).start()
-    return jsonify({"ok": True, "status": "running"})
+    return jsonify({"ok": True, "status": "running", "files": len(saved)})
 
 
 @app.route("/production/tasks/<int:task_id>/proposal/status")

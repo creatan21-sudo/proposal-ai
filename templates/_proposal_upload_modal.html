@@ -1,20 +1,30 @@
-{# 수주 과업 → 제작부문: 최종 제안서 PDF 입력 창 (공용)
+{# 제안 자료 입력 창 (공용) — 수주 직후·결과 메뉴·기획 과업 화면·제작부문 과업 화면에서 사용
    사용: {% include "_proposal_upload_modal.html" %} 후
-         openProposalModal({taskId, title, heading, onLater, onClose})
-   - 업로드: /production/tasks/<id>/proposal (원본은 AI 정리 후 서버에서 즉시 삭제)
+         openProposalModal({taskId, title, heading, sub, laterLabel, confirmOverwrite, onLater, onClose, onDone})
+   - 여러 파일을 끌어다 놓거나 골라서 목록 확인 → [정리 시작]
+   - 형식: PDF·HWP·HWPX·DOCX·PPTX·TXT·MD·CSV·JPG·PNG·GIF·WEBP·BMP (최대 10개, 합계 95MB)
+   - 업로드: /production/tasks/<id>/proposal (원본은 AI 정리 후 서버에서 즉시 삭제, 정리는 창을 닫아도 계속)
    - [나중에 하기]: 결과 메뉴 또는 제작부문 과업 화면에서 언제든 다시 올릴 수 있음 #}
 <style>
 .pum-ov{display:none;position:fixed;inset:0;background:rgba(17,24,39,.5);z-index:10001;align-items:center;justify-content:center;}
 .pum-ov.open{display:flex;}
-.pum{background:#fff;border-radius:16px;width:460px;max-width:94vw;padding:26px 26px 22px;box-shadow:0 24px 64px rgba(0,0,0,.28);}
+.pum{background:#fff;border-radius:16px;width:520px;max-width:94vw;max-height:90vh;overflow-y:auto;padding:26px 26px 22px;box-shadow:0 24px 64px rgba(0,0,0,.28);}
 .pum h3{margin:0 0 6px;font-size:18px;font-weight:800;color:#111827;}
 .pum .sub{font-size:13px;color:#6b7280;line-height:1.6;}
 .pum .proj{margin:14px 0 4px;padding:10px 12px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;font-weight:600;color:#111827;}
-.pum-drop{margin-top:14px;border:2px dashed #c7d2fe;border-radius:12px;padding:22px 16px;text-align:center;cursor:pointer;background:#f8f9ff;transition:background .15s,border-color .15s;}
+.pum-drop{margin-top:14px;border:2px dashed #c7d2fe;border-radius:12px;padding:20px 16px;text-align:center;cursor:pointer;background:#f8f9ff;transition:background .15s,border-color .15s;}
 .pum-drop:hover,.pum-drop.over{background:#eef2ff;border-color:#818cf8;}
-.pum-drop .big{font-size:28px;}
+.pum-drop .big{font-size:26px;}
 .pum-drop .t{font-size:14px;font-weight:700;color:#3730a3;margin-top:4px;}
-.pum-drop .s{font-size:12px;color:#6b7280;margin-top:4px;}
+.pum-drop .s{font-size:12px;color:#6b7280;margin-top:4px;line-height:1.5;}
+.pum-list{margin-top:10px;display:flex;flex-direction:column;gap:5px;}
+.pum-item{display:flex;align-items:center;gap:8px;padding:7px 10px;border:1px solid #e5e7eb;border-radius:8px;font-size:13px;background:#fff;}
+.pum-item .ic{flex-shrink:0;}
+.pum-item .nm{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#111827;}
+.pum-item .sz{flex-shrink:0;font-size:11px;color:#9ca3af;}
+.pum-item .x{flex-shrink:0;cursor:pointer;color:#9ca3af;font-weight:700;padding:0 4px;}
+.pum-item .x:hover{color:#dc2626;}
+.pum-sum{font-size:12px;color:#6b7280;margin-top:6px;}
 .pum-status{display:none;margin-top:14px;padding:12px 14px;border-radius:8px;font-size:13px;font-weight:500;line-height:1.5;}
 .pum-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;}
 .pum-btn{padding:9px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;border:1px solid #d1d5db;background:#fff;color:#374151;text-decoration:none;}
@@ -24,49 +34,84 @@
 <div class="pum-ov" id="pum-ov">
   <div class="pum" role="dialog" aria-modal="true" aria-labelledby="pum-heading">
     <h3 id="pum-heading">🏆 수주 처리 완료</h3>
-    <div class="sub" id="pum-sub">제작부문에 과업이 등록되었습니다. 최종 제안서 PDF를 올리면 제작내용·제안개요가 자동으로 정리됩니다.</div>
+    <div class="sub" id="pum-sub"></div>
     <div class="proj" id="pum-proj"></div>
-    <input type="file" id="pum-file" accept="application/pdf,.pdf" style="display:none" onchange="_pumUpload(this.files[0])">
-    <div class="pum-drop" id="pum-drop" onclick="document.getElementById('pum-file').click()">
-      <div class="big">📄</div>
-      <div class="t">최종 제안서 PDF 선택</div>
-      <div class="s">클릭하거나 파일을 끌어다 놓으세요 · 원본은 정리 후 보관하지 않습니다 · 정리는 창을 닫아도 계속됩니다</div>
+    <input type="file" id="pum-file" multiple
+           accept=".pdf,.hwp,.hwpx,.docx,.pptx,.txt,.md,.csv,.jpg,.jpeg,.png,.gif,.webp,.bmp" style="display:none">
+    <div class="pum-drop" id="pum-drop">
+      <div class="big">📂</div>
+      <div class="t">제안 자료를 끌어다 놓거나 클릭해서 고르세요 (여러 개 가능)</div>
+      <div class="s">최종 제안서 PDF와 과업지시서·발표자료·콘티 이미지 등을 함께 올릴 수 있습니다<br>
+        PDF·HWP·HWPX·DOCX·PPTX·TXT·MD·CSV·JPG·PNG·GIF·WEBP·BMP · 최대 10개 · 원본은 정리 후 보관하지 않습니다</div>
     </div>
+    <div class="pum-list" id="pum-list"></div>
+    <div class="pum-sum" id="pum-sum"></div>
     <div class="pum-status" id="pum-status"></div>
     <div class="pum-actions" id="pum-actions">
-      <button type="button" class="pum-btn" id="pum-later" onclick="_pumLater()">나중에 하기</button>
+      <button type="button" class="pum-btn" id="pum-later">나중에 하기</button>
+      <button type="button" class="pum-btn primary" id="pum-start" disabled>정리 시작</button>
     </div>
   </div>
 </div>
 <script>
 (function(){
-  let opts = {}, busy = false, timer = null;
+  const EXT = ['.pdf','.hwp','.hwpx','.docx','.pptx','.txt','.md','.csv','.jpg','.jpeg','.png','.gif','.webp','.bmp'];
+  const IMG = ['.jpg','.jpeg','.png','.gif','.webp','.bmp'];
+  const MAX_FILES = 10, MAX_TOTAL = 95 * 1024 * 1024;
+  let opts = {}, busy = false, timer = null, files = [];
   const $ = id => document.getElementById(id);
+  const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const ext = n => ((n.match(/\.[^.]+$/) || [''])[0]).toLowerCase();
+  const size = n => n >= 1048576 ? (n/1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(n/1024)) + 'KB';
+
   function status(msg, kind){
     const s = $('pum-status'); s.style.display = msg ? 'block' : 'none'; s.textContent = msg || '';
     const c = {info:['#eef2ff','#3730a3'], ok:['#dcfce7','#166534'], err:['#fee2e2','#991b1b']}[kind||'info'];
     s.style.background = c[0]; s.style.color = c[1];
   }
+  function render(){
+    $('pum-list').innerHTML = files.map((f, i) =>
+      `<div class="pum-item"><span class="ic">${ext(f.name) === '.pdf' ? '📕' : IMG.includes(ext(f.name)) ? '🖼️' : '📄'}</span>
+        <span class="nm" title="${esc(f.name)}">${esc(f.name)}</span><span class="sz">${size(f.size)}</span>
+        ${busy ? '' : `<span class="x" data-i="${i}" title="빼기">×</span>`}</div>`).join('');
+    const total = files.reduce((a, f) => a + f.size, 0);
+    $('pum-sum').textContent = files.length ? `${files.length}개 · ${size(total)}` : '';
+    $('pum-start').disabled = busy || !files.length;
+  }
+  function add(list){
+    const bad = [];
+    for(const f of list){
+      if(!EXT.includes(ext(f.name))){ bad.push(f.name); continue; }
+      if(files.some(x => x.name === f.name && x.size === f.size)) continue;
+      if(files.length >= MAX_FILES){ status(`한 번에 ${MAX_FILES}개까지 올릴 수 있습니다`, 'err'); break; }
+      if(files.reduce((a, x) => a + x.size, 0) + f.size > MAX_TOTAL){ status('합계 95MB를 넘어 일부 파일을 뺐습니다', 'err'); continue; }
+      files.push(f);
+    }
+    if(bad.length) status('지원하지 않는 형식이라 뺐습니다: ' + bad.join(', '), 'err');
+    else if(files.length) status('');
+    render();
+  }
   window.openProposalModal = function(o){
-    opts = o || {};
+    opts = o || {}; files = []; busy = false; clearInterval(timer);
     $('pum-heading').textContent = opts.heading || '🏆 수주 처리 완료';
-    $('pum-sub').textContent = opts.sub || '제작부문에 과업이 등록되었습니다. 최종 제안서 PDF를 올리면 제작내용·제안개요가 자동으로 정리됩니다.';
+    $('pum-sub').textContent = opts.sub || '제작부문에 과업이 등록되었습니다. 최종 제안서와 관련 자료를 올리면 제작내용·제안개요가 자동으로 정리됩니다.';
     $('pum-proj').textContent = opts.title || '';
     $('pum-proj').style.display = opts.title ? '' : 'none';
     $('pum-drop').style.display = '';
-    $('pum-later').style.display = ''; $('pum-later').disabled = false;
+    $('pum-later').textContent = opts.laterLabel || '나중에 하기';
+    $('pum-later').style.display = ''; $('pum-start').style.display = '';
     $('pum-actions').querySelectorAll('.pum-done').forEach(e => e.remove());
-    status('');
+    status(''); render();
     $('pum-ov').classList.add('open');
   };
-  window._pumLater = function(){
+  function later(){
     if(busy) return;
     $('pum-ov').classList.remove('open');
     if(opts.onLater) opts.onLater();
-  };
+  }
   function done(){
-    $('pum-drop').style.display = 'none';
-    $('pum-later').style.display = 'none';
+    if(opts.onDone){ opts.onDone(); return; }
+    $('pum-drop').style.display = 'none'; $('pum-later').style.display = 'none'; $('pum-start').style.display = 'none';
     const a = $('pum-actions');
     const go = document.createElement('a'); go.className = 'pum-btn primary pum-done';
     go.href = '/production/tasks/' + opts.taskId + '?tab=content&sub=production_content'; go.textContent = '🎬 제작부문 과업 보기';
@@ -74,21 +119,20 @@
     close.onclick = () => { $('pum-ov').classList.remove('open'); if(opts.onClose) opts.onClose(); };
     a.appendChild(close); a.appendChild(go);
   }
-  window._pumUpload = async function(f){
-    if(!f || busy) return;
-    if(!/\.pdf$/i.test(f.name)){ status('PDF 파일만 올릴 수 있습니다', 'err'); return; }
-    busy = true; $('pum-later').disabled = true; $('pum-drop').style.pointerEvents = 'none'; $('pum-drop').style.opacity = .5;
-    let sec = 0; status('⏳ 제안서를 올리는 중…', 'info');
-    const fd = new FormData(); fd.append('file', f);
-    const fail = (m) => { clearInterval(timer); status('⚠️ ' + m + ' — 다시 시도하거나 [나중에 하기]를 누르세요', 'err'); };
+  async function start(){
+    if(!files.length || busy) return;
+    if(opts.confirmOverwrite && !confirm('제작내용과 제안개요를 새 자료 기준으로 다시 작성합니다.\n지금 내용(직접 고친 부분 포함)은 덮어씁니다. 진행할까요?')) return;
+    busy = true; $('pum-later').disabled = true; $('pum-drop').style.pointerEvents = 'none'; $('pum-drop').style.opacity = .5; render();
+    let sec = 0; status(`⏳ 자료 ${files.length}개를 올리는 중…`, 'info');
+    const fd = new FormData(); files.forEach(f => fd.append('files', f));
+    const fail = (m) => { clearInterval(timer); status('⚠️ ' + m + ' — 다시 시도하거나 [' + $('pum-later').textContent + ']를 누르세요', 'err'); };
     try{
       const r = await fetch('/production/tasks/' + opts.taskId + '/proposal', {method:'POST', body: fd});
-      const d = await r.json();
+      let d; try{ d = await r.json(); }catch(e){ d = {ok:false, error: r.status === 413 ? '파일 용량이 너무 큽니다' : '업로드 실패'}; }
       if(!d.ok){ fail(d.error || '업로드 실패'); }
       else {
         // 서버 뒤에서 정리 진행 — 창을 닫아도 계속됨. 상태를 3초마다 확인
-        let stage = '제안서를 받았습니다';
-        clearInterval(timer);
+        let stage = '자료를 받았습니다';
         timer = setInterval(() => { sec++; status(`⏳ ${stage}… ${sec}초 (분량에 따라 1~5분 · 창을 닫아도 계속 진행됩니다)`, 'info'); }, 1000);
         const final = await new Promise(resolve => {
           const poll = async () => {
@@ -101,19 +145,23 @@
           setTimeout(poll, 2000);
         });
         clearInterval(timer);
-        if(final.status === 'done'){ status('✅ 정리 완료 — 제작부문 과업에 제작내용·제안개요가 등록되었습니다', 'ok'); done(); }
-        else fail(final.message || '정리 실패');
+        if(final.status === 'done'){
+          status('✅ ' + (final.message || '정리 완료') + ' — 제작내용·제안개요가 등록되었습니다', 'ok');
+          busy = false; done(); return;
+        }
+        fail(final.message || '정리 실패');
       }
-    }catch(e){
-      fail('업로드 실패: ' + e.message);
-    }
-    busy = false; $('pum-later').disabled = false; $('pum-drop').style.pointerEvents = ''; $('pum-drop').style.opacity = 1;
-    $('pum-file').value = '';
-  };
-  // 끌어다 놓기
+    }catch(e){ fail('업로드 실패: ' + e.message); }
+    busy = false; $('pum-later').disabled = false; $('pum-drop').style.pointerEvents = ''; $('pum-drop').style.opacity = 1; render();
+  }
+  $('pum-later').onclick = later;
+  $('pum-start').onclick = start;
+  $('pum-drop').onclick = () => $('pum-file').click();
+  $('pum-file').onchange = e => { add(e.target.files); e.target.value = ''; };
+  $('pum-list').onclick = e => { const x = e.target.closest('.x'); if(x && !busy){ files.splice(+x.dataset.i, 1); render(); } };
   const drop = $('pum-drop');
   ['dragenter','dragover'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add('over'); }));
   ['dragleave','drop'].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove('over'); }));
-  drop.addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if(f) _pumUpload(f); });
+  drop.addEventListener('drop', e => { if(!busy) add(e.dataTransfer.files); });
 })();
 </script>
