@@ -222,21 +222,9 @@
     {% if can_request %}
     <div style="background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:20px 24px; margin-bottom:16px;">
       <div style="font-size:15px; font-weight:700; color:#1f2937; margin-bottom:12px;">✍️ 공조요청 작성</div>
-      <div style="display:flex; gap:16px; align-items:center; margin-bottom:10px; font-size:13px; color:#374151;">
-        <span style="font-weight:600;">요청 대상</span>
-        <label style="display:flex; gap:5px; align-items:center; cursor:pointer;">
-          <input type="radio" name="coop-target" value="all" checked onchange="toggleCoopTargets()"> 전체</label>
-        <label style="display:flex; gap:5px; align-items:center; cursor:pointer;">
-          <input type="radio" name="coop-target" value="users" onchange="toggleCoopTargets()"> 특정인 지정</label>
-      </div>
-      <div id="coop-users" style="display:none; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
-        {% for u in users if u.username != me %}
-        <label class="coop-user" style="display:inline-flex; align-items:center; gap:5px; padding:5px 11px; border:1px solid #e5e7eb;
-               border-radius:99px; font-size:13px; cursor:pointer; background:#fff; user-select:none;">
-          <input type="checkbox" value="{{ u.username }}" style="margin:0;" onchange="this.parentElement.style.background=this.checked?'#eef2ff':'#fff'; this.parentElement.style.borderColor=this.checked?'#a5b4fc':'#e5e7eb';"> {{ u.username }}
-        </label>
-        {% endfor %}
-      </div>
+      <div style="font-size:13px; font-weight:600; color:#374151; margin-bottom:6px;">요청 대상
+        <span style="font-weight:400; color:#9ca3af; font-size:12px;">왼쪽에서 팀, 오른쪽에서 사람을 고르세요 (전체 → 전체 = 모든 사람)</span></div>
+      <div id="coop-picker" style="margin-bottom:10px;"></div>
       <textarea id="coop-content" placeholder="요청할 내용을 적어주세요 (예: 10/15 촬영 장비 지원 가능 여부 확인 부탁드립니다)"
                 style="width:100%; min-height:90px; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px;
                        line-height:1.6; box-sizing:border-box; resize:vertical; font-family:inherit;"></textarea>
@@ -300,14 +288,16 @@
         <label style="display: block; font-size: 13px; font-weight: 600; color: #1f2937; margin-bottom: 8px;">
           담당자 선택
         </label>
-        <select id="assignee-select" name="assignee" required
-                style="width: 100%; padding: 10px 12px; border: 1px solid #d1d5db;
-                       border-radius: 8px; font-size: 13px;">
-          <option value="">선택하세요</option>
-          {% for user in users %}
-          <option value="{{ user.username }}">{{ user.username }}</option>
-          {% endfor %}
-        </select>
+        {# 팀 → 사람 2단 선택 (단일) #}
+        <div style="display:flex; gap:6px;">
+          <select id="assignee-team" onchange="fillAssignee()"
+                  style="flex:0 0 42%; padding: 10px 8px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px;">
+            <option value="__ALL__">전체</option>
+            {% for t in people | map(attribute='team') | select | unique | sort %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+          </select>
+          <select id="assignee-select" name="assignee" required
+                  style="flex:1; min-width:0; padding: 10px 8px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px;"></select>
+        </div>
       </div>
 
       <div>
@@ -337,6 +327,7 @@
   </div>
 </div>
 
+{% include "_people_picker.html" %}
 <script>
 // 탭 전환 (상위/하위 공용). 버튼 스타일 규칙: 상위=밑줄, 하위=pill
 function switchTab(btnClass, panelClass, btn) {
@@ -450,22 +441,20 @@ async function uploadProposal(input){
 _propStatus('⚠️ 마지막 제안서 정리 실패: ' + {{ task.proposal_message | tojson }} + ' — 다시 올려 주세요', 'err');{% endif %}
 
 // ── 공조요청 ──
-function toggleCoopTargets(){
-  const users = document.querySelector('input[name=coop-target]:checked').value === 'users';
-  document.getElementById('coop-users').style.display = users ? 'flex' : 'none';
-}
+const coopPicker = document.getElementById('coop-picker')
+  ? PeoplePicker(document.getElementById('coop-picker'), {people: {{ people | tojson }}, allowAll: true})
+  : null;
 async function submitCoop(){
-  const type = document.querySelector('input[name=coop-target]:checked').value;
-  const targets = Array.from(document.querySelectorAll('#coop-users input:checked')).map(i => i.value);
+  const sel = coopPicker.get();
   const content = document.getElementById('coop-content').value.trim();
-  if (type === 'users' && !targets.length) { alert('요청할 사람을 선택하세요'); return; }
+  if (!sel.all && !sel.names.length) { alert('요청 대상을 고르세요 (전체 또는 팀·사람)'); return; }
   if (!content) { alert('요청 내용을 입력하세요'); return; }
   const btn = document.getElementById('coop-submit');
   btn.disabled = true; btn.textContent = '요청 중…';
   try {
     const r = await fetch('/production/tasks/{{ task.id }}/coop', {
       method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({target_type: type, targets, content})
+      body: JSON.stringify({target_type: sel.all ? 'all' : 'users', targets: sel.names, content})
     });
     const d = await r.json();
     if (d.ok) { location.href = location.pathname + '?tab=cooperation'; return; }
@@ -483,6 +472,16 @@ async function setCoopStatus(id, status){
     alert(d.error || '처리 실패');
   } catch (e) { alert('처리 실패: ' + e.message); }
 }
+
+const _PEOPLE = {{ people | tojson }};
+function fillAssignee(){
+  const t = document.getElementById('assignee-team').value;
+  const ms = _PEOPLE.filter(p => t === '__ALL__' || p.team === t);
+  const esc = v => (v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  document.getElementById('assignee-select').innerHTML = '<option value="">— 담당자 선택 —</option>'
+    + ms.map(p => `<option value="${esc(p.name)}">${esc(p.name)}${t === '__ALL__' && p.team ? ' · ' + esc(p.team) : ''}</option>`).join('');
+}
+fillAssignee();
 
 function openAssignModal() {
   document.getElementById('assign-modal').style.display = 'flex';

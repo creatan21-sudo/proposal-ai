@@ -789,6 +789,13 @@ def migrate_production_tasks() -> None:
     with get_connection() as conn:
         cursor = conn.cursor()
 
+        # 사용자 소속 팀 (사람 지정 시 팀 → 사람 2단 선택용, 관리자 화면에서 지정)
+        _uc = [r[1] for r in conn.execute("PRAGMA table_info(users)").fetchall()]
+        if _uc and "team" not in _uc:
+            conn.execute("ALTER TABLE users ADD COLUMN team TEXT DEFAULT ''")
+            conn.commit()
+            print("[migration] users.team 컬럼 추가")
+
         # 공조요청 (과업별 협조 요청 — 특정인 또는 전체 대상)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS production_coop_requests (
@@ -1864,7 +1871,7 @@ def get_user_by_id(user_id: int) -> "dict | None":
 def list_users() -> list:
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT id, username, is_admin, role, created_at FROM users ORDER BY id"
+            "SELECT id, username, is_admin, role, created_at, COALESCE(team,'') AS team FROM users ORDER BY id"
         ).fetchall()
         result = []
         for r in rows:
@@ -1872,6 +1879,7 @@ def list_users() -> list:
             # role 컬럼이 없는 구버전 DB 대비 폴백
             if not d.get("role"):
                 d["role"] = "admin" if d.get("is_admin") else "operator"
+            d["team"] = (d.get("team") or "").strip()   # (일부 화면이 users를 JSON으로 내보내므로 민감 컬럼은 조회하지 않음)
             result.append(d)
         return result
 
@@ -3928,6 +3936,18 @@ def set_production_proposal_status(task_id: int, status: str, message: str = "",
             conn.execute("UPDATE production_tasks SET proposal_status=?, proposal_message=? WHERE id=?",
                          (status, message, task_id))
         conn.commit()
+
+
+def update_user_team(uid: int, team: str) -> None:
+    with get_connection() as conn:
+        conn.execute("UPDATE users SET team=? WHERE id=?", ((team or "").strip()[:30], uid))
+        conn.commit()
+
+
+def list_people_for_picker() -> list:
+    """사람 지정 선택기용 [{name, team}] — 팀명 순, 이름 순"""
+    people = [{"name": u["username"], "team": u.get("team") or ""} for u in list_users()]
+    return sorted(people, key=lambda p: (p["team"] == "", p["team"], p["name"]))
 
 
 def list_active_production_tasks() -> list:

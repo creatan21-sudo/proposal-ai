@@ -1,0 +1,94 @@
+{# 사람 지정 공용 선택기: 왼쪽 팀(전체 포함) → 오른쪽 해당 팀 사람
+   사용: {% include "_people_picker.html" %} 한 번 포함 후
+         const pp = PeoplePicker(document.getElementById('...'), {people:[{name,team}], allowAll, allowFree})
+         pp.get() → {all: bool, names: [...]},  pp.set(names, all),  pp.clear()
+   - 오른쪽에서 사람을 고르면 바로 추가됨 ('전원' = 그 팀 모두)
+   - allowAll: 왼쪽 '전체' + '전원' = 모든 사람 대상(공조요청의 '전체')
+   - allowFree: 명단에 없는 이름 직접 입력 (외부 스태프 등) #}
+<style>
+.pp-row{display:flex;gap:6px;}
+.pp-row select{flex:1;min-width:0;padding:8px 8px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;background:#fff;font-family:inherit;}
+.pp-row select.pp-team{flex:0 0 42%;}
+.pp-free{width:100%;margin-top:6px;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;box-sizing:border-box;font-family:inherit;}
+.pp-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;}
+.pp-chip{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:99px;font-size:12px;font-weight:600;background:#eef2ff;border:1px solid #a5b4fc;color:#3730a3;}
+.pp-chip.free{background:#f5f3ff;border-color:#c4b5fd;color:#5b21b6;}
+.pp-chip.all{background:#fef3c7;border-color:#fcd34d;color:#92400e;}
+.pp-chip .x{cursor:pointer;opacity:.7;font-weight:700;}
+.pp-chip .x:hover{opacity:1;}
+.pp-chip .tm{font-weight:500;opacity:.7;font-size:11px;}
+.pp-empty{font-size:12px;color:#9ca3af;}
+</style>
+<script>
+window.PeoplePicker = function(root, o){
+  o = o || {};
+  const people = o.people || [];
+  const ALL = '__ALL__', EVERY = '__EVERY__', NOTEAM = '__NOTEAM__';
+  const teamOf = {}; people.forEach(p => teamOf[p.name] = p.team || '');
+  const teams = [...new Set(people.map(p => p.team).filter(Boolean))].sort();
+  const hasNoTeam = people.some(p => !p.team);
+  const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  let all = false, names = [];
+
+  root.innerHTML =
+    `<div class="pp-row">
+       <select class="pp-team" aria-label="팀">
+         <option value="${ALL}">전체</option>
+         ${teams.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('')}
+         ${hasNoTeam && teams.length ? `<option value="${NOTEAM}">팀 미지정</option>` : ''}
+       </select>
+       <select class="pp-person" aria-label="사람"></select>
+     </div>
+     ${o.allowFree ? `<input class="pp-free" placeholder="직접 입력 후 Enter (외부 스태프, 출연자 등)">` : ''}
+     <div class="pp-chips"></div>`;
+  const selTeam = root.querySelector('.pp-team'), selPerson = root.querySelector('.pp-person');
+  const chips = root.querySelector('.pp-chips'), free = root.querySelector('.pp-free');
+
+  function members(team){
+    if(team === ALL) return people.map(p => p.name);
+    if(team === NOTEAM) return people.filter(p => !p.team).map(p => p.name);
+    return people.filter(p => p.team === team).map(p => p.name);
+  }
+  function fillPeople(){
+    const t = selTeam.value, ms = members(t);
+    const allLabel = t === ALL ? (o.allowAll ? '전체 (모든 사람)' : '모든 사람') : `${t === NOTEAM ? '팀 미지정' : t} 전원 (${ms.length}명)`;
+    selPerson.innerHTML = `<option value="">— 사람 선택 —</option><option value="${EVERY}">${esc(allLabel)}</option>`
+      + ms.map(n => `<option value="${esc(n)}">${esc(n)}${t === ALL && teamOf[n] ? ' · ' + esc(teamOf[n]) : ''}</option>`).join('');
+  }
+  function render(){
+    if(all){ chips.innerHTML = `<span class="pp-chip all">👥 전체 (모든 사람) <span class="x" data-x="${ALL}">×</span></span>`; }
+    else if(!names.length){ chips.innerHTML = `<span class="pp-empty">아직 선택한 사람이 없습니다</span>`; }
+    else chips.innerHTML = names.map(n => {
+      const known = n in teamOf;
+      return `<span class="pp-chip${known ? '' : ' free'}">${esc(n)}${known && teamOf[n] ? ` <span class="tm">${esc(teamOf[n])}</span>` : ''} <span class="x" data-x="${esc(n)}">×</span></span>`;
+    }).join('');
+    if(o.onChange) o.onChange();
+  }
+  function add(list){ all = false; list.forEach(n => { n = (n||'').trim(); if(n && !names.includes(n)) names.push(n); }); render(); }
+
+  selTeam.addEventListener('change', fillPeople);
+  selPerson.addEventListener('change', () => {
+    const v = selPerson.value; if(!v) return;
+    if(v === EVERY){
+      if(selTeam.value === ALL && o.allowAll){ all = true; names = []; render(); }
+      else add(members(selTeam.value));
+    } else add([v]);
+    selPerson.value = '';
+  });
+  chips.addEventListener('click', e => {
+    const x = e.target.closest('.x'); if(!x) return;
+    if(x.dataset.x === ALL) all = false; else names = names.filter(n => n !== x.dataset.x);
+    render();
+  });
+  if(free) free.addEventListener('keydown', e => {
+    if(e.key === 'Enter' || e.key === ','){ e.preventDefault(); add(free.value.split(',')); free.value = ''; }
+  });
+  fillPeople(); render();
+
+  return {
+    get(){ if(free && free.value.trim()){ add(free.value.split(',')); free.value = ''; } return {all, names: names.slice()}; },
+    set(list, isAll){ all = !!isAll; names = isAll ? [] : [...new Set((list||[]).filter(Boolean))]; render(); },
+    clear(){ all = false; names = []; if(free) free.value = ''; selTeam.value = ALL; fillPeople(); render(); },
+  };
+};
+</script>

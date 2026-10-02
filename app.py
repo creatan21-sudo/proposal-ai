@@ -2181,7 +2181,11 @@ def admin_add_user():
         error = "비밀번호는 4자 이상이어야 합니다."
     else:
         try:
-            create_user(username, password, is_admin, role=role)
+            new_uid = create_user(username, password, is_admin, role=role)
+            team = request.form.get("team", "").strip()
+            if team and new_uid:
+                from database.db import update_user_team
+                update_user_team(new_uid, team)
         except Exception as e:
             error = f"계정 생성 실패: {e}"
 
@@ -2221,6 +2225,15 @@ def admin_change_role(uid):
         role = "user"
     if uid != session["user_id"]:  # 자기 자신 역할 변경 방지
         update_user_role(uid, role)
+    return redirect(url_for("admin"))
+
+
+@app.route("/admin/change-team/<int:uid>", methods=["POST"])
+@admin_required
+def admin_change_team(uid):
+    """사용자 소속 팀 지정 (공조요청·제작일정의 팀 → 사람 선택에 사용)"""
+    from database.db import update_user_team
+    update_user_team(uid, request.form.get("team", ""))
     return redirect(url_for("admin"))
 
 
@@ -6245,7 +6258,8 @@ def production_ongoing():
 @login_required
 def production_schedule():
     """제작부문 - 일정 (캘린더 기본 + 작성란)"""
-    from database.db import list_production_schedules, list_users, list_production_task_options
+    from database.db import (list_production_schedules, list_users, list_production_task_options,
+                             list_people_for_picker)
     me = session.get("username", "")
     is_ops = session.get("role") in ("admin", "operator")
     schedules = list_production_schedules()
@@ -6254,6 +6268,7 @@ def production_schedule():
     return render_template("production_schedule.html", schedules=schedules,
                            users=[u["username"] for u in list_users()],
                            tasks=list_production_task_options(),
+                           people=list_people_for_picker(),
                            preset_task=request.args.get("task", type=int),
                            can_write=session.get("role") != "user")
 
@@ -6398,7 +6413,7 @@ def production_task_detail(task_id):
 
     can_edit = is_ops or (task.get("assigned_to") and task.get("assigned_to") == session.get("username"))
 
-    from database.db import list_coop_requests, list_production_schedules
+    from database.db import list_coop_requests, list_production_schedules, list_people_for_picker
     me = session.get("username", "")
     task_schedules = list_production_schedules(task_id)
     coop_requests = list_coop_requests(task_id)
@@ -6410,6 +6425,7 @@ def production_task_detail(task_id):
                          task=task, sections=sections, users=users, is_ops=is_ops,
                          can_edit=can_edit, coop_requests=coop_requests,
                          task_schedules=task_schedules,
+                         people=list_people_for_picker(),
                          today=datetime.now().strftime('%Y-%m-%d'),
                          can_request=session.get("role") != "user", me=me)
 

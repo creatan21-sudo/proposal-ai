@@ -154,12 +154,7 @@
       <textarea class="f-text" id="f-content" rows="4" placeholder="장소, 촬영 내용, 준비물 등"></textarea>
 
       <label class="f-label">제작진</label>
-      <div class="chips" id="f-crew-staff">
-        {% for u in users %}<span class="chip" data-name="{{ u }}" onclick="toggleStaff(this)">{{ u }}</span>{% endfor %}
-      </div>
-      <input class="f-input" id="f-crew-free" style="margin-top:8px;" placeholder="직접 입력 후 Enter (외부 스태프, 출연자 등)"
-             onkeydown="if(event.key==='Enter'||event.key===','){event.preventDefault();addFreeCrew(this.value);this.value='';}">
-      <div class="chips" id="f-crew-freelist" style="margin-top:6px;"></div>
+      <div id="f-crew-picker"></div>
 
       <label class="f-label" for="f-etc">기타</label>
       <textarea class="f-text" id="f-etc" rows="2" placeholder="기타 메모"></textarea>
@@ -176,6 +171,7 @@
 </div>
 
 
+{% include "_people_picker.html" %}
 <script>
 const SCHEDULES = {{ schedules | tojson }};
 const CAN_WRITE = {{ 'true' if can_write else 'false' }};
@@ -344,8 +340,9 @@ function openDetail(id){
 }
 
 // ── 작성란 ──
-let mode = 'single', multiDates = [], freeCrew = [], editingId = null;
-const STAFF = new Set({{ users | tojson }});
+let mode = 'single', multiDates = [], editingId = null;
+// 제작진: 왼쪽 팀(전체 포함) → 오른쪽 팀원, 명단에 없는 사람은 직접 입력
+const crewPicker = CAN_WRITE ? PeoplePicker(document.getElementById('f-crew-picker'), {people: {{ people | tojson }}, allowFree: true}) : null;
 
 function setMode(m){
   mode = m;
@@ -373,34 +370,15 @@ function renderMulti(){
 function addMultiDate(d){ if(d && !multiDates.includes(d)){ multiDates.push(d); renderMulti(); renderCal(); } }
 function toggleMultiDate(d){ const i=multiDates.indexOf(d); if(i>=0) multiDates.splice(i,1); else multiDates.push(d); renderMulti(); }
 
-function toggleStaff(el){ el.classList.toggle('on'); }
-function addFreeCrew(v){
-  (v||'').split(',').map(x=>x.trim()).filter(Boolean).forEach(name=>{
-    const staff = document.querySelector(`#f-crew-staff .chip[data-name="${CSS.escape(name)}"]`);
-    if(staff){ staff.classList.add('on'); return; }            // 직원 이름이면 직원 칩 선택으로 처리
-    if(!freeCrew.includes(name)) freeCrew.push(name);
-  });
-  renderFree();
-}
-function removeFree(i){ freeCrew.splice(i,1); renderFree(); }
-function renderFree(){
-  document.getElementById('f-crew-freelist').innerHTML = freeCrew.map((n,i) =>
-    `<span class="chip free">${_hesc(n)} <span class="x" onclick="removeFree(${i})">×</span></span>`).join('');
-}
-function collectCrew(){
-  const staff = Array.from(document.querySelectorAll('#f-crew-staff .chip.on')).map(c=>c.dataset.name);
-  const pending = document.getElementById('f-crew-free').value.trim();   // Enter 안 누르고 남은 입력도 포함
-  if(pending){ addFreeCrew(pending); document.getElementById('f-crew-free').value=''; }
-  return staff.concat(freeCrew.filter(n=>!staff.includes(n)));
-}
+function collectCrew(){ return crewPicker.get().names; }
 
 function resetForm(){
-  editingId = null; multiDates = []; freeCrew = [];
+  editingId = null; multiDates = [];
   const keepTask = document.getElementById('f-task').dataset.preset || '';
   document.getElementById('f-task').value = keepTask;
-  ['f-title','f-date','f-start','f-end','f-content','f-etc','f-crew-free','f-multi-pick'].forEach(id=>document.getElementById(id).value='');
-  document.querySelectorAll('#f-crew-staff .chip').forEach(c=>c.classList.remove('on'));
-  renderMulti(); renderFree(); setMode('single');
+  ['f-title','f-date','f-start','f-end','f-content','f-etc','f-multi-pick'].forEach(id=>document.getElementById(id).value='');
+  crewPicker.clear();
+  renderMulti(); setMode('single');
   document.getElementById('form-heading').textContent = '✍️ 일정 작성';
   document.getElementById('f-submit').textContent = '등록';
   document.getElementById('form-cancel').style.display = 'none';
@@ -416,11 +394,8 @@ function startEdit(id){
   else { multiDates = s.dates.slice(); renderMulti(); }
   document.getElementById('f-content').value = s.content||'';
   document.getElementById('f-etc').value = s.etc||'';
-  (s.crew||[]).forEach(n=>{
-    const c = document.querySelector(`#f-crew-staff .chip[data-name="${CSS.escape(n)}"]`);
-    if(c) c.classList.add('on'); else freeCrew.push(n);
-  });
-  renderFree(); renderCal();
+  crewPicker.set(s.crew || []);
+  renderCal();
   document.getElementById('form-heading').textContent = '✏️ 일정 수정';
   document.getElementById('f-submit').textContent = '수정 저장';
   document.getElementById('form-cancel').style.display = '';
