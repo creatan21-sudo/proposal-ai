@@ -90,6 +90,24 @@
     </div>
   {%- endmacro %}
 
+  <style>
+  .tsc-seg{display:inline-flex;padding:2px;background:#f3f4f6;border-radius:8px;}
+  .tsc-seg button{padding:5px 11px;border:none;background:transparent;border-radius:6px;font-size:12px;font-weight:600;color:#6b7280;cursor:pointer;}
+  .tsc-seg button.on{background:#fff;color:#4f46e5;box-shadow:0 1px 2px rgba(0,0,0,.08);}
+  .tsc-nav{padding:5px 11px;border:1px solid #e5e7eb;border-radius:7px;font-size:12px;cursor:pointer;background:#fff;color:#374151;}
+  .tsc-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:#e5e7eb;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;}
+  .tsc-dh{background:#f3f4f6;padding:6px;text-align:center;font-size:12px;font-weight:700;color:#6b7280;}
+  .tsc-dh.we{color:#ef4444;}
+  .tsc-cell{background:#fff;height:78px;padding:4px 5px;overflow:hidden;box-sizing:border-box;}
+  .tsc-cell.other{background:#f9fafb;}
+  .tsc-cell.today{background:#eff6ff;}
+  .tsc-day{font-size:12px;font-weight:600;color:#374151;margin-bottom:2px;}
+  .tsc-cell.other .tsc-day{color:#d1d5db;}
+  .tsc-cell.today .tsc-day{color:#4f46e5;font-weight:800;}
+  .tsc-ev{display:block;font-size:10px;padding:1px 5px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:#dbeafe;color:#1e40af;cursor:pointer;line-height:1.5;}
+  .tsc-ev.sel{background:#4f46e5;color:#fff;font-weight:700;}
+  </style>
+
   <!-- 상위 탭 -->
   <div style="display: flex; gap: 0; border-bottom: 2px solid #e5e7eb; margin-bottom: 24px;">
     {% for key, label in main_tabs %}
@@ -178,15 +196,32 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:12px;">
         <h2 style="font-size:16px; font-weight:700; color:#1f2937; margin:0;">제작일정
           <span style="font-size:12px; color:#6b7280; font-weight:600; margin-left:4px;">{{ task_schedules|length }}건</span></h2>
-        <div style="display:flex; gap:8px;">
+        <div style="display:flex; gap:8px; align-items:center;">
+          <div class="tsc-seg">
+            <button type="button" class="on" data-v="cal" onclick="tscView('cal')">📅 캘린더</button>
+            <button type="button" data-v="list" onclick="tscView('list')">📋 목록</button>
+          </div>
           <a href="/production/schedule?f={{ task.id }}{% if task_schedules %}&month={{ task_schedules[0].start_date[:7] }}{% endif %}"
-             style="padding:6px 12px; border:1px solid #d1d5db; background:#fff; border-radius:7px; font-size:12px; font-weight:600; color:#374151; text-decoration:none;">📅 캘린더에서 보기</a>
+             style="padding:6px 12px; border:1px solid #d1d5db; background:#fff; border-radius:7px; font-size:12px; font-weight:600; color:#374151; text-decoration:none;">일정 메뉴에서 편집</a>
           {% if can_request %}
           <a href="/production/schedule?task={{ task.id }}&back=task"
              style="padding:6px 12px; background:#4f46e5; color:#fff; border-radius:7px; font-size:12px; font-weight:600; text-decoration:none;">+ 일정 추가</a>
           {% endif %}
         </div>
       </div>
+      <div id="tsc-cal-wrap">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+          <button type="button" class="tsc-nav" onclick="tscMove(-1)">‹ 이전</button>
+          <span id="tsc-month" style="font-size:15px; font-weight:700;"></span>
+          <div style="display:flex; gap:6px;">
+            <button type="button" class="tsc-nav" onclick="tscMove(1)">다음 ›</button>
+            <button type="button" class="tsc-nav" onclick="tscToday()">오늘</button>
+          </div>
+        </div>
+        <div id="tsc-cal"></div>
+        <div id="tsc-detail" style="display:none; margin-top:14px; padding:14px 16px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px;"></div>
+      </div>
+      <div id="tsc-list" style="display:none;">
       {% for sc in task_schedules %}
       {% set past = (sc.end_date or '') < (today or '') %}
       <div style="display:flex; gap:14px; padding:11px 0; {% if not loop.first %}border-top:1px solid #f3f4f6;{% endif %} {% if past %}opacity:.55;{% endif %}">
@@ -205,6 +240,7 @@
       {% else %}
       <div style="color:#9ca3af; font-size:14px; padding:16px 0;">아직 연결된 일정이 없습니다. [+ 일정 추가]로 등록하면 캘린더와 여기에 함께 보입니다.</div>
       {% endfor %}
+      </div>
     </div>
     <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
       {{ section_block(section_key, '일정 메모', 80) }}
@@ -482,6 +518,59 @@ function fillAssignee(){
     + ms.map(p => `<option value="${esc(p.name)}">${esc(p.name)}${t === '__ALL__' && p.team ? ' · ' + esc(p.team) : ''}</option>`).join('');
 }
 fillAssignee();
+
+// ── 제작일정 탭: 이 과업 일정 캘린더 (기본) / 목록 ──
+const TSC = {{ task_schedules | tojson }};
+const TSC_WD = ['일','월','화','수','목','금','토'];
+const TSC_TODAY = (d => d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'))(new Date());
+let tscY, tscM, tscSel = null;
+(function tscInit(){
+  // 가장 가까운 예정 일정이 있는 달 → 없으면 마지막 일정의 달 → 없으면 이번 달
+  const up = TSC.find(s => (s.end_date||'') >= TSC_TODAY) || TSC[TSC.length-1];
+  const base = up ? up.start_date : TSC_TODAY;
+  tscY = +base.slice(0,4); tscM = +base.slice(5,7) - 1;
+})();
+function _tscEsc(v){ return (v||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function tscView(v){
+  document.querySelectorAll('.tsc-seg button').forEach(b => b.classList.toggle('on', b.dataset.v === v));
+  document.getElementById('tsc-cal-wrap').style.display = v === 'cal' ? '' : 'none';
+  document.getElementById('tsc-list').style.display = v === 'list' ? '' : 'none';
+}
+function tscMove(n){ tscM += n; if(tscM < 0){ tscM = 11; tscY--; } if(tscM > 11){ tscM = 0; tscY++; } tscRender(); }
+function tscToday(){ const t = new Date(); tscY = t.getFullYear(); tscM = t.getMonth(); tscRender(); }
+function tscRender(){
+  const el = document.getElementById('tsc-cal'); if(!el) return;
+  document.getElementById('tsc-month').textContent = `${tscY}년 ${String(tscM+1).padStart(2,'0')}월`;
+  const first = new Date(tscY, tscM, 1), last = new Date(tscY, tscM+1, 0);
+  const total = Math.ceil((first.getDay() + last.getDate()) / 7) * 7;
+  let h = '<div class="tsc-grid">' + TSC_WD.map((d,i) => `<div class="tsc-dh${i===0||i===6?' we':''}">${d}</div>`).join('');
+  for(let i = 0; i < total; i++){
+    const dn = i - first.getDay() + 1, inM = dn >= 1 && dn <= last.getDate();
+    const d = new Date(tscY, tscM, dn);
+    const ds = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    const evs = inM ? TSC.filter(s => (s.dates||[]).includes(ds)) : [];
+    h += `<div class="tsc-cell${!inM ? ' other' : (ds === TSC_TODAY ? ' today' : '')}"><div class="tsc-day">${d.getDate()}</div>`
+       + evs.slice(0, evs.length > 3 ? 2 : 3).map(s => `<span class="tsc-ev${s.id===tscSel?' sel':''}" title="${_tscEsc(s.title)}" onclick="tscShow(${s.id})">${_tscEsc(s.title)}</span>`).join('')
+       + (evs.length > 3 ? `<span style="font-size:10px;color:#6366f1;font-weight:600;">+${evs.length-2}개 더</span>` : '')
+       + '</div>';
+  }
+  el.innerHTML = h + '</div>';
+}
+function tscShow(id){
+  const s = TSC.find(x => x.id === id); if(!s) return;
+  tscSel = id; tscRender();
+  const ds = s.dates || [];
+  const when = ds.length === 1 ? ds[0] : (s.date_mode === 'range' ? `${ds[0].slice(5)} ~ ${ds[ds.length-1].slice(5)} · ${ds.length}일` : ds.map(x => x.slice(5)).join(', ') + ` · ${ds.length}일`);
+  const row = (k, v) => v ? `<div style="margin-top:8px;"><div style="font-size:11px;font-weight:700;color:#9ca3af;">${k}</div><div style="font-size:13px;color:#374151;white-space:pre-wrap;line-height:1.6;">${_tscEsc(v)}</div></div>` : '';
+  const box = document.getElementById('tsc-detail');
+  box.innerHTML = `<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+      <div><div style="font-size:15px;font-weight:700;color:#111827;">${_tscEsc(s.title)}</div>
+      <div style="font-size:12px;font-weight:700;color:#4f46e5;margin-top:2px;">📅 ${_tscEsc(when)}</div></div>
+      <a href="/production/schedule?f={{ task.id }}&month=${s.start_date.slice(0,7)}" style="font-size:12px;color:#6b7280;white-space:nowrap;">일정 메뉴에서 열기 →</a></div>`
+    + row('내용', s.content) + row('제작진', (s.crew||[]).join(', ')) + row('기타', s.etc);
+  box.style.display = '';
+}
+tscRender();
 
 function openAssignModal() {
   document.getElementById('assign-modal').style.display = 'flex';
