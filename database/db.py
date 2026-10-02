@@ -896,6 +896,16 @@ def migrate_production_tasks() -> None:
             ("proposal_status",      "TEXT DEFAULT ''"),   # '' | running | done | error
             ("proposal_message",     "TEXT DEFAULT ''"),   # 진행 상황 또는 오류 설명
             ("proposal_started_at",  "TEXT DEFAULT ''"),
+            # 과업 종료: 담당자 요청 → 관리자·운영자 승인(납품 완료/중단) 또는 반려
+            ("close_status",         "TEXT DEFAULT ''"),   # '' | requested
+            ("close_requested_by",   "TEXT DEFAULT ''"),
+            ("close_requested_at",   "TEXT DEFAULT ''"),
+            ("close_request_note",   "TEXT DEFAULT ''"),
+            ("close_result",         "TEXT DEFAULT ''"),   # delivered(납품 완료) | stopped(중단)
+            ("delivered_date",       "TEXT DEFAULT ''"),
+            ("close_note",           "TEXT DEFAULT ''"),   # 승인 시 비고/중단 사유
+            ("closed_by",            "TEXT DEFAULT ''"),
+            ("close_reject_note",    "TEXT DEFAULT ''"),   # 마지막 반려 사유
         ]:
             if _col not in cols:
                 cursor.execute(f"ALTER TABLE production_tasks ADD COLUMN {_col} {_ddl}")
@@ -4184,6 +4194,70 @@ def list_recent_production_tasks(limit: int = 12) -> list:
         out.append(d)
     out.sort(key=lambda d: d["last_activity"], reverse=True)
     return out[:limit]
+
+
+def request_close_production_task(task_id: int, by: str, note: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE production_tasks SET close_status='requested', close_requested_by=?,
+               close_requested_at=datetime('now','localtime'), close_request_note=?, close_reject_note='',
+               updated_at=datetime('now','localtime') WHERE id=?""", (by, note, task_id))
+        conn.commit()
+
+
+def cancel_close_request(task_id: int, reject_note: str = "") -> None:
+    """종료 요청 취소(요청자) 또는 반려(관리자 — reject_note 기록)"""
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE production_tasks SET close_status='', close_reject_note=?,
+               updated_at=datetime('now','localtime') WHERE id=?""", (reject_note, task_id))
+        conn.commit()
+
+
+def approve_close_production_task(task_id: int, by: str, result: str, delivered_date: str, note: str) -> None:
+    status = "완료" if result == "delivered" else "중단"
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE production_tasks SET status=?, close_status='', close_result=?, delivered_date=?,
+               close_note=?, closed_by=?, completed_at=datetime('now','localtime'),
+               updated_at=datetime('now','localtime') WHERE id=?""",
+            (status, result, delivered_date if result == "delivered" else "", note, by, task_id))
+        conn.commit()
+
+
+def reopen_production_task(task_id: int) -> None:
+    """종료 취소 — 담당자가 있으면 진행중, 없으면 대기로"""
+    with get_connection() as conn:
+        conn.execute(
+            """UPDATE production_tasks
+               SET status=CASE WHEN COALESCE(assigned_to,'')!='' THEN '진행중' ELSE '대기' END,
+                   close_status='', close_result='', delivered_date='', close_note='', closed_by='',
+                   completed_at='', updated_at=datetime('now','localtime') WHERE id=?""", (task_id,))
+        conn.commit()
+
+
+def production_close_check(task_id: int) -> dict:
+    """종료 전 확인: 미완료 공조 수, 오늘 이후 일정 수"""
+    from datetime import date
+    today = date.today().isoformat()
+    with get_connection() as conn:
+        open_coop = conn.execute(
+            "SELECT COUNT(*) FROM production_coop_requests WHERE production_task_id=? AND status='요청'",
+            (task_id,)).fetchone()[0]
+        future = conn.execute(
+            "SELECT COUNT(*) FROM production_schedules WHERE task_id=? AND end_date>=?",
+            (task_id, today)).fetchone()[0]
+    return {"open_coop": open_coop, "future_schedules": future}
+
+
+def list_closed_production_tasks() -> list:
+    """종료 과업 (납품 완료·중단) — 최근 종료순"""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT * FROM production_tasks WHERE status IN ('완료','중단')
+               ORDER BY COALESCE(NULLIF(completed_at,''), updated_at) DESC"""
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 def list_active_production_tasks() -> list:

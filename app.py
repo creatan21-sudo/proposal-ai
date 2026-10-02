@@ -7040,6 +7040,132 @@ def production_proposal_status(task_id):
     return jsonify({"ok": True, **_proposal_state(task)})
 
 
+# ── 제작부문 과업 종료: 담당자 요청 → 관리자·운영자 승인(납품 완료/중단) 또는 반려 ──
+def _notify_production_ops(title: str, message: str, link: str, exclude: str = ""):
+    """제작부문을 볼 수 있는 관리자·운영자에게 알림"""
+    for u in list_users():
+        if u["username"] == exclude:
+            continue
+        is_ops = u.get("is_admin") or u.get("role") in ("admin", "operator")
+        can_prod = u.get("is_admin") or u.get("role") == "admin" or u.get("division") in ("production", "both")
+        if is_ops and can_prod:
+            try:
+                create_notification(u["id"], title, message, link)
+            except Exception as e:
+                print(f"[경고] 종료 알림 실패 ({u['username']}): {e}")
+
+
+def _notify_user(username: str, title: str, message: str, link: str):
+    for u in list_users():
+        if u["username"] == username:
+            try:
+                create_notification(u["id"], title, message, link)
+            except Exception as e:
+                print(f"[경고] 알림 실패 ({username}): {e}")
+            return
+
+
+@app.route("/production/tasks/<int:task_id>/close_check")
+@login_required
+def production_close_check_route(task_id):
+    from database.db import production_close_check
+    return jsonify({"ok": True, **production_close_check(task_id)})
+
+
+@app.route("/production/tasks/<int:task_id>/request_close", methods=["POST"])
+@login_required
+def production_request_close(task_id):
+    """담당자: 종료 요청"""
+    from database.db import get_production_task, request_close_production_task
+    task = get_production_task(task_id)
+    if not task:
+        return jsonify({"ok": False, "error": "과업을 찾을 수 없습니다"}), 404
+    me = session.get("username", "")
+    if not task.get("assigned_to") or task["assigned_to"] != me:
+        return jsonify({"ok": False, "error": "담당자만 종료를 요청할 수 있습니다"}), 403
+    if task.get("status") not in ("진행중", "대기"):
+        return jsonify({"ok": False, "error": "이미 종료된 과업입니다"}), 400
+    if task.get("close_status") == "requested":
+        return jsonify({"ok": False, "error": "이미 종료를 요청했습니다"}), 400
+    note = str((request.get_json(force=True) or {}).get("note", "")).strip()[:1000]
+    request_close_production_task(task_id, me, note)
+    _notify_production_ops(f"🏁 종료 요청 — {task['project_name']}",
+                           f"{me}님이 과업 종료를 요청했습니다." + (f" ({note[:60]})" if note else ""),
+                           f"/production/tasks/{task_id}", exclude=me)
+    return jsonify({"ok": True})
+
+
+@app.route("/production/tasks/<int:task_id>/cancel_close", methods=["POST"])
+@login_required
+def production_cancel_close(task_id):
+    """요청자: 종료 요청 취소 / 관리자·운영자: 반려(사유 필수)"""
+    from database.db import get_production_task, cancel_close_request
+    task = get_production_task(task_id)
+    if not task or task.get("close_status") != "requested":
+        return jsonify({"ok": False, "error": "종료 요청 상태가 아닙니다"}), 400
+    me = session.get("username", "")
+    is_ops = session.get("role") in ("admin", "operator")
+    reason = str((request.get_json(force=True) or {}).get("reason", "")).strip()[:1000]
+    if is_ops and task.get("close_requested_by") != me:
+        if not reason:
+            return jsonify({"ok": False, "error": "반려 사유를 입력하세요"}), 400
+        cancel_close_request(task_id, reason)
+        _notify_user(task["close_requested_by"], f"↩️ 종료 요청 반려 — {task['project_name']}",
+                     f"{me}: {reason[:80]}", f"/production/tasks/{task_id}")
+        return jsonify({"ok": True})
+    if task.get("close_requested_by") != me:
+        return jsonify({"ok": False, "error": "권한이 없습니다"}), 403
+    cancel_close_request(task_id, "")
+    return jsonify({"ok": True})
+
+
+@app.route("/production/tasks/<int:task_id>/approve_close", methods=["POST"])
+@login_required
+@operator_or_admin_required
+def production_approve_close(task_id):
+    """관리자·운영자: 종료 승인 — 납품 완료(납품일) 또는 중단(사유)"""
+    from database.db import get_production_task, approve_close_production_task
+    task = get_production_task(task_id)
+    if not task or task.get("close_status") != "requested":
+        return jsonify({"ok": False, "error": "담당자의 종료 요청이 있어야 승인할 수 있습니다"}), 400
+    data = request.get_json(force=True) or {}
+    result = "stopped" if data.get("result") == "stopped" else "delivered"
+    note = str(data.get("note", "")).strip()[:2000]
+    ddate = str(data.get("delivered_date", "")).strip()[:10]
+    if result == "delivered" and not ddate:
+        return jsonify({"ok": False, "error": "납품일을 입력하세요"}), 400
+    if result == "stopped" and not note:
+        return jsonify({"ok": False, "error": "중단 사유를 입력하세요"}), 400
+    me = session.get("username", "")
+    approve_close_production_task(task_id, me, result, ddate, note)
+    label = "납품 완료" if result == "delivered" else "중단"
+    if task.get("close_requested_by"):
+        _notify_user(task["close_requested_by"], f"✅ 종료 승인({label}) — {task['project_name']}",
+                     f"{me}님이 종료를 승인했습니다.", f"/production/tasks/{task_id}")
+    return jsonify({"ok": True})
+
+
+@app.route("/production/tasks/<int:task_id>/reopen", methods=["POST"])
+@login_required
+@admin_required
+def production_reopen(task_id):
+    """관리자: 종료된 과업 다시 진행"""
+    from database.db import get_production_task, reopen_production_task
+    task = get_production_task(task_id)
+    if not task or task.get("status") not in ("완료", "중단"):
+        return jsonify({"ok": False, "error": "종료된 과업이 아닙니다"}), 400
+    reopen_production_task(task_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/production/done")
+@login_required
+def production_done():
+    """종료 과업 목록 (납품 완료·중단)"""
+    from database.db import list_closed_production_tasks
+    return render_template("production_done.html", tasks=list_closed_production_tasks())
+
+
 @app.route("/production/tasks/<int:task_id>/assign", methods=["POST"])
 @login_required
 @operator_or_admin_required

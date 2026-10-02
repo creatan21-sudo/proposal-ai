@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}종료 과업 — Prointerz{% endblock %}
+{% block head %}
+{% include "_ongoing_styles.html" %}
+<style>
+.dn-pill{border-radius:99px;padding:1px 8px;font-size:11px;font-weight:700;}
+.dn-done{background:#d1fae5;color:#065f46;}
+.dn-stop{background:#f3f4f6;color:#6b7280;}
+.dn-filter{display:inline-flex;padding:2px;background:#f3f4f6;border-radius:8px;margin-bottom:14px;}
+.dn-filter button{padding:5px 12px;border:none;background:transparent;border-radius:6px;font-size:12px;font-weight:600;color:#6b7280;cursor:pointer;}
+.dn-filter button.on{background:#fff;color:#4f46e5;box-shadow:0 1px 2px rgba(0,0,0,.08);}
+</style>
+{% endblock %}
+{% block content %}
+<div class="og-wrap">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+    <div style="font-size:20px;font-weight:700;">📁 종료 과업</div>
+    <a href="/production/ongoing" style="font-size:13px;color:#6b7280;">← 진행중으로</a>
+  </div>
+  <div class="dn-filter">
+    <button class="on" data-f="" onclick="dnFilter('')">전체 {{ tasks|length }}</button>
+    <button data-f="완료" onclick="dnFilter('완료')">✅ 납품 완료 {{ tasks|selectattr('status','equalto','완료')|list|length }}</button>
+    <button data-f="중단" onclick="dnFilter('중단')">⏹ 중단 {{ tasks|selectattr('status','equalto','중단')|list|length }}</button>
+  </div>
+  {% for t in tasks %}
+  <div class="og-card" data-st="{{ t.status }}" onclick="location.href='/production/tasks/{{ t.id }}'">
+    <span class="og-id">{{ t.id }}</span>
+    <div class="og-card-left">
+      <div class="og-card-name" title="{{ t.project_name }}">{{ t.project_name }}</div>
+      <div class="og-card-meta">
+        <span class="org">{{ t.client_name or '-' }}</span>
+        {% if t.status == '완료' %}<span class="dn-pill dn-done">✅ 납품 완료 · {{ t.delivered_date or '-' }}</span>
+        {% else %}<span class="dn-pill dn-stop">⏹ 중단</span>{% endif %}
+        {% if t.assigned_to %}<span class="assignee">{{ t.assigned_to }}</span>{% endif %}
+        <span>종료 {{ (t.completed_at or '')[:10] }} · 승인 {{ t.closed_by or '-' }}</span>
+      </div>
+    </div>
+  </div>
+  {% else %}
+  <div class="og-empty">종료된 과업이 없습니다</div>
+  {% endfor %}
+</div>
+<script>
+function dnFilter(f){
+  document.querySelectorAll('.dn-filter button').forEach(b => b.classList.toggle('on', b.dataset.f === f));
+  document.querySelectorAll('.og-card[data-st]').forEach(c => c.style.display = (!f || c.dataset.st === f) ? '' : 'none');
+}
+</script>
+{% endblock %}

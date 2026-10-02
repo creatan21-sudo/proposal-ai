@@ -11,11 +11,12 @@
       <div style="display: flex; gap: 12px; font-size: 13px; color: #6b7280;">
         <span>발주처: {{ task.client_name }}</span>
         <span>상태:
-          <span style="font-weight: 600; color: {% if task.status == '진행중' %}#059669{% elif task.status == '완료' %}#0891b2{% else %}#92400e{% endif %};">
+          <span style="font-weight: 600; color: {% if task.status == '진행중' %}#059669{% elif task.status == '완료' %}#0891b2{% elif task.status == '중단' %}#6b7280{% else %}#92400e{% endif %};">
             {{ task.status }}
           </span>
         </span>
         <span>생성자: {{ task.created_by }}</span>
+        {% if task.assigned_to %}<span>담당자: <b style="color:#374151;">{{ task.assigned_to }}</b></span>{% endif %}
         <span style="padding: 1px 8px; border-radius: 4px; font-size: 12px; font-weight: 600;
                      {% if task.nara_confirmed_id %}background: #e0e7ff; color: #3730a3;{% else %}background: #f3f4f6; color: #374151;{% endif %}">
           {% if task.nara_confirmed_id %}나라장터 수주{% else %}수의계약{% endif %}
@@ -29,14 +30,55 @@
                   border: 1px solid #e5e7eb; border-radius: 8px; white-space: pre-wrap; max-width: 700px;">{{ task.notes }}</div>
       {% endif %}
     </div>
-    {% if is_ops and task.status == '대기' %}
-    <button onclick="openAssignModal()" style="padding: 10px 20px; background: #4f46e5; color: #fff;
-                                              border: none; border-radius: 8px; font-size: 13px;
-                                              font-weight: 600; cursor: pointer;">
-      👤 담당자 배정
-    </button>
+    {% set is_active = task.status in ('진행중', '대기') %}
+    {% set is_assignee = task.assigned_to and task.assigned_to == session.get('username') %}
+    <div style="display:flex; gap:8px; flex-shrink:0;">
+      {% if is_ops and task.status == '대기' %}
+      <button onclick="openAssignModal()" style="padding: 10px 20px; background: #4f46e5; color: #fff;
+                                                border: none; border-radius: 8px; font-size: 13px;
+                                                font-weight: 600; cursor: pointer;">
+        👤 담당자 배정
+      </button>
+      {% endif %}
+      {% if is_active and is_assignee and task.close_status != 'requested' %}
+      <button onclick="openCloseModal('request')" style="padding: 10px 18px; background: #fff; color: #065f46;
+              border: 1px solid #6ee7b7; border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer;">🏁 종료 요청</button>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ── 종료 상태 안내 ── #}
+  {% if task.close_status == 'requested' and is_active %}
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px;
+              padding:12px 16px; background:#fef3c7; border:1px solid #fcd34d; border-radius:10px; font-size:13px; color:#92400e;">
+    <div>⏳ <b>{{ task.close_requested_by }}</b>님이 종료를 요청했습니다 · {{ (task.close_requested_at or '')[:16] }}
+      {% if task.close_request_note %}<div style="margin-top:4px; color:#78350f; white-space:pre-wrap;">“{{ task.close_request_note }}”</div>{% endif %}</div>
+    <div style="display:flex; gap:6px;">
+      {% if is_ops %}
+      <button onclick="openCloseModal('reject')" style="padding:7px 14px; background:#fff; color:#92400e; border:1px solid #fcd34d; border-radius:7px; font-size:12px; font-weight:700; cursor:pointer;">반려</button>
+      <button onclick="openCloseModal('approve')" style="padding:7px 14px; background:#059669; color:#fff; border:none; border-radius:7px; font-size:12px; font-weight:700; cursor:pointer;">✅ 종료 승인</button>
+      {% elif task.close_requested_by == session.get('username') %}
+      <button onclick="cancelCloseRequest()" style="padding:7px 14px; background:#fff; color:#92400e; border:1px solid #fcd34d; border-radius:7px; font-size:12px; font-weight:700; cursor:pointer;">요청 취소</button>
+      {% endif %}
+    </div>
+  </div>
+  {% elif task.status in ('완료', '중단') %}
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:16px;
+              padding:12px 16px; border-radius:10px; font-size:13px;
+              {% if task.status == '완료' %}background:#ecfdf5; border:1px solid #6ee7b7; color:#065f46;{% else %}background:#f3f4f6; border:1px solid #d1d5db; color:#374151;{% endif %}">
+    <div>{% if task.status == '완료' %}✅ <b>납품 완료</b> · 납품일 {{ task.delivered_date or '-' }}{% else %}⏹ <b>중단</b>{% endif %}
+      · 승인 {{ task.closed_by or '-' }} {{ (task.completed_at or '')[:10] }}
+      {% if task.close_note %}<div style="margin-top:4px; white-space:pre-wrap;">{{ task.close_note }}</div>{% endif %}</div>
+    {% if session.get('is_admin') %}
+    <button onclick="reopenTask()" style="padding:7px 14px; background:#fff; color:#374151; border:1px solid #d1d5db; border-radius:7px; font-size:12px; font-weight:700; cursor:pointer;">↺ 다시 진행</button>
     {% endif %}
   </div>
+  {% elif task.close_reject_note and is_active %}
+  <div style="margin-bottom:16px; padding:10px 14px; background:#fef2f2; border:1px solid #fecaca; border-radius:10px; font-size:13px; color:#991b1b;">
+    ↩️ 종료 요청이 반려되었습니다: <span style="white-space:pre-wrap;">{{ task.close_reject_note }}</span></div>
+  {% elif is_active and is_ops and not task.assigned_to %}
+  <div style="margin-bottom:16px; font-size:12px; color:#9ca3af;">종료는 담당자가 요청하고 관리자·운영자가 승인합니다. 먼저 담당자를 배정하세요.</div>
+  {% endif %}
 
   {% set main_tabs = [
        ("content",     "📋 과업내용"),
@@ -311,6 +353,34 @@
   </div>
 </div>
 
+<!-- 종료 요청 / 승인 / 반려 모달 -->
+<div id="close-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:1000; align-items:center; justify-content:center;"
+     onclick="if(event.target===this)closeCloseModal()">
+  <div style="background:#fff; border-radius:12px; padding:26px 28px; max-width:440px; width:92%; box-shadow:0 20px 25px rgba(0,0,0,.15);">
+    <h2 id="cm-title" style="font-size:18px; font-weight:700; margin:0 0 6px; color:#1f2937;"></h2>
+    <div id="cm-sub" style="font-size:13px; color:#6b7280; margin-bottom:14px;"></div>
+    <div id="cm-warn" style="display:none; margin-bottom:14px; padding:10px 12px; background:#fff7ed; border:1px solid #fed7aa; border-radius:8px; font-size:12px; color:#9a3412; line-height:1.6;"></div>
+    <div id="cm-result" style="display:none; margin-bottom:12px;">
+      <div style="display:flex; gap:8px;">
+        <label style="flex:1; display:flex; gap:6px; align-items:center; padding:10px; border:1px solid #d1d5db; border-radius:8px; cursor:pointer; font-size:13px; font-weight:600;">
+          <input type="radio" name="cm-res" value="delivered" checked onchange="cmToggle()"> ✅ 납품 완료</label>
+        <label style="flex:1; display:flex; gap:6px; align-items:center; padding:10px; border:1px solid #d1d5db; border-radius:8px; cursor:pointer; font-size:13px; font-weight:600;">
+          <input type="radio" name="cm-res" value="stopped" onchange="cmToggle()"> ⏹ 중단</label>
+      </div>
+      <div id="cm-date-wrap" style="margin-top:10px;">
+        <label style="display:block; font-size:12px; font-weight:700; color:#374151; margin-bottom:4px;">납품일</label>
+        <input type="date" id="cm-date" style="width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:8px; font-size:13px; box-sizing:border-box;">
+      </div>
+    </div>
+    <label id="cm-note-label" style="display:block; font-size:12px; font-weight:700; color:#374151; margin-bottom:4px;"></label>
+    <textarea id="cm-note" rows="3" style="width:100%; padding:8px 10px; border:1px solid #d1d5db; border-radius:8px; font-size:13px; box-sizing:border-box; resize:vertical; font-family:inherit;"></textarea>
+    <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+      <button type="button" onclick="closeCloseModal()" style="padding:9px 16px; border:1px solid #d1d5db; background:#fff; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;">취소</button>
+      <button type="button" id="cm-submit" onclick="submitClose()" style="padding:9px 18px; border:none; background:#059669; color:#fff; border-radius:8px; font-size:13px; font-weight:700; cursor:pointer;"></button>
+    </div>
+  </div>
+</div>
+
 <!-- 담당자 배정 모달 -->
 <div id="assign-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
                              background: rgba(0,0,0,0.5); z-index: 1000; align-items: center;
@@ -578,6 +648,75 @@ function TaskCal(px, cat){
   return {show, view, move, today};
 }
 const TCAL = {tsc: TaskCal('tsc', 'production'), tsp: TaskCal('tsp', 'post')};
+
+// ── 과업 종료 ──
+let _cmMode = null;
+function cmToggle(){
+  const stopped = document.querySelector('input[name=cm-res]:checked').value === 'stopped';
+  document.getElementById('cm-date-wrap').style.display = stopped ? 'none' : '';
+  document.getElementById('cm-note-label').textContent = stopped ? '중단 사유 (필수)' : '비고 (최종 산출물 위치 등, 선택)';
+}
+async function openCloseModal(mode){
+  _cmMode = mode;
+  const $ = id => document.getElementById(id);
+  $('cm-note').value = ''; $('cm-warn').style.display = 'none';
+  $('cm-result').style.display = mode === 'approve' ? '' : 'none';
+  if(mode === 'request'){
+    $('cm-title').textContent = '🏁 종료 요청'; $('cm-sub').textContent = '관리자·운영자에게 알림이 가고, 승인되면 과업이 종료됩니다.';
+    $('cm-note-label').textContent = '메모 (납품 내역 등, 선택)'; $('cm-submit').textContent = '종료 요청'; $('cm-submit').style.background = '#059669';
+  } else if(mode === 'approve'){
+    $('cm-title').textContent = '✅ 종료 승인'; $('cm-sub').textContent = '종료 결과를 고르세요. 종료 후에는 진행중 목록에서 빠집니다.';
+    $('cm-date').value = new Date().toISOString().slice(0,10); document.querySelector('input[name=cm-res][value=delivered]').checked = true; cmToggle();
+    $('cm-submit').textContent = '종료 승인'; $('cm-submit').style.background = '#059669';
+  } else {
+    $('cm-title').textContent = '↩️ 종료 요청 반려'; $('cm-sub').textContent = '반려 사유가 요청자에게 알림으로 전달됩니다.';
+    $('cm-note-label').textContent = '반려 사유 (필수)'; $('cm-submit').textContent = '반려'; $('cm-submit').style.background = '#dc2626';
+  }
+  $('close-modal').style.display = 'flex';
+  if(mode !== 'reject'){     // 정리 안 된 것 확인 (막지는 않고 알림만)
+    try{
+      const c = await (await fetch('/production/tasks/{{ task.id }}/close_check')).json();
+      const w = [];
+      if(c.open_coop) w.push(`완료되지 않은 공조 ${c.open_coop}건`);
+      if(c.future_schedules) w.push(`오늘 이후 일정 ${c.future_schedules}건`);
+      if(w.length){ $('cm-warn').innerHTML = '⚠️ ' + w.join(', ') + '이(가) 남아 있습니다. 그래도 진행할 수 있습니다.'; $('cm-warn').style.display = ''; }
+    }catch(e){}
+  }
+}
+function closeCloseModal(){ document.getElementById('close-modal').style.display = 'none'; }
+async function _post(url, body){
+  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body||{})});
+  let d = {}; try{ d = await r.json(); }catch(e){ d = {ok:false, error:'권한이 없거나 처리할 수 없습니다'}; }
+  return d;
+}
+async function submitClose(){
+  const note = document.getElementById('cm-note').value.trim();
+  let url, body;
+  if(_cmMode === 'request'){ url = 'request_close'; body = {note}; }
+  else if(_cmMode === 'approve'){
+    const result = document.querySelector('input[name=cm-res]:checked').value;
+    if(result === 'stopped' && !note){ alert('중단 사유를 입력하세요'); return; }
+    url = 'approve_close'; body = {result, note, delivered_date: document.getElementById('cm-date').value};
+  } else {
+    if(!note){ alert('반려 사유를 입력하세요'); return; }
+    url = 'cancel_close'; body = {reason: note};
+  }
+  const btn = document.getElementById('cm-submit'); btn.disabled = true;
+  const d = await _post('/production/tasks/{{ task.id }}/' + url, body);
+  btn.disabled = false;
+  if(d.ok){ location.reload(); return; }
+  alert(d.error || '처리 실패');
+}
+async function cancelCloseRequest(){
+  if(!confirm('종료 요청을 취소할까요?')) return;
+  const d = await _post('/production/tasks/{{ task.id }}/cancel_close');
+  if(d.ok) location.reload(); else alert(d.error || '처리 실패');
+}
+async function reopenTask(){
+  if(!confirm('종료를 취소하고 다시 진행 상태로 돌릴까요?')) return;
+  const d = await _post('/production/tasks/{{ task.id }}/reopen');
+  if(d.ok) location.reload(); else alert(d.error || '처리 실패');
+}
 
 function openAssignModal() {
   document.getElementById('assign-modal').style.display = 'flex';

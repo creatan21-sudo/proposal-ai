@@ -28,6 +28,7 @@
       <div class="og-card-meta">
         <span class="org">{{ t.client_name or '-' }}</span>
         <span class="st {{ 'st-run' if t.status == '진행중' else 'st-wait' }}">{{ t.status }}</span>
+        {% if t.close_status == 'requested' %}<span class="st" style="background:#fef3c7;color:#92400e;">⏳ 종료 대기</span>{% endif %}
         {% if t.assigned_to %}<span class="assignee">{{ t.assigned_to }}</span>
         {% else %}<span class="unassigned">담당자 미배정</span>{% endif %}
         {% if recent %}
@@ -73,7 +74,7 @@
       <div class="og-empty">진행 중인 과업이 없습니다</div>
     {% endfor %}
     <div style="text-align:right; margin-top:8px;">
-      <a href="/production/tasks" style="font-size:12px; color:#6b7280;">완료된 과업까지 전체 목록 보기 →</a>
+      <a href="/production/done" style="font-size:12px; color:#6b7280;">📁 종료 과업 보기 →</a>
     </div>
   </div>
 
