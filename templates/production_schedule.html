@@ -26,6 +26,10 @@
 .cal-cell.other-month .cal-day{color:#d1d5db;}
 .cal-event{font-size:10px;padding:1px 5px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;line-height:1.5;background:#dbeafe;color:#1e40af;cursor:pointer;}
 .cal-event:hover{filter:brightness(.95);}
+.cal-event.sel{background:#4f46e5;color:#fff;font-weight:700;}
+.d-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:12px;}
+.d-new{padding:6px 12px;border:none;background:#4f46e5;color:#fff;border-radius:7px;font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap;}
+.d-title{font-size:17px;font-weight:700;color:#111827;margin:0 0 6px;line-height:1.4;word-break:keep-all;}
 .cal-more{font-size:10px;color:#6366f1;font-weight:600;padding:1px 3px;}
 .cal-hint{font-size:12px;color:#9ca3af;margin-top:8px;}
 
@@ -56,8 +60,6 @@
 .btn-ghost{padding:9px 14px;border:1px solid #d1d5db;background:#fff;color:#374151;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;}
 
 /* 상세 팝업 */
-.pop-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;align-items:center;justify-content:center;}
-.pop-ov.open{display:flex;}
 .pop{background:#fff;border-radius:14px;width:440px;max-width:94vw;max-height:84vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25);padding:20px 22px;}
 .pop h3{font-size:17px;font-weight:700;margin:0 0 6px;color:#111827;}
 .pop-sec{margin-top:14px;}
@@ -94,8 +96,10 @@
       <div id="view-list" style="display:none;"></div>
     </div>
 
+    <div class="form-card" id="side-card">
+    <div id="panel-detail" style="display:none;"></div>
     {% if can_write %}
-    <div class="form-card" id="form-card">
+    <div id="panel-form">
       <div class="form-title">
         <span id="form-heading">✍️ 일정 작성</span>
         <button type="button" class="btn-ghost" id="form-cancel" style="display:none;padding:4px 10px;font-size:12px;" onclick="resetForm()">취소</button>
@@ -149,14 +153,13 @@
         <button type="button" class="btn-primary" id="f-submit" onclick="submitSchedule()">등록</button>
       </div>
     </div>
+    {% else %}
+    <div id="panel-empty" style="color:#9ca3af;font-size:13px;text-align:center;padding:40px 0;">캘린더에서 일정을 누르면<br>내용이 여기에 보입니다</div>
     {% endif %}
+    </div>
   </div>
 </div>
 
-<!-- 일정 상세 / 날짜별 목록 팝업 -->
-<div class="pop-ov" id="pop-ov" onclick="if(event.target===this)closePop()">
-  <div class="pop" id="pop"></div>
-</div>
 
 <script>
 const SCHEDULES = {{ schedules | tojson }};
@@ -214,16 +217,18 @@ function renderCal(){
     let cls = 'cal-cell'; if(!inMonth) cls+=' other-month'; else if(ds===TODAY) cls+=' today';
     if(inMonth && picked.has(ds)) cls+=' picked';
     html += `<div class="${cls}" onclick="onCellClick('${ds}')"><div class="cal-day">${dObj.getDate()}</div>`;
-    evs.slice(0,3).forEach(s=>{
-      html += `<span class="cal-event" title="${_hesc(s.title + (s.task_name ? ' · ' + s.task_name : ''))}" onclick="event.stopPropagation();openDetail(${s.id})">${_hesc(s.title)}</span>`;
+    const showN = evs.length > 3 ? 2 : 3;          // 넘치면 2개 + '+N개 더' (칸 높이 안에 맞춤)
+    evs.slice(0,showN).forEach(s=>{
+      html += `<span class="cal-event${s.id===selectedId?' sel':''}" title="${_hesc(s.title + (s.task_name ? ' · ' + s.task_name : ''))}" onclick="event.stopPropagation();openDetail(${s.id})">${_hesc(s.title)}</span>`;
     });
-    if(evs.length>3) html += `<div class="cal-more" onclick="event.stopPropagation();openDay('${ds}')">+${evs.length-3}개 더</div>`;
+    if(evs.length>showN) html += `<div class="cal-more" onclick="event.stopPropagation();openDay('${ds}')">+${evs.length-showN}개 더</div>`;
     html += '</div>';
   }
   document.getElementById('view-cal').innerHTML = html + '</div>';
 }
 function onCellClick(ds){
   if(!CAN_WRITE){ if(eventsOn(ds).length) openDay(ds); return; }
+  if(panelMode !== 'form') showForm(true);
   if(mode==='single') document.getElementById('f-date').value = ds;
   else if(mode==='range'){
     const s=document.getElementById('f-start'), e=document.getElementById('f-end');
@@ -251,34 +256,50 @@ function renderList(){
   }).join('');
 }
 
-// ── 팝업 ──
+// ── 오른쪽 패널: 상세 보기 ↔ 작성 ──
+let panelMode = 'form', selectedId = null;
+function _newBtn(){ return CAN_WRITE ? `<button type="button" class="d-new" onclick="showForm(true)">✍️ 새 일정</button>` : ''; }
+function _showDetailPanel(html){
+  panelMode = 'detail';
+  const d = document.getElementById('panel-detail'); d.innerHTML = html; d.style.display = '';
+  ['panel-form','panel-empty'].forEach(id => { const el = document.getElementById(id); if(el) el.style.display = 'none'; });
+  render();
+  if(window.innerWidth <= 980) document.getElementById('side-card').scrollIntoView({behavior:'smooth', block:'start'});
+}
+function showForm(fresh){
+  panelMode = 'form'; selectedId = null;
+  document.getElementById('panel-detail').style.display = 'none';
+  const f = document.getElementById('panel-form'), e = document.getElementById('panel-empty');
+  if(f) f.style.display = ''; if(e) e.style.display = '';
+  if(fresh && f && editingId) resetForm();    // 수정 중이던 건 취소하고 새 작성
+  render();
+}
 function openDay(ds){
+  selectedId = null;
   const evs = eventsOn(ds);
-  document.getElementById('pop').innerHTML = `<h3>${ds} ${md(ds).replace(/^[^(]*/,'')}</h3><div style="margin-top:12px;">`
-    + evs.map(s=>`<div class="pop-item" onclick="openDetail(${s.id})">${_hesc(s.title)}</div>`).join('') + '</div>';
-  document.getElementById('pop-ov').classList.add('open');
+  _showDetailPanel(`<div class="d-head"><span style="font-size:15px;font-weight:700;">📅 ${ds} ${md(ds).replace(/^[^(]*/,'')}</span>${_newBtn()}</div>`
+    + evs.map(s=>`<div class="pop-item" onclick="openDetail(${s.id})">${_hesc(s.title)}${s.task_name?`<div style="font-size:11px;color:#9ca3af;font-weight:500;margin-top:2px;">📁 ${_hesc(s.task_name)}</div>`:''}</div>`).join(''));
 }
 function openDetail(id){
   const s = SCHEDULES.find(x=>x.id===id); if(!s) return;
+  selectedId = id;
   const sec = (k,v) => v ? `<div class="pop-sec"><div class="k">${k}</div><div class="v">${v}</div></div>` : '';
   const crew = (s.crew||[]).map(c=>`<span class="chip on" style="cursor:default;">${_hesc(c)}</span>`).join(' ');
-  document.getElementById('pop').innerHTML =
-    `<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
-       <h3>${_hesc(s.title)}</h3>
-       <button onclick="closePop()" style="background:none;border:none;font-size:20px;color:#9ca3af;cursor:pointer;line-height:1;">×</button></div>
+  _showDetailPanel(
+    `<div class="d-head"><span style="font-size:12px;font-weight:700;color:#6b7280;">일정 상세</span>${_newBtn()}</div>
+     <div class="d-title">${_hesc(s.title)}</div>
      <div style="font-size:13px;color:#4f46e5;font-weight:700;">📅 ${_hesc(dateLabel(s))}</div>`
     + (s.task_id ? `<a href="/production/tasks/${s.task_id}?tab=schedule" style="display:inline-block;margin-top:8px;font-size:12px;font-weight:600;color:#374151;background:#f3f4f6;border-radius:6px;padding:3px 9px;text-decoration:none;">📁 ${_hesc(s.task_name||'과업')} →</a>` : '')
     + sec('내용', _hesc(s.content))
     + (crew ? `<div class="pop-sec"><div class="k">제작진</div><div class="chips">${crew}</div></div>` : '')
     + sec('기타', _hesc(s.etc))
+    + (!s.content && !crew && !s.etc ? `<div style="font-size:13px;color:#9ca3af;margin-top:14px;">추가 내용 없음</div>` : '')
     + `<div style="font-size:11px;color:#9ca3af;margin-top:16px;">작성 ${_hesc(s.created_by)} · ${_hesc((s.created_at||'').slice(0,16))}`
-    + (s.updated_by && s.updated_at && s.updated_at!==s.created_at ? ` · 수정 ${_hesc(s.updated_by)} ${_hesc(s.updated_at.slice(0,16))}` : '') + `</div>`
-    + (s.can_edit && CAN_WRITE ? `<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+    + (s.updated_by && s.updated_at && s.updated_at!==s.created_at ? `<br>수정 ${_hesc(s.updated_by)} · ${_hesc(s.updated_at.slice(0,16))}` : '') + `</div>`
+    + (s.can_edit && CAN_WRITE ? `<div style="display:flex;gap:8px;margin-top:16px;">
          <button class="btn-ghost" style="color:#dc2626;" onclick="deleteSchedule(${s.id})">삭제</button>
-         <button class="btn-primary" style="flex:none;padding:9px 18px;" onclick="startEdit(${s.id})">수정</button></div>` : '');
-  document.getElementById('pop-ov').classList.add('open');
+         <button class="btn-primary" onclick="startEdit(${s.id})">수정</button></div>` : ''));
 }
-function closePop(){ document.getElementById('pop-ov').classList.remove('open'); }
 
 // ── 작성란 ──
 let mode = 'single', multiDates = [], freeCrew = [], editingId = null;
@@ -344,7 +365,7 @@ function resetForm(){
 }
 function startEdit(id){
   const s = SCHEDULES.find(x=>x.id===id); if(!s) return;
-  closePop(); resetForm(); editingId = id;
+  showForm(false); resetForm(); editingId = id; selectedId = id;
   document.getElementById('f-task').value = s.task_id || '';
   document.getElementById('f-title').value = s.title;
   setMode(s.date_mode || 'single');
@@ -361,7 +382,7 @@ function startEdit(id){
   document.getElementById('form-heading').textContent = '✏️ 일정 수정';
   document.getElementById('f-submit').textContent = '수정 저장';
   document.getElementById('form-cancel').style.display = '';
-  document.getElementById('form-card').scrollIntoView({behavior:'smooth', block:'start'});
+  document.getElementById('side-card').scrollIntoView({behavior:'smooth', block:'nearest'});
 }
 
 async function submitSchedule(){
