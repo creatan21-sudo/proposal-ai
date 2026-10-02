@@ -823,6 +823,9 @@ def migrate_production_tasks() -> None:
                 updated_at  TEXT DEFAULT (datetime('now','localtime'))
             )
         """)
+        _sc = [r[1] for r in conn.execute("PRAGMA table_info(production_schedules)").fetchall()]
+        if "task_id" not in _sc:   # 연결된 제작부문 과업 (선택)
+            conn.execute("ALTER TABLE production_schedules ADD COLUMN task_id INTEGER")
         conn.commit()
 
         # 테이블이 존재하는지 확인
@@ -3796,12 +3799,29 @@ def _schedule_row(r) -> dict:
     return d
 
 
-def list_production_schedules() -> list:
+def list_production_schedules(task_id: int = None) -> list:
+    """일정 목록 (task_id 지정 시 그 과업에 연결된 일정만). 과업명 포함."""
+    sql = """SELECT s.*, t.project_name AS task_name
+             FROM production_schedules s
+             LEFT JOIN production_tasks t ON t.id = s.task_id"""
+    args = ()
+    if task_id:
+        sql += " WHERE s.task_id=?"
+        args = (task_id,)
+    sql += " ORDER BY s.start_date ASC, s.id ASC"
+    with get_connection() as conn:
+        rows = conn.execute(sql, args).fetchall()
+    return [_schedule_row(r) for r in rows]
+
+
+def list_production_task_options() -> list:
+    """일정 작성란의 과업 선택용 (진행 중 먼저, 최신순)"""
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT * FROM production_schedules ORDER BY start_date ASC, id ASC"
+            """SELECT id, project_name, status FROM production_tasks
+               ORDER BY CASE WHEN status='완료' THEN 1 ELSE 0 END, created_at DESC"""
         ).fetchall()
-    return [_schedule_row(r) for r in rows]
+    return [dict(r) for r in rows]
 
 
 def get_production_schedule(sid: int) -> dict:
@@ -3815,13 +3835,13 @@ def save_production_schedule(data: dict, username: str, sid: int = None) -> int:
     dates = sorted(set(data["dates"]))
     vals = (data["title"], data["date_mode"], json.dumps(dates), dates[0], dates[-1],
             data.get("content", ""), json.dumps(data.get("crew", []), ensure_ascii=False),
-            data.get("etc", ""))
+            data.get("etc", ""), data.get("task_id"))
     with get_connection() as conn:
         if sid:
             conn.execute(
                 """UPDATE production_schedules
                    SET title=?, date_mode=?, dates_json=?, start_date=?, end_date=?,
-                       content=?, crew_json=?, etc=?, updated_by=?,
+                       content=?, crew_json=?, etc=?, task_id=?, updated_by=?,
                        updated_at=datetime('now','localtime')
                    WHERE id=?""",
                 vals + (username, sid),
@@ -3830,8 +3850,8 @@ def save_production_schedule(data: dict, username: str, sid: int = None) -> int:
             cur = conn.execute(
                 """INSERT INTO production_schedules
                    (title, date_mode, dates_json, start_date, end_date, content, crew_json, etc,
-                    created_by, updated_by)
-                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                    task_id, created_by, updated_by)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?)""",
                 vals + (username, username),
             )
             sid = cur.lastrowid

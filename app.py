@@ -6230,7 +6230,7 @@ def production_ongoing():
 @login_required
 def production_schedule():
     """제작부문 - 일정 (캘린더 기본 + 작성란)"""
-    from database.db import list_production_schedules, list_users
+    from database.db import list_production_schedules, list_users, list_production_task_options
     me = session.get("username", "")
     is_ops = session.get("role") in ("admin", "operator")
     schedules = list_production_schedules()
@@ -6238,6 +6238,8 @@ def production_schedule():
         s["can_edit"] = is_ops or s.get("created_by") == me
     return render_template("production_schedule.html", schedules=schedules,
                            users=[u["username"] for u in list_users()],
+                           tasks=list_production_task_options(),
+                           preset_task=request.args.get("task", type=int),
                            can_write=session.get("role") != "user")
 
 
@@ -6279,7 +6281,17 @@ def _parse_schedule_payload(data: dict):
         c = str(c).strip()[:40]
         if c and c not in crew:
             crew.append(c)
+    task_id = None
+    if data.get("task_id") not in (None, "", 0, "0"):
+        from database.db import get_production_task
+        try:
+            task_id = int(data.get("task_id"))
+        except (TypeError, ValueError):
+            return None, "과업 선택이 올바르지 않습니다"
+        if not get_production_task(task_id):
+            return None, "선택한 과업을 찾을 수 없습니다"
     return {
+        "task_id": task_id,
         "title": title[:200], "date_mode": mode, "dates": dates,
         "content": str(data.get("content", "")).replace("\r\n", "\n").strip(),
         "crew": crew[:50],
@@ -6371,8 +6383,9 @@ def production_task_detail(task_id):
 
     can_edit = is_ops or (task.get("assigned_to") and task.get("assigned_to") == session.get("username"))
 
-    from database.db import list_coop_requests
+    from database.db import list_coop_requests, list_production_schedules
     me = session.get("username", "")
+    task_schedules = list_production_schedules(task_id)
     coop_requests = list_coop_requests(task_id)
     for r in coop_requests:
         r["can_close"] = _can_close_coop(r)
@@ -6381,6 +6394,8 @@ def production_task_detail(task_id):
     return render_template("production_task_detail.html",
                          task=task, sections=sections, users=users, is_ops=is_ops,
                          can_edit=can_edit, coop_requests=coop_requests,
+                         task_schedules=task_schedules,
+                         today=datetime.now().strftime('%Y-%m-%d'),
                          can_request=session.get("role") != "user", me=me)
 
 

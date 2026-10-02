@@ -101,6 +101,12 @@
         <button type="button" class="btn-ghost" id="form-cancel" style="display:none;padding:4px 10px;font-size:12px;" onclick="resetForm()">취소</button>
       </div>
 
+      <label class="f-label" for="f-task">과업 <span style="font-weight:400;color:#9ca3af;">(선택)</span></label>
+      <select class="f-input" id="f-task">
+        <option value="">과업 연결 안 함</option>
+        {% for t in tasks %}<option value="{{ t.id }}"{% if preset_task == t.id %} selected{% endif %}>{{ t.project_name }}{% if t.status == '완료' %} (완료){% endif %}</option>{% endfor %}
+      </select>
+
       <label class="f-label" for="f-title">제목</label>
       <input class="f-input" id="f-title" maxlength="200" placeholder="예: 하남시 홍보영상 1차 촬영">
 
@@ -209,7 +215,7 @@ function renderCal(){
     if(inMonth && picked.has(ds)) cls+=' picked';
     html += `<div class="${cls}" onclick="onCellClick('${ds}')"><div class="cal-day">${dObj.getDate()}</div>`;
     evs.slice(0,3).forEach(s=>{
-      html += `<span class="cal-event" title="${_hesc(s.title)}" onclick="event.stopPropagation();openDetail(${s.id})">${_hesc(s.title)}</span>`;
+      html += `<span class="cal-event" title="${_hesc(s.title + (s.task_name ? ' · ' + s.task_name : ''))}" onclick="event.stopPropagation();openDetail(${s.id})">${_hesc(s.title)}</span>`;
     });
     if(evs.length>3) html += `<div class="cal-more" onclick="event.stopPropagation();openDay('${ds}')">+${evs.length-3}개 더</div>`;
     html += '</div>';
@@ -238,7 +244,7 @@ function renderList(){
     return `<div class="list-item${past?' past':''}" onclick="openDetail(${s.id})">
       <div class="list-date">${_hesc(dateLabel(s))}</div>
       <div style="flex:1;min-width:0;">
-        <div class="list-nm">${_hesc(s.title)}</div>
+        <div class="list-nm">${_hesc(s.title)}${s.task_name?` <span style="font-size:11px;font-weight:600;color:#6b7280;background:#f3f4f6;border-radius:5px;padding:1px 6px;margin-left:4px;">📁 ${_hesc(s.task_name)}</span>`:''}</div>
         ${(s.crew||[]).length?`<div class="list-sub">👥 ${_hesc(s.crew.join(', '))}</div>`:''}
         ${s.content?`<div class="list-sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_hesc(s.content.split('\n')[0])}</div>`:''}
       </div></div>`;
@@ -261,6 +267,7 @@ function openDetail(id){
        <h3>${_hesc(s.title)}</h3>
        <button onclick="closePop()" style="background:none;border:none;font-size:20px;color:#9ca3af;cursor:pointer;line-height:1;">×</button></div>
      <div style="font-size:13px;color:#4f46e5;font-weight:700;">📅 ${_hesc(dateLabel(s))}</div>`
+    + (s.task_id ? `<a href="/production/tasks/${s.task_id}?tab=schedule" style="display:inline-block;margin-top:8px;font-size:12px;font-weight:600;color:#374151;background:#f3f4f6;border-radius:6px;padding:3px 9px;text-decoration:none;">📁 ${_hesc(s.task_name||'과업')} →</a>` : '')
     + sec('내용', _hesc(s.content))
     + (crew ? `<div class="pop-sec"><div class="k">제작진</div><div class="chips">${crew}</div></div>` : '')
     + sec('기타', _hesc(s.etc))
@@ -326,6 +333,8 @@ function collectCrew(){
 
 function resetForm(){
   editingId = null; multiDates = []; freeCrew = [];
+  const keepTask = document.getElementById('f-task').dataset.preset || '';
+  document.getElementById('f-task').value = keepTask;
   ['f-title','f-date','f-start','f-end','f-content','f-etc','f-crew-free','f-multi-pick'].forEach(id=>document.getElementById(id).value='');
   document.querySelectorAll('#f-crew-staff .chip').forEach(c=>c.classList.remove('on'));
   renderMulti(); renderFree(); setMode('single');
@@ -336,6 +345,7 @@ function resetForm(){
 function startEdit(id){
   const s = SCHEDULES.find(x=>x.id===id); if(!s) return;
   closePop(); resetForm(); editingId = id;
+  document.getElementById('f-task').value = s.task_id || '';
   document.getElementById('f-title').value = s.title;
   setMode(s.date_mode || 'single');
   if(mode==='single') document.getElementById('f-date').value = s.dates[0]||'';
@@ -357,7 +367,7 @@ function startEdit(id){
 async function submitSchedule(){
   const title = document.getElementById('f-title').value.trim();
   if(!title){ alert('제목을 입력하세요'); return; }
-  const body = {title, date_mode: mode, content: document.getElementById('f-content').value,
+  const body = {title, task_id: document.getElementById('f-task').value || null, date_mode: mode, content: document.getElementById('f-content').value,
                 etc: document.getElementById('f-etc').value, crew: collectCrew()};
   if(mode==='range'){
     body.start = document.getElementById('f-start').value; body.end = document.getElementById('f-end').value;
@@ -371,7 +381,11 @@ async function submitSchedule(){
     const r = await fetch('/production/schedule' + (editingId ? '/'+editingId : ''), {
       method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
     const d = await r.json();
-    if(d.ok){ location.href = location.pathname + '?month=' + d.first_date.slice(0,7) + (curView==='list'?'&view=list':''); return; }
+    if(d.ok){
+      const back = new URLSearchParams(location.search).get('back');
+      if(back==='task' && body.task_id){ location.href = '/production/tasks/' + body.task_id + '?tab=schedule'; return; }
+      location.href = location.pathname + '?month=' + d.first_date.slice(0,7) + (curView==='list'?'&view=list':''); return;
+    }
     alert(d.error || '저장 실패');
   }catch(e){ alert('저장 실패: '+e.message); }
   btn.disabled = false;
@@ -386,6 +400,7 @@ async function deleteSchedule(id){
   }catch(e){ alert('삭제 실패: '+e.message); }
 }
 
+if(CAN_WRITE){ const ft=document.getElementById('f-task'); ft.dataset.preset = ft.value; }
 if(new URLSearchParams(location.search).get('view')==='list') switchView('list'); else render();
 </script>
 {% endblock %}

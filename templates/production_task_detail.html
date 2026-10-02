@@ -161,9 +161,48 @@
        ("post",        "후반일정", "post_schedule"),
      ] %}
   <div id="{{ key }}-tab" class="tab-content" style="display: none;">
+    {% if key == 'schedule' %}
+    {# 제작부문 일정 메뉴에서 이 과업에 연결한 일정이 자동으로 모임 #}
+        <div style="background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:20px 24px; margin-bottom:16px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; gap:12px;">
+        <h2 style="font-size:16px; font-weight:700; color:#1f2937; margin:0;">제작일정
+          <span style="font-size:12px; color:#6b7280; font-weight:600; margin-left:4px;">{{ task_schedules|length }}건</span></h2>
+        <div style="display:flex; gap:8px;">
+          <a href="/production/schedule{% if task_schedules %}?month={{ task_schedules[0].start_date[:7] }}{% endif %}"
+             style="padding:6px 12px; border:1px solid #d1d5db; background:#fff; border-radius:7px; font-size:12px; font-weight:600; color:#374151; text-decoration:none;">📅 캘린더에서 보기</a>
+          {% if can_request %}
+          <a href="/production/schedule?task={{ task.id }}&back=task"
+             style="padding:6px 12px; background:#4f46e5; color:#fff; border-radius:7px; font-size:12px; font-weight:600; text-decoration:none;">+ 일정 추가</a>
+          {% endif %}
+        </div>
+      </div>
+      {% for sc in task_schedules %}
+      {% set past = (sc.end_date or '') < (today or '') %}
+      <div style="display:flex; gap:14px; padding:11px 0; {% if not loop.first %}border-top:1px solid #f3f4f6;{% endif %} {% if past %}opacity:.55;{% endif %}">
+        <div style="min-width:150px; font-size:12px; font-weight:700; color:#4f46e5;">
+          {% if sc.dates|length == 1 %}{{ sc.dates[0] }}
+          {% elif sc.date_mode == 'range' %}{{ sc.start_date[5:] }} ~ {{ sc.end_date[5:] }} · {{ sc.dates|length }}일
+          {% else %}{% for d in sc.dates %}{{ d[5:] }}{% if not loop.last %}, {% endif %}{% endfor %} · {{ sc.dates|length }}일{% endif %}
+        </div>
+        <div style="flex:1; min-width:0;">
+          <div style="font-size:14px; font-weight:600; color:#111827;">{{ sc.title }}</div>
+          {% if sc.crew %}<div style="font-size:12px; color:#6b7280; margin-top:3px;">👥 {{ sc.crew|join(', ') }}</div>{% endif %}
+          {% if sc.content %}<div style="font-size:13px; color:#4b5563; margin-top:4px; white-space:pre-wrap;">{{ sc.content }}</div>{% endif %}
+          {% if sc.etc %}<div style="font-size:12px; color:#9ca3af; margin-top:3px; white-space:pre-wrap;">기타: {{ sc.etc }}</div>{% endif %}
+        </div>
+      </div>
+      {% else %}
+      <div style="color:#9ca3af; font-size:14px; padding:16px 0;">아직 연결된 일정이 없습니다. [+ 일정 추가]로 등록하면 캘린더와 여기에 함께 보입니다.</div>
+      {% endfor %}
+    </div>
+    <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
+      {{ section_block(section_key, '일정 메모', 80) }}
+    </div>
+    {% else %}
     <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
       {{ section_block(section_key, label) }}
     </div>
+    {% endif %}
   </div>
   {% endfor %}
 
