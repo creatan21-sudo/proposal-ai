@@ -3865,6 +3865,54 @@ def delete_production_schedule(sid: int) -> None:
         conn.commit()
 
 
+def ensure_production_task_for_confirmed(confirmed_id: int, created_by: str) -> int:
+    """기획부문 수주 과업 → 제작부문 과업 (없으면 생성, 있으면 기존 id). 멱등.
+
+    사업명·발주처는 픽업 경유/후보 직접 확정 모두 대응 (COALESCE).
+    """
+    with get_connection() as conn:
+        existing = conn.execute(
+            "SELECT id FROM production_tasks WHERE nara_confirmed_id=? ORDER BY id LIMIT 1",
+            (confirmed_id,),
+        ).fetchone()
+        if existing:
+            return existing["id"]
+        row = conn.execute(
+            """SELECT COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm)     AS bid_ntce_nm,
+                      COALESCE(pk.ntce_instt_nm, ca.ntce_instt_nm) AS ntce_instt_nm
+               FROM nara_confirmed cf
+               LEFT JOIN nara_pickups pk    ON pk.id = cf.pickup_id    AND cf.pickup_id > 0
+               LEFT JOIN nara_candidates ca ON ca.id = cf.candidate_id AND cf.pickup_id = 0
+               WHERE cf.id=?""",
+            (confirmed_id,),
+        ).fetchone()
+    if not row:
+        return None
+    name = row["bid_ntce_nm"] or f"수주 과업 #{confirmed_id}"
+    return create_production_task(
+        project_name=name, client_name=row["ntce_instt_nm"] or "",
+        created_by=created_by, nara_confirmed_id=confirmed_id, bid_ntce_nm=row["bid_ntce_nm"] or "",
+    )
+
+
+def get_production_tasks_by_confirmed(confirmed_ids: list) -> dict:
+    """confirmed_id → 제작부문 과업 정보 (결과 메뉴 표시용)"""
+    ids = [int(i) for i in confirmed_ids if i]
+    if not ids:
+        return {}
+    ph = ",".join("?" * len(ids))
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"""SELECT id, nara_confirmed_id, proposal_filename, proposal_uploaded_at
+                FROM production_tasks WHERE nara_confirmed_id IN ({ph}) ORDER BY id""",
+            ids,
+        ).fetchall()
+    out = {}
+    for r in rows:
+        out.setdefault(r["nara_confirmed_id"], dict(r))
+    return out
+
+
 def list_active_production_tasks() -> list:
     """완료되지 않은(대기·진행중) 제작부문 과업 전체 — 진행중 화면의 '전체 진행'"""
     with get_connection() as conn:

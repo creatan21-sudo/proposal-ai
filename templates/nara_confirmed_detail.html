@@ -690,6 +690,17 @@ tr.sch-editing .sch-act-view{display:none !important;}
         {{ _rl.get(c.final_result, c.final_result) }}
         <span style="font-size:12px;font-weight:400;color:#9ca3af;margin-left:6px;">처리 완료</span>
       </span>
+      {% if c.final_result == 'won' %}
+        {% if production %}
+        <a href="/production/tasks/{{ production.id }}" style="font-size:12px;font-weight:700;color:#3730a3;background:#eef2ff;border-radius:6px;padding:4px 10px;text-decoration:none;">🎬 제작부문 과업 →</a>
+        {% endif %}
+        {% if production and production.proposal_filename %}
+        <span style="font-size:12px;color:#059669;font-weight:600;">✔ 제안서 반영 {{ (production.proposal_uploaded_at or '')[:10] }}</span>
+        {% else %}
+        <button class="btn" style="background:#4f46e5;color:#fff;border:none;" onclick="startProposalLater()">📄 제안서 등록</button>
+        <span style="font-size:12px;color:#dc2626;font-weight:600;">제안서 미등록</span>
+        {% endif %}
+      {% endif %}
     </div>
     {% elif c.completion_status == 'requested' %}
     <div style="font-size:13px;font-weight:600;color:#92400e;background:#fef3c7;padding:10px 14px;border-radius:8px;margin-bottom:12px;">
@@ -1304,12 +1315,38 @@ async function submitResult(){
     });
     const d = await r.json();
     if(d.ok){
+      const type = _resultType;                       // closeResultModal()이 _resultType을 비우므로 먼저 보관
       closeResultModal();
-      showToast(`${_resultLabels[_resultType]} 처리되었습니다`);
+      if(type === 'won' && d.production_task_id){
+        // 수주 → 제작부문 자동 등재 완료. 바로 제안서 입력 창 (나중에 하기 가능)
+        openProposalModal({
+          taskId: d.production_task_id,
+          title: {{ (c.bid_ntce_nm or '') | tojson }},
+          onLater: () => { showToast('제안서는 결과 메뉴 또는 제작부문 과업에서 언제든 올릴 수 있습니다'); setTimeout(()=>location.href='/nara/archive', 1600); },
+          onClose: () => { location.href='/nara/archive'; },
+        });
+        return;
+      }
+      showToast(`${_resultLabels[type]} 처리되었습니다`);
       setTimeout(()=>location.href='/nara/archive', 1000);
     } else showToast(d.error||'처리 실패', false);
   }catch(e){ showToast('오류: '+e, false); }
   btn.disabled = false; btn.textContent = '확인';
+}
+
+/* ── 수주 후 제안서 나중에 등록 ── */
+async function startProposalLater(){
+  try{
+    const r = await fetch(`/nara/confirmed/${CID}/production_task`, {method:'POST'});
+    const d = await r.json();
+    if(!d.ok){ showToast(d.error || '제작부문 등록 실패', false); return; }
+    openProposalModal({
+      taskId: d.production_task_id, title: {{ (c.bid_ntce_nm or '') | tojson }},
+      heading: '📄 최종 제안서 등록',
+      sub: '최종 제안서 PDF를 올리면 제작부문 과업에 제작내용·제안개요가 자동으로 정리됩니다.',
+      onLater: () => location.reload(), onClose: () => location.reload(),
+    });
+  }catch(e){ showToast('오류: '+e, false); }
 }
 
 /* ── 완료 요청 ── */
@@ -1325,4 +1362,5 @@ async function requestCompletion(){
   }catch(e){ showToast('오류: '+e, false); }
 }
 </script>
+{% include "_proposal_upload_modal.html" %}
 {% endblock %}

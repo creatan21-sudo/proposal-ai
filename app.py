@@ -4797,7 +4797,31 @@ def set_result_route(confirmed_id):
     set_final_result(confirmed_id, result, session.get("username"))
     label = {"won": "수주", "lost": "낙주", "stopped": "중단"}.get(result, result)
     add_nara_result(confirmed_id, label, notes)
-    return jsonify({"ok": True})
+
+    # 수주 → 제작부문 과업 자동 등재 (실패해도 결과 처리는 유지)
+    production_task_id = None
+    if result == "won":
+        try:
+            from database.db import ensure_production_task_for_confirmed
+            production_task_id = ensure_production_task_for_confirmed(
+                confirmed_id, session.get("username", "system"))
+        except Exception as e:
+            print(f"[경고] 제작부문 과업 자동 등재 실패 (confirmed {confirmed_id}): {e}")
+    return jsonify({"ok": True, "production_task_id": production_task_id})
+
+
+@app.route("/nara/confirmed/<int:confirmed_id>/production_task", methods=["POST"])
+@login_required
+def ensure_production_task_route(confirmed_id):
+    """수주 과업의 제작부문 과업 확보 (결과 메뉴에서 '나중에' 제안서 등록 시)"""
+    if session.get("role") not in ("admin", "operator"):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    c = get_confirmed_by_id(confirmed_id)
+    if not c or c.get("final_result") != "won":
+        return jsonify({"ok": False, "error": "수주 처리된 과업만 제작부문에 등록할 수 있습니다"}), 400
+    from database.db import ensure_production_task_for_confirmed
+    tid = ensure_production_task_for_confirmed(confirmed_id, session.get("username", "system"))
+    return jsonify({"ok": bool(tid), "production_task_id": tid})
 
 
 @app.route("/nara/confirmed/<int:confirmed_id>/delete", methods=["POST"])
@@ -4951,7 +4975,19 @@ def nara_confirmed_detail(confirmed_id):
                            users=users, can_edit=can_edit, is_ops=is_ops,
                            is_assignee=is_assignee,
                            can_edit_narrative=can_edit_narrative,
+                           production=_production_for_confirmed(c),
                            now=_dt.now().strftime("%Y-%m-%d %H:%M"))
+
+
+def _production_for_confirmed(c: dict):
+    """수주 과업의 제작부문 과업 정보 (없으면 None)"""
+    if not c or c.get("final_result") != "won":
+        return None
+    try:
+        from database.db import get_production_tasks_by_confirmed
+        return get_production_tasks_by_confirmed([c["id"]]).get(c["id"])
+    except Exception:
+        return None
 
 
 @app.route("/nara/confirmed/<int:confirmed_id>/save_notes", methods=["POST"])
@@ -5243,6 +5279,10 @@ def nara_results_page():
     page  = max(1, int(request.args.get("page", 1)))
     paged  = list_nara_results(page=page, per_page=50)
     is_ops = session.get("role") in ("admin", "operator")
+    from database.db import get_production_tasks_by_confirmed
+    prod = get_production_tasks_by_confirmed([r["confirmed_id"] for r in paged["items"] if r.get("result") == "수주"])
+    for r in paged["items"]:
+        r["production"] = prod.get(r["confirmed_id"])
     return render_template("nara_results.html", results=paged["items"], pagination=paged, is_ops=is_ops)
 
 @app.route("/nara/keyword", methods=["POST"])
@@ -6002,36 +6042,11 @@ def nara_result_add(confirmed_id):
     try:
         add_nara_result(confirmed_id, result, notes)
 
-        # 기획부문 수주 시 제작부문 과업 자동 생성
+        # 기획부문 수주 시 제작부문 과업 자동 등재 (실제 수주 처리는 set_result 경로 — 같은 함수 사용, 중복 생성 없음)
         if result == "수주":
-            from database.db import get_connection as _gc, create_production_task
             try:
-                with _gc() as conn:
-                    # nara_confirmed에서 candidate_id 조회
-                    confirmed = conn.execute(
-                        "SELECT candidate_id FROM nara_confirmed WHERE id=?",
-                        (confirmed_id,)
-                    ).fetchone()
-
-                    if confirmed:
-                        candidate_id = confirmed["candidate_id"]
-                        # nara_candidates에서 사업 정보 조회
-                        candidate = conn.execute(
-                            """SELECT bid_ntce_nm, ntce_instt_nm
-                               FROM nara_candidates WHERE id=?""",
-                            (candidate_id,)
-                        ).fetchone()
-
-                        if candidate:
-                            # 제작부문 과업 자동 생성
-                            username = session.get("username", "system")
-                            create_production_task(
-                                project_name=candidate["bid_ntce_nm"],
-                                client_name=candidate["ntce_instt_nm"],
-                                bid_ntce_nm=candidate["bid_ntce_nm"],
-                                created_by=username,
-                                nara_confirmed_id=confirmed_id
-                            )
+                from database.db import ensure_production_task_for_confirmed
+                ensure_production_task_for_confirmed(confirmed_id, session.get("username", "system"))
             except Exception as auto_task_err:
                 print(f"[경고] 제작부문 과업 자동 생성 실패: {auto_task_err}")
 

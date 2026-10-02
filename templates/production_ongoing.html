@@ -23,6 +23,7 @@
         {{ t.project_name }}
         {% if t.nara_confirmed_id %}<span class="badge-src nara">나라장터 수주</span>
         {% else %}<span class="badge-src direct">수의계약</span>{% endif %}
+        {% if t.nara_confirmed_id and not t.proposal_filename %}<span class="badge-src" style="background:#fff7ed;color:#c2410c;">📄 제안서 미등록</span>{% endif %}
       </div>
       <div class="og-card-meta">
         <span class="org">{{ t.client_name or '-' }}</span>

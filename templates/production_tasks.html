@@ -29,6 +29,9 @@
           {% if task.nara_confirmed_id %}나라장터 수주{% else %}수의계약{% endif %}
         </span>
       </div>
+      {% if task.nara_confirmed_id and not task.proposal_filename %}
+      <div style="font-size:11px; color:#c2410c; font-weight:700; margin:-4px 0 8px;">📄 제안서 미등록</div>
+      {% endif %}
       <div style="font-size: 13px; color: #6b7280; margin-bottom: 4px;">
         발주처: {{ task.client_name or '정보 없음' }}
       </div>

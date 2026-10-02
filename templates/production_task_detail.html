@@ -107,6 +107,17 @@
     {% endfor %}
   </div>
 
+  {% if task.nara_confirmed_id and not task.proposal_filename %}
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; padding:12px 16px;
+              background:#fff7ed; border:1px solid #fed7aa; border-radius:10px; font-size:13px; color:#9a3412;">
+    <span>📄 기획부문 수주로 등록된 과업입니다. <b>최종 제안서가 아직 등록되지 않았습니다.</b> 올리면 제작내용·제안개요가 자동으로 정리됩니다.</span>
+    {% if can_edit %}
+    <button type="button" onclick="document.getElementById('proposal-file').click()"
+            style="flex-shrink:0; padding:7px 14px; background:#ea580c; color:#fff; border:none; border-radius:7px; font-size:12px; font-weight:700; cursor:pointer;">제안서 PDF 올리기</button>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <!-- 과업내용 (하위 탭) -->
   <div id="content-tab" class="tab-content" style="display: block;">
     <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;">

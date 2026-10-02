@@ -65,6 +65,22 @@
           <td class="bid-nm">
             <span style="font-size:12px;color:#999;font-weight:400;margin-right:8px;">{{ r.confirmed_id }}</span>
             <a href="{{ r.ntce_url if r.ntce_url else '#' }}" target="_blank">{{ r.bid_ntce_nm or '-' }}</a>
+            {% if r.result == '수주' %}
+            <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
+              {% if r.production %}
+                <a href="/production/tasks/{{ r.production.id }}" style="font-size:11px;font-weight:700;color:#3730a3;background:#eef2ff;border-radius:6px;padding:3px 8px;text-decoration:none;">🎬 제작부문 과업 →</a>
+              {% endif %}
+              {% if r.production and r.production.proposal_filename %}
+                <span style="font-size:11px;color:#059669;font-weight:600;">✔ 제안서 반영 {{ (r.production.proposal_uploaded_at or '')[:10] }}</span>
+              {% elif is_ops %}
+                <button type="button" data-title="{{ r.bid_ntce_nm or '' }}" onclick="startProposal({{ r.confirmed_id }}, this.dataset.title)"
+                        style="font-size:11px;font-weight:700;color:#fff;background:#4f46e5;border:none;border-radius:6px;padding:4px 9px;cursor:pointer;">📄 제안서 등록</button>
+                <span style="font-size:11px;color:#dc2626;font-weight:600;">제안서 미등록</span>
+              {% else %}
+                <span style="font-size:11px;color:#9ca3af;">제안서 미등록</span>
+              {% endif %}
+            </div>
+            {% endif %}
           </td>
           <td>{{ r.ntce_instt_nm or '-' }}</td>
           <td class="bid-prce">{% if r.presmpt_prce and r.presmpt_prce.isdigit() %}{{ '{:,}'.format(r.presmpt_prce|int) }}원{% else %}-{% endif %}</td>
@@ -111,6 +127,21 @@ function showToast(msg,ok=true){
   t.classList.add('show');setTimeout(()=>t.classList.remove('show'),2800);
 }
 
+// 수주 과업 → (제작부문 과업 확보) → 제안서 입력 창
+async function startProposal(cid, title){
+  try{
+    const r = await fetch(`/nara/confirmed/${cid}/production_task`, {method:'POST'});
+    const d = await r.json();
+    if(!d.ok){ showToast(d.error || '제작부문 등록 실패', false); return; }
+    openProposalModal({
+      taskId: d.production_task_id, title,
+      heading: '📄 최종 제안서 등록',
+      sub: '최종 제안서 PDF를 올리면 제작부문 과업에 제작내용·제안개요가 자동으로 정리됩니다.',
+      onLater: () => location.reload(), onClose: () => location.reload(),
+    });
+  }catch(e){ showToast('오류: '+e, false); }
+}
+
 function filterResult(type){
   const map = {'수주':'win','낙주':'lose','중단':'stop','all':'all'};
   ['all','win','lose','stop'].forEach(k=>{
@@ -150,4 +181,5 @@ async function saveNotes(cid){
   }catch(e){ showToast('오류: '+e, false); }
 }
 </script>
+{% include "_proposal_upload_modal.html" %}
 {% endblock %}
