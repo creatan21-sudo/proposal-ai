@@ -58,7 +58,8 @@
                 {% if r.status == '완료' %}<span class="cp-pill" style="background:#d1fae5;color:#065f46;">✅ 완료 · {{ r.completed_by }}</span>
                 {% elif r.is_for_me %}<span class="cp-pill" style="background:#fee2e2;color:#dc2626;">나에게 온 공조</span>{% endif %}
               </div>
-              {% if r.task_name %}<a class="cp-task" href="/production/tasks/{{ r.production_task_id }}?tab=cooperation">📁 {{ r.task_name }} →</a>
+              {% if r.task_name and can_production %}<a class="cp-task" href="/production/tasks/{{ r.production_task_id }}?tab=cooperation">📁 {{ r.task_name }} →</a>
+              {% elif r.task_name %}<span class="cp-task">📁 {{ r.task_name }}</span>
               {% else %}<span class="cp-task" style="color:#9ca3af;">과업 없음 (일반 공조)</span>{% endif %}
               <div class="cp-content">{{ r.content }}</div>
               {% for f in r.files %}<a class="cf-link" href="/production/coop/files/{{ f.id }}" title="{{ f.filename }}">📎 <span class="nm">{{ f.filename }}</span> <span style="color:#94a3b8;">{{ '%.1fMB' % (f.size/1048576) if f.size >= 1048576 else '%dKB' % ((f.size/1024)|round(0,'ceil')) }}</span></a>{% endfor %}

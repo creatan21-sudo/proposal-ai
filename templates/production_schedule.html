@@ -186,6 +186,7 @@
 <script>
 const SCHEDULES = {{ schedules | tojson }};
 const CAN_WRITE = {{ 'true' if can_write else 'false' }};
+const CAN_PROD = {{ 'true' if can_production else 'false' }};   // 제작부문 과업 화면 권한
 const WD = ['일','월','화','수','목','금','토'];
 
 function toLocalDateStr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
@@ -339,7 +340,7 @@ function openDetail(id){
      <div style="margin-bottom:4px;">${s.category==='post'?'<span style="font-size:11px;font-weight:700;color:#7e22ce;background:#f3e8ff;border-radius:5px;padding:1px 7px;">🎬 후반</span>':'<span style="font-size:11px;font-weight:700;color:#1e40af;background:#dbeafe;border-radius:5px;padding:1px 7px;">🎥 제작</span>'}</div>
      <div class="d-title">${_hesc(s.title)}</div>
      <div style="font-size:13px;color:#4f46e5;font-weight:700;">📅 ${_hesc(dateLabel(s))}</div>`
-    + (s.task_id ? `<a href="/production/tasks/${s.task_id}?tab=${s.category==='post'?'post':'schedule'}" style="display:inline-block;margin-top:8px;font-size:12px;font-weight:600;color:#374151;background:#f3f4f6;border-radius:6px;padding:3px 9px;text-decoration:none;">📁 ${_hesc(s.task_name||'과업')} →</a>` : '')
+    + (s.task_id && CAN_PROD ? `<a href="/production/tasks/${s.task_id}?tab=${s.category==='post'?'post':'schedule'}" style="display:inline-block;margin-top:8px;font-size:12px;font-weight:600;color:#374151;background:#f3f4f6;border-radius:6px;padding:3px 9px;text-decoration:none;">📁 ${_hesc(s.task_name||'과업')} →</a>` : (s.task_id ? `<span style="display:inline-block;margin-top:8px;font-size:12px;font-weight:600;color:#6b7280;background:#f3f4f6;border-radius:6px;padding:3px 9px;">📁 ${_hesc(s.task_name||'과업')}</span>` : ''))
     + sec('내용', _hesc(s.content))
     + (crew ? `<div class="pop-sec"><div class="k">제작진</div><div class="chips">${crew}</div></div>` : '')
     + sec('기타', _hesc(s.etc))

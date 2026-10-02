@@ -23,7 +23,7 @@ from functools import wraps
 from pathlib import Path
 
 from flask import (
-    Flask, Response, abort, flash, jsonify, redirect,
+    Flask, Response, abort, flash, g, jsonify, redirect,
     render_template, request, send_file, session, url_for,
 )
 from werkzeug.middleware.proxy_fix import ProxyFix
@@ -599,6 +599,35 @@ def _run_pipeline_sync(sid: str, sess: dict):
 _PUBLIC_ENDPOINTS = frozenset({"login", "logout", "static"})
 
 PASSWORD_MIN_LEN = 6   # 비밀번호 최소 길이 (2026-10 4자 → 6자 상향)
+
+# ── 부문별 접근 권한 ──
+# 계정 소속 부문(users.division): planning / production / both(관리자는 항상 both)
+# 두 부문 공용: 일정·공조·알림·계정(프로필/비밀번호)·관리자(관리자 권한으로 별도 보호)
+_SHARED_PREFIXES = (
+    "/schedule", "/production/schedule", "/production/coop",
+    "/notifications", "/notification_settings", "/profile", "/my/", "/password/",
+    "/admin", "/api/new_notices", "/api/credit-status", "/active_run",
+    "/login", "/logout", "/static/", "/health",
+)
+DIVISION_LABEL = {"planning": "기획부문", "production": "제작부문", "both": "양쪽"}
+DIVISION_HOME = {"planning": "/ongoing", "production": "/production/ongoing"}
+
+
+def _path_division(path: str):
+    """경로가 속한 부문 — 공용이면 None"""
+    if path == "/":
+        return None
+    for p in _SHARED_PREFIXES:
+        if (path.startswith(p) if p.endswith("/") else (path == p or path.startswith(p + "/"))):
+            return None
+    return "production" if path.startswith("/production") else "planning"
+
+
+def _home_for(division: str, role: str = "") -> str:
+    """로그인·첫 화면: 소속 부문 첫 화면 (양쪽은 기획부문)"""
+    if division == "production":
+        return "/production/ongoing"
+    return url_for("history") if role == "user" else "/ongoing"
 # 짧은 비밀번호로 로그인한 사용자가 변경 전에도 접근 가능한 엔드포인트
 _PW_CHANGE_ALLOWED = frozenset({"password_required", "logout", "static", "health"})
 
@@ -618,6 +647,21 @@ def check_login():
         if request.path.startswith("/api/") or request.is_json:
             return jsonify({"ok": False, "error": "로그인이 필요합니다"}), 401
         return redirect(url_for("login"))
+
+    # 부문 권한: 자기 부문이 아닌 화면은 메뉴는 보이되 '권한 없음' 안내
+    try:
+        from database.db import get_user_division
+        my_div = get_user_division(uid)
+    except Exception:
+        my_div = "both"
+    g.division = my_div
+    target = _path_division(request.path)
+    if target and my_div != "both" and target != my_div:
+        msg = f"{DIVISION_LABEL[target]} 화면을 볼 권한이 없습니다. ({DIVISION_LABEL[my_div]} 소속)"
+        if request.path.startswith("/api/") or request.is_json or request.method != "GET":
+            return jsonify({"ok": False, "error": msg}), 403
+        return render_template("no_permission.html", target=DIVISION_LABEL[target],
+                               mine=DIVISION_LABEL[my_div], home=DIVISION_HOME.get(my_div, "/")), 403
 
     # 비밀번호가 6자 미만인 기존 사용자: 변경 전까지 다른 화면 이용 불가
     if session.get("must_change_pw") and request.endpoint not in _PW_CHANGE_ALLOWED:
@@ -738,6 +782,10 @@ def login():
             if len(password) < PASSWORD_MIN_LEN:
                 session["must_change_pw"] = True
                 return redirect(url_for("password_required"))
+            from database.db import get_user_division
+            _div = get_user_division(user["id"])
+            if _div == "production":
+                return redirect("/production/ongoing")
             # user 역할: 공유받은 제안서 목록으로 바로 이동
             if session["role"] == "user":
                 return redirect(url_for("history"))
@@ -759,7 +807,7 @@ def logout():
 @app.route("/")
 @login_required
 def index():
-    return redirect(url_for("ongoing"))
+    return redirect(_home_for(getattr(g, "division", "both"), session.get("role", "")))
 
 
 @app.route("/ongoing")
@@ -2240,6 +2288,9 @@ def admin_add_user():
             if team and new_uid:
                 from database.db import update_user_team
                 update_user_team(new_uid, team)
+            if new_uid:
+                from database.db import update_user_division
+                update_user_division(new_uid, request.form.get("division", "both"))
         except Exception as e:
             error = f"계정 생성 실패: {e}"
 
@@ -2297,6 +2348,15 @@ def admin_change_team(uid):
     else:
         update_user_team(uid, team)
     return redirect(request.form.get("next") or url_for("admin", _tab="teams"))
+
+
+@app.route("/admin/change-division/<int:uid>", methods=["POST"])
+@admin_required
+def admin_change_division(uid):
+    """계정 소속 부문 지정 (기획 / 제작 / 양쪽)"""
+    from database.db import update_user_division
+    update_user_division(uid, request.form.get("division", "both"))
+    return redirect(request.form.get("next") or url_for("admin"))
 
 
 # ── 팀 관리 (관리자) ──
@@ -2592,7 +2652,8 @@ def password_required():
             change_password(session["user_id"], new_pw)
             session.pop("must_change_pw", None)
             flash("비밀번호를 변경했습니다.", "success")
-            return redirect(url_for("history") if session.get("role") == "user" else url_for("ongoing"))
+            from database.db import get_user_division
+            return redirect(_home_for(get_user_division(session["user_id"]), session.get("role", "")))
     return render_template("password_required.html", error=error, min_len=PASSWORD_MIN_LEN)
 
 
@@ -4649,14 +4710,21 @@ def api_new_notices():
     last_login = session.get("last_login")
     if not last_login:
         return jsonify({"ok": True, "notices": []})
+    my_div = getattr(g, "division", "both")
+    divs = ("planning", "production") if my_div == "both" else (my_div,)
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT id, title, created_at FROM board_posts"
-            " WHERE post_type='notice' AND created_at > ?"
+            "SELECT id, title, created_at, COALESCE(division,'planning') AS division FROM board_posts"
+            f" WHERE post_type='notice' AND created_at > ? AND COALESCE(division,'planning') IN ({','.join('?'*len(divs))})"
             " ORDER BY id DESC LIMIT 10",
-            (last_login,),
+            (last_login, *divs),
         ).fetchall()
-    return jsonify({"ok": True, "notices": [dict(r) for r in rows]})
+    notices = []
+    for r in rows:
+        d = dict(r)
+        d["url"] = f"{'/production/board' if d['division'] == 'production' else '/board'}/{d['id']}"
+        notices.append(d)
+    return jsonify({"ok": True, "notices": notices})
 
 
 # ── 게시판 (기획부문 /board, 제작부문 /production/board — 같은 화면·기능, 글은 부문별 분리) ──
@@ -6708,7 +6776,10 @@ def _create_coop(task: dict, data: dict, files: list = None):
     content = str(data.get("content", "")).replace("\r\n", "\n").strip()
     target_type = "users" if data.get("target_type") == "users" else "all"
     me = session.get("username", "")
-    users = {u["username"]: u["id"] for u in list_users()}
+    _all_users = list_users()
+    users = {u["username"]: u["id"] for u in _all_users}
+    can_prod = {u["username"]: (u.get("is_admin") or u.get("role") == "admin" or u.get("division") in ("production", "both"))
+                for u in _all_users}
     targets = []
     if target_type == "users":
         targets = [t for t in dict.fromkeys(data.get("targets") or []) if t in users]
@@ -6734,10 +6805,11 @@ def _create_coop(task: dict, data: dict, files: list = None):
     notify = targets if target_type == "users" else [u for u in users if u != me]
     preview = content if len(content) <= 60 else content[:60] + "…"
     title = f"🤝 공조 — {task.get('project_name', '')}" if task else "🤝 공조 요청"
-    link = f"/production/tasks/{task_id}?tab=cooperation" if task else "/production/coop"
     for uname in notify:
         if uname == me:
             continue
+        # 기획부문 소속은 제작부문 과업 화면 권한이 없으므로 공조 메뉴로 연결
+        link = f"/production/tasks/{task_id}?tab=cooperation" if (task and can_prod.get(uname)) else "/production/coop?box=me"
         try:
             create_notification(user_id=users[uname], title=title, message=f"{me}: {preview}", link=link)
         except Exception as e:
@@ -6756,6 +6828,12 @@ def create_production_coop(task_id):
     data, files = _coop_request_data()
     body, code = _create_coop(task, data, files)
     return jsonify(body), code
+
+
+@app.context_processor
+def _inject_division():
+    d = getattr(g, "division", "both")
+    return {"my_division": d, "can_planning": d in ("planning", "both"), "can_production": d in ("production", "both")}
 
 
 @app.context_processor

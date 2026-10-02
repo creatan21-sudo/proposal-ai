@@ -291,7 +291,7 @@ function showRelevanceReason(reason, stars) {
     overlay.id = 'notice-popup';
     overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.45);z-index:10000;display:flex;align-items:center;justify-content:center;';
     const items = d.notices.map(n =>
-      `<a href="/board/${n.id}" onclick="document.getElementById('notice-popup').remove()"
+      `<a href="${n.url || '/board/' + n.id}" onclick="document.getElementById('notice-popup').remove()"
          style="display:block;padding:10px 14px;background:#f9fafb;border-radius:8px;margin-bottom:8px;text-decoration:none;color:#1f2937;font-size:14px;font-weight:600;border:1px solid #e5e7eb;">
          📢 ${n.title}
          <span style="font-size:11px;color:#9ca3af;font-weight:400;margin-left:6px;">${(n.created_at||'').slice(0,10)}</span>

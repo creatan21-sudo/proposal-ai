@@ -31,6 +31,7 @@
           <th>#</th>
           <th>아이디</th>
           <th>역할</th>
+          <th>부문</th>
           <th>팀</th>
           <th>생성일</th>
           <th>비밀번호 변경</th>
@@ -59,6 +60,20 @@
                 <option value="admin"    {% if role == 'admin'    %}selected{% endif %}>관리자</option>
                 <option value="operator" {% if role == 'operator' %}selected{% endif %}>운영자</option>
                 <option value="user"     {% if role == 'user'     %}selected{% endif %}>사용자</option>
+              </select>
+            </form>
+            {% endif %}
+          </td>
+          <td>
+            {% if role == 'admin' %}
+            <span class="badge" style="background:#f3f4f6;color:#6b7280;" title="관리자는 항상 양쪽 부문">양쪽</span>
+            {% else %}
+            <form method="POST" action="/admin/change-division/{{ u.id }}" style="display:inline;">
+              <select name="division" onchange="this.form.submit()"
+                      style="padding:3px 6px;font-size:13px;border:1px solid #d1d5db;border-radius:6px;">
+                <option value="planning"   {% if u.division == 'planning'   %}selected{% endif %}>기획부문</option>
+                <option value="production" {% if u.division == 'production' %}selected{% endif %}>제작부문</option>
+                <option value="both"       {% if u.division not in ('planning','production') %}selected{% endif %}>양쪽</option>
               </select>
             </form>
             {% endif %}
@@ -98,7 +113,9 @@
         {% endfor %}
       </tbody>
     </table>
-    <div style="padding:10px 20px;font-size:12px;color:#9ca3af;">팀은 [팀 관리] 탭에서 만들고 팀원을 지정합니다. 여기서도 사람별로 팀을 바꿀 수 있습니다.</div>
+    <div style="padding:10px 20px;font-size:12px;color:#9ca3af;line-height:1.6;">
+      <b>부문</b>: 자기 부문 화면만 이용할 수 있습니다(일정·공조·알림은 두 부문 공용). 관리자는 항상 양쪽입니다.<br>
+      <b>팀</b>은 [팀 관리] 탭에서 만들고 팀원을 지정합니다. 여기서도 사람별로 팀을 바꿀 수 있습니다.</div>
   </div>
 
   <!-- 계정 추가 -->
@@ -125,6 +142,14 @@
           <option value="user">사용자 (제안서 생성/조회만)</option>
           <option value="operator" selected>운영자 (파이프라인 + 학습)</option>
           <option value="admin">관리자 (전체 권한)</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label>소속 부문</label>
+        <select name="division" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:7px;">
+          <option value="planning">기획부문</option>
+          <option value="production">제작부문</option>
+          <option value="both">양쪽 (두 부문 모두)</option>
         </select>
       </div>
       <div class="form-group" style="margin-bottom:12px;">

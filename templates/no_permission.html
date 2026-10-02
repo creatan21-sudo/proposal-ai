@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}권한 없음 — Prointerz{% endblock %}
+{% block content %}
+<div style="max-width:520px;margin:60px auto;padding:36px 32px;background:#fff;border:1px solid #e5e7eb;border-radius:16px;text-align:center;">
+  <div style="font-size:40px;margin-bottom:12px;">🔒</div>
+  <div style="font-size:18px;font-weight:700;color:#111827;margin-bottom:8px;">{{ target }} 화면을 볼 권한이 없습니다</div>
+  <div style="font-size:14px;color:#6b7280;line-height:1.7;margin-bottom:22px;">
+    {{ session.get('username') }}님은 <b>{{ mine }}</b> 소속입니다.<br>
+    일정·공조·알림은 두 부문 모두 이용할 수 있습니다.<br>
+    권한이 필요하면 관리자에게 요청해 주세요.
+  </div>
+  <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+    <a href="{{ home }}" style="padding:9px 18px;background:#4f46e5;color:#fff;border-radius:8px;font-size:13px;font-weight:700;text-decoration:none;">{{ mine }} 첫 화면으로</a>
+    <a href="javascript:history.back()" style="padding:9px 18px;border:1px solid #d1d5db;color:#374151;border-radius:8px;font-size:13px;font-weight:600;text-decoration:none;">이전 화면</a>
+  </div>
+</div>
+{% endblock %}

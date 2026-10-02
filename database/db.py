@@ -795,6 +795,11 @@ def migrate_production_tasks() -> None:
             conn.execute("ALTER TABLE users ADD COLUMN team TEXT DEFAULT ''")
             conn.commit()
             print("[migration] users.team 컬럼 추가")
+        # 소속 부문: planning(기획) | production(제작) | both(양쪽) — 기존 계정은 양쪽(이용 중단 방지)
+        if _uc and "division" not in _uc:
+            conn.execute("ALTER TABLE users ADD COLUMN division TEXT DEFAULT 'both'")
+            conn.commit()
+            print("[migration] users.division 컬럼 추가")
 
         # 팀 목록 (관리자 화면에서 관리, users.team 에 팀명 저장)
         conn.execute("""
@@ -1907,7 +1912,8 @@ def get_user_by_id(user_id: int) -> "dict | None":
 def list_users() -> list:
     with get_connection() as conn:
         rows = conn.execute(
-            "SELECT id, username, is_admin, role, created_at, COALESCE(team,'') AS team FROM users ORDER BY id"
+            "SELECT id, username, is_admin, role, created_at, COALESCE(team,'') AS team,"
+            " COALESCE(division,'both') AS division FROM users ORDER BY id"
         ).fetchall()
         result = []
         for r in rows:
@@ -4113,6 +4119,26 @@ def move_team(team_id: int, direction: int) -> None:
             for order, tid in enumerate(ids, 1):
                 conn.execute("UPDATE teams SET sort_order=? WHERE id=?", (order, tid))
             conn.commit()
+
+
+def update_user_division(uid: int, division: str) -> None:
+    if division not in ("planning", "production", "both"):
+        division = "both"
+    with get_connection() as conn:
+        conn.execute("UPDATE users SET division=? WHERE id=?", (division, uid))
+        conn.commit()
+
+
+def get_user_division(uid: int) -> str:
+    """소속 부문 (관리자 계정은 항상 양쪽)"""
+    with get_connection() as conn:
+        row = conn.execute("SELECT is_admin, role, COALESCE(division,'both') AS division FROM users WHERE id=?",
+                           (uid,)).fetchone()
+    if not row:
+        return "both"
+    if row["is_admin"] or row["role"] == "admin":
+        return "both"
+    return row["division"] if row["division"] in ("planning", "production") else "both"
 
 
 def update_user_team(uid: int, team: str) -> None:
