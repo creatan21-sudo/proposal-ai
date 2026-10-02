@@ -6,6 +6,8 @@ click>=8.1.0
 
 # PDF 파싱
 pdfplumber>=0.11.0
+# 제안서 PDF 분할 (제작부문 AI 정리)
+pypdf>=3.17.0
 
 # PDF → 이미지 변환 (Vision 스타일 추출용, poppler 필요)
 pdf2image>=1.17.0

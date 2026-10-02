@@ -845,6 +845,9 @@ def migrate_production_tasks() -> None:
             ("proposal_filename",    "TEXT DEFAULT ''"),   # 업로드한 제안서 원본 파일명
             ("proposal_path",        "TEXT DEFAULT ''"),
             ("proposal_uploaded_at", "TEXT DEFAULT ''"),
+            ("proposal_status",      "TEXT DEFAULT ''"),   # '' | running | done | error
+            ("proposal_message",     "TEXT DEFAULT ''"),   # 진행 상황 또는 오류 설명
+            ("proposal_started_at",  "TEXT DEFAULT ''"),
         ]:
             if _col not in cols:
                 cursor.execute(f"ALTER TABLE production_tasks ADD COLUMN {_col} {_ddl}")
@@ -3911,6 +3914,20 @@ def get_production_tasks_by_confirmed(confirmed_ids: list) -> dict:
     for r in rows:
         out.setdefault(r["nara_confirmed_id"], dict(r))
     return out
+
+
+def set_production_proposal_status(task_id: int, status: str, message: str = "", started: bool = False) -> None:
+    """제안서 AI 정리 진행 상태 기록 (백그라운드 작업 ↔ 화면 폴링)"""
+    with get_connection() as conn:
+        if started:
+            conn.execute(
+                """UPDATE production_tasks SET proposal_status=?, proposal_message=?,
+                   proposal_started_at=datetime('now','localtime') WHERE id=?""",
+                (status, message, task_id))
+        else:
+            conn.execute("UPDATE production_tasks SET proposal_status=?, proposal_message=? WHERE id=?",
+                         (status, message, task_id))
+        conn.commit()
 
 
 def list_active_production_tasks() -> list:

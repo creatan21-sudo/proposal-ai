@@ -30,7 +30,7 @@
     <div class="pum-drop" id="pum-drop" onclick="document.getElementById('pum-file').click()">
       <div class="big">📄</div>
       <div class="t">최종 제안서 PDF 선택</div>
-      <div class="s">클릭하거나 파일을 끌어다 놓으세요 · 원본은 정리 후 보관하지 않습니다</div>
+      <div class="s">클릭하거나 파일을 끌어다 놓으세요 · 원본은 정리 후 보관하지 않습니다 · 정리는 창을 닫아도 계속됩니다</div>
     </div>
     <div class="pum-status" id="pum-status"></div>
     <div class="pum-actions" id="pum-actions">
@@ -78,17 +78,34 @@
     if(!f || busy) return;
     if(!/\.pdf$/i.test(f.name)){ status('PDF 파일만 올릴 수 있습니다', 'err'); return; }
     busy = true; $('pum-later').disabled = true; $('pum-drop').style.pointerEvents = 'none'; $('pum-drop').style.opacity = .5;
-    let sec = 0; status('⏳ 제안서를 읽고 정리하는 중입니다… (보통 1~3분, 창을 닫지 마세요)', 'info');
-    timer = setInterval(() => { sec++; status(`⏳ 제안서를 읽고 정리하는 중입니다… ${sec}초 (보통 1~3분, 창을 닫지 마세요)`, 'info'); }, 1000);
+    let sec = 0; status('⏳ 제안서를 올리는 중…', 'info');
     const fd = new FormData(); fd.append('file', f);
+    const fail = (m) => { clearInterval(timer); status('⚠️ ' + m + ' — 다시 시도하거나 [나중에 하기]를 누르세요', 'err'); };
     try{
       const r = await fetch('/production/tasks/' + opts.taskId + '/proposal', {method:'POST', body: fd});
       const d = await r.json();
-      clearInterval(timer);
-      if(d.ok){ status('✅ 정리 완료 — 제작부문 과업에 제작내용·제안개요가 등록되었습니다', 'ok'); done(); }
-      else status('⚠️ ' + (d.error || '정리 실패') + ' — 다시 시도하거나 [나중에 하기]를 누르세요', 'err');
+      if(!d.ok){ fail(d.error || '업로드 실패'); }
+      else {
+        // 서버 뒤에서 정리 진행 — 창을 닫아도 계속됨. 상태를 3초마다 확인
+        let stage = '제안서를 받았습니다';
+        clearInterval(timer);
+        timer = setInterval(() => { sec++; status(`⏳ ${stage}… ${sec}초 (분량에 따라 1~5분 · 창을 닫아도 계속 진행됩니다)`, 'info'); }, 1000);
+        const final = await new Promise(resolve => {
+          const poll = async () => {
+            try{
+              const s2 = await (await fetch('/production/tasks/' + opts.taskId + '/proposal/status')).json();
+              if(s2.status === 'running'){ stage = s2.message || stage; setTimeout(poll, 3000); }
+              else resolve(s2);
+            }catch(e){ setTimeout(poll, 5000); }
+          };
+          setTimeout(poll, 2000);
+        });
+        clearInterval(timer);
+        if(final.status === 'done'){ status('✅ 정리 완료 — 제작부문 과업에 제작내용·제안개요가 등록되었습니다', 'ok'); done(); }
+        else fail(final.message || '정리 실패');
+      }
     }catch(e){
-      clearInterval(timer); status('⚠️ 업로드 실패: ' + e.message, 'err');
+      fail('업로드 실패: ' + e.message);
     }
     busy = false; $('pum-later').disabled = false; $('pum-drop').style.pointerEvents = ''; $('pum-drop').style.opacity = 1;
     $('pum-file').value = '';

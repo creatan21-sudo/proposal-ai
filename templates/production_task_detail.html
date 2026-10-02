@@ -400,7 +400,35 @@ function _reloadKeepingTab(){
   if (s) switchTab('sub-tab', 'sub-content', s);
 })();
 
-// ── 제안서 PDF 업로드 → AI 정리 ──
+// ── 제안서 PDF 업로드 → AI 정리 (서버 뒤에서 진행, 상태 폴링) ──
+let _propTimer = null;
+function _propStatus(msg, kind){
+  const st = document.getElementById('proposal-status'); if(!st) return;
+  st.style.display = msg ? 'block' : 'none'; st.textContent = msg || '';
+  const c = {info:['#eef2ff','#3730a3'], ok:['#dcfce7','#166534'], err:['#fee2e2','#991b1b']}[kind||'info'];
+  st.style.background = c[0]; st.style.color = c[1];
+}
+function _propBusy(b){
+  const btn = document.getElementById('proposal-btn'); if(btn){ btn.disabled = b; btn.style.opacity = b ? .6 : 1; }
+}
+function _watchProposal(startedSec){
+  let sec = startedSec || 0, stage = '제안서를 정리하는 중';
+  _propBusy(true);
+  clearInterval(_propTimer);
+  _propTimer = setInterval(() => { sec++; _propStatus(`⏳ ${stage}… ${sec}초 (분량에 따라 1~5분 · 화면을 닫아도 계속 진행됩니다)`); }, 1000);
+  const poll = async () => {
+    try{
+      const d = await (await fetch('/production/tasks/{{ task.id }}/proposal/status')).json();
+      if(d.status === 'running'){ stage = d.message || stage; setTimeout(poll, 3000); return; }
+      clearInterval(_propTimer); _propBusy(false);
+      if(d.status === 'done'){
+        _propStatus('✅ 정리 완료 — 제작내용·제안개요를 확인하세요', 'ok');
+        setTimeout(() => { location.href = location.pathname + '?tab=content&sub=production_content'; }, 700);
+      } else _propStatus('⚠️ ' + (d.message || '정리 실패'), 'err');
+    }catch(e){ setTimeout(poll, 5000); }
+  };
+  setTimeout(poll, 1500);
+}
 async function uploadProposal(input){
   const f = input.files[0];
   if (!f) return;
@@ -408,32 +436,18 @@ async function uploadProposal(input){
   if (hasContent && !confirm('제작내용과 제안개요를 새 제안서 기준으로 다시 작성합니다.\n지금 내용(직접 고친 부분 포함)은 덮어씁니다. 진행할까요?')) {
     input.value = ''; return;
   }
-  const btn = document.getElementById('proposal-btn');
-  const st = document.getElementById('proposal-status');
-  btn.disabled = true; btn.style.opacity = .6;
-  st.style.display = 'block'; st.style.background = '#eef2ff'; st.style.color = '#3730a3';
-  let sec = 0;
-  st.textContent = '⏳ 제안서를 읽고 정리하는 중입니다… (보통 1~3분)';
-  const timer = setInterval(() => { sec++; st.textContent = '⏳ 제안서를 읽고 정리하는 중입니다… ' + sec + '초 (보통 1~3분, 이 화면을 닫지 마세요)'; }, 1000);
+  _propBusy(true); _propStatus('⏳ 제안서를 올리는 중…');
   const fd = new FormData(); fd.append('file', f);
   try {
     const r = await fetch('/production/tasks/{{ task.id }}/proposal', {method: 'POST', body: fd});
     const d = await r.json();
-    clearInterval(timer);
-    if (d.ok) {
-      st.textContent = '✅ 정리 완료 — 제작내용·제안개요를 확인하세요';
-      setTimeout(() => { location.href = location.pathname + '?tab=content&sub=production_content'; }, 600);
-      return;
-    }
-    st.style.background = '#fee2e2'; st.style.color = '#991b1b';
-    st.textContent = '⚠️ ' + (d.error || '알 수 없는 오류');
-  } catch (e) {
-    clearInterval(timer);
-    st.style.background = '#fee2e2'; st.style.color = '#991b1b';
-    st.textContent = '⚠️ 업로드 실패: ' + e.message;
-  }
-  btn.disabled = false; btn.style.opacity = 1; input.value = '';
+    if (d.ok) _watchProposal(0);
+    else { _propBusy(false); _propStatus('⚠️ ' + (d.error || '업로드 실패'), 'err'); }
+  } catch (e) { _propBusy(false); _propStatus('⚠️ 업로드 실패: ' + e.message, 'err'); }
+  input.value = '';
 }
+{% if task.proposal_status == 'running' %}_watchProposal(0);{% elif task.proposal_status == 'error' and task.proposal_message %}
+_propStatus('⚠️ 마지막 제안서 정리 실패: ' + {{ task.proposal_message | tojson }} + ' — 다시 올려 주세요', 'err');{% endif %}
 
 // ── 공조요청 ──
 function toggleCoopTargets(){
