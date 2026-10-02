@@ -466,6 +466,46 @@ def init_db() -> None:
                 updated_by      TEXT DEFAULT ''
             );
 
+            /* ==================== 제작부문 (Production Division) Tables ==================== */
+
+            CREATE TABLE IF NOT EXISTS production_tasks (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                nara_confirmed_id   INTEGER NOT NULL UNIQUE,
+                project_name        TEXT NOT NULL,
+                client_name         TEXT DEFAULT '',
+                bid_ntce_nm         TEXT DEFAULT '',
+                status              TEXT DEFAULT '대기',
+                assigned_to         TEXT DEFAULT '',
+                created_by          TEXT NOT NULL,
+                created_at          TEXT DEFAULT (datetime('now','localtime')),
+                updated_at          TEXT DEFAULT (datetime('now','localtime')),
+                completed_at        TEXT DEFAULT '',
+                FOREIGN KEY(nara_confirmed_id) REFERENCES nara_confirmed(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS production_task_sections (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                production_task_id  INTEGER NOT NULL,
+                section_type        TEXT NOT NULL,
+                content             TEXT DEFAULT '',
+                auto_generated      INTEGER DEFAULT 0,
+                generated_by        TEXT DEFAULT 'system',
+                generated_at        TEXT DEFAULT '',
+                updated_by          TEXT DEFAULT '',
+                updated_at          TEXT DEFAULT (datetime('now','localtime')),
+                FOREIGN KEY(production_task_id) REFERENCES production_tasks(id)
+            );
+
+            CREATE TABLE IF NOT EXISTS production_assignments (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                production_task_id  INTEGER NOT NULL,
+                assigned_by         TEXT NOT NULL,
+                assigned_to         TEXT NOT NULL,
+                assigned_at         TEXT DEFAULT (datetime('now','localtime')),
+                notes               TEXT DEFAULT '',
+                FOREIGN KEY(production_task_id) REFERENCES production_tasks(id)
+            );
+
             CREATE TABLE IF NOT EXISTS proposal_design (
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 confirmed_id INTEGER NOT NULL UNIQUE,
@@ -3425,3 +3465,159 @@ def list_confirmed_for_board() -> list:
                ORDER BY nc.id DESC""",
         ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ==================== 제작부문 (Production Division) Functions ====================
+
+def create_production_task(nara_confirmed_id: int, project_name: str, client_name: str,
+                          bid_ntce_nm: str, created_by: str) -> int:
+    """제작부문 새 과업 생성"""
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """INSERT INTO production_tasks
+               (nara_confirmed_id, project_name, client_name, bid_ntce_nm, created_by, status)
+               VALUES (?, ?, ?, ?, ?, '대기')""",
+            (nara_confirmed_id, project_name, client_name, bid_ntce_nm, created_by),
+        )
+        conn.commit()
+        return cursor.lastrowid
+
+
+def get_production_task(task_id: int) -> dict:
+    """제작부문 과업 조회"""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM production_tasks WHERE id=?", (task_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def list_production_tasks(status: str = None, page: int = 1, per_page: int = 50) -> dict:
+    """제작부문 과업 목록 조회 (페이지네이션 포함)"""
+    offset = (page - 1) * per_page
+    with get_connection() as conn:
+        # 전체 개수
+        if status:
+            total = conn.execute(
+                "SELECT COUNT(*) as cnt FROM production_tasks WHERE status=?", (status,)
+            ).fetchone()["cnt"]
+            rows = conn.execute(
+                """SELECT * FROM production_tasks
+                   WHERE status=?
+                   ORDER BY created_at DESC
+                   LIMIT ? OFFSET ?""",
+                (status, per_page, offset),
+            ).fetchall()
+        else:
+            total = conn.execute(
+                "SELECT COUNT(*) as cnt FROM production_tasks"
+            ).fetchone()["cnt"]
+            rows = conn.execute(
+                """SELECT * FROM production_tasks
+                   ORDER BY created_at DESC
+                   LIMIT ? OFFSET ?""",
+                (per_page, offset),
+            ).fetchall()
+
+    pages = (total + per_page - 1) // per_page
+    return {
+        "items": [dict(r) for r in rows],
+        "total": total,
+        "pages": pages,
+        "current": page,
+    }
+
+
+def list_my_production_tasks(username: str) -> list:
+    """사용자의 배정된 제작부문 과업 목록"""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT * FROM production_tasks
+               WHERE assigned_to=? AND status IN ('진행중', '대기')
+               ORDER BY created_at DESC""",
+            (username,),
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def assign_production_task(task_id: int, assigned_by: str, assigned_to: str, notes: str = "") -> None:
+    """제작부문 과업 담당자 배정"""
+    with get_connection() as conn:
+        # 과업 상태를 '진행중'으로 변경
+        conn.execute(
+            "UPDATE production_tasks SET assigned_to=?, status='진행중', updated_at=datetime('now','localtime') WHERE id=?",
+            (assigned_to, task_id),
+        )
+        # 배정 기록 저장
+        conn.execute(
+            """INSERT INTO production_assignments (production_task_id, assigned_by, assigned_to, notes)
+               VALUES (?, ?, ?, ?)""",
+            (task_id, assigned_by, assigned_to, notes),
+        )
+        conn.commit()
+
+
+def add_production_task_section(task_id: int, section_type: str, content: str = "",
+                               auto_generated: int = 0, generated_by: str = "system") -> int:
+    """제작부문 과업에 섹션 추가 또는 업데이트"""
+    with get_connection() as conn:
+        # 기존 섹션이 있는지 확인
+        existing = conn.execute(
+            "SELECT id FROM production_task_sections WHERE production_task_id=? AND section_type=?",
+            (task_id, section_type),
+        ).fetchone()
+
+        if existing:
+            # 업데이트
+            conn.execute(
+                """UPDATE production_task_sections
+                   SET content=?, updated_at=datetime('now','localtime')
+                   WHERE id=?""",
+                (content, existing["id"]),
+            )
+            section_id = existing["id"]
+        else:
+            # 삽입
+            cursor = conn.execute(
+                """INSERT INTO production_task_sections
+                   (production_task_id, section_type, content, auto_generated, generated_by, generated_at)
+                   VALUES (?, ?, ?, ?, ?, datetime('now','localtime'))""",
+                (task_id, section_type, content, auto_generated, generated_by),
+            )
+            section_id = cursor.lastrowid
+
+        conn.commit()
+    return section_id
+
+
+def get_production_task_sections(task_id: int) -> dict:
+    """제작부문 과업의 모든 섹션 조회"""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM production_task_sections WHERE production_task_id=? ORDER BY section_type",
+            (task_id,),
+        ).fetchall()
+
+    sections = {}
+    for row in rows:
+        r = dict(row)
+        sections[r["section_type"]] = r
+    return sections
+
+
+def update_production_task_status(task_id: int, status: str) -> None:
+    """제작부문 과업 상태 업데이트"""
+    with get_connection() as conn:
+        if status == "완료":
+            conn.execute(
+                """UPDATE production_tasks
+                   SET status=?, completed_at=datetime('now','localtime'), updated_at=datetime('now','localtime')
+                   WHERE id=?""",
+                (status, task_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE production_tasks SET status=?, updated_at=datetime('now','localtime') WHERE id=?",
+                (status, task_id),
+            )
+        conn.commit()

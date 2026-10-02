@@ -6097,34 +6097,47 @@ def nara_add_to_candidates():
 @login_required
 def production_tasks():
     """제작부문 - 과업 목록 (모든 현재 및 과거 과업)"""
-    return render_template("production_tasks.html", tasks=[], pagination={"total": 0, "pages": 1, "current": 1})
+    from database.db import list_production_tasks
+    page = max(1, int(request.args.get("page", 1)))
+    status = request.args.get("status", None)
+    paged = list_production_tasks(status=status, page=page, per_page=50)
+    return render_template("production_tasks.html", tasks=paged["items"], pagination=paged)
 
 @app.route("/production/ongoing")
 @login_required
 def production_ongoing():
     """제작부문 - 진행 중인 과업"""
+    from database.db import list_my_production_tasks
     username = session.get("username", "")
-    return render_template("production_ongoing.html", tasks=[], username=username)
+    tasks = list_my_production_tasks(username)
+    return render_template("production_ongoing.html", tasks=tasks, username=username)
 
 @app.route("/production/schedule")
 @login_required
 def production_schedule():
     """제작부문 - 스케줄 (캘린더/타임라인 뷰)"""
-    return render_template("production_schedule.html", schedules=[])
+    from database.db import get_connection
+    # 향후 실제 스케줄 데이터 조회 로직 추가
+    schedules = []
+    return render_template("production_schedule.html", schedules=schedules)
 
 @app.route("/production/board")
 @login_required
 def production_board():
     """제작부문 - 게시판"""
+    # 향후 제작부문 전용 게시판 데이터 조회 로직 추가
     is_ops = session.get("role") in ("admin", "operator")
-    return render_template("production_board.html", posts=[], is_ops=is_ops)
+    posts = []
+    return render_template("production_board.html", posts=posts, is_ops=is_ops)
 
 @app.route("/production/db")
 @login_required
 def production_db():
     """제작부문 - 데이터베이스 (과업 히스토리)"""
+    from database.db import list_production_tasks
     page = max(1, int(request.args.get("page", 1)))
-    return render_template("production_db.html", tasks=[], pagination={"total": 0, "pages": 1, "current": page})
+    paged = list_production_tasks(status="완료", page=page, per_page=50)
+    return render_template("production_db.html", tasks=paged["items"], pagination=paged)
 
 @app.route("/production/learning", methods=["GET", "POST"])
 @login_required
@@ -6132,6 +6145,7 @@ def production_db():
 def production_learning():
     """제작부문 - 학습 데이터 입력"""
     if request.method == "POST":
+        # 향후 학습 데이터 저장 로직 추가
         return jsonify({"ok": True, "message": "학습 데이터가 저장되었습니다"})
     return render_template("production_learning.html", data=None)
 
