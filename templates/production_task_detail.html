@@ -261,6 +261,7 @@
       <textarea id="coop-content" placeholder="요청할 내용을 적어주세요 (예: 10/15 촬영 장비 지원 가능 여부 확인 부탁드립니다)"
                 style="width:100%; min-height:90px; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px;
                        line-height:1.6; box-sizing:border-box; resize:vertical; font-family:inherit;"></textarea>
+      <div id="coop-files"></div>
       <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; gap:12px;">
         <span style="font-size:12px; color:#9ca3af;">요청하면 대상자에게 알림이 갑니다</span>
         <button type="button" id="coop-submit" onclick="submitCoop()"
@@ -293,6 +294,7 @@
               {% endif %}
             </div>
             <div style="white-space:pre-wrap; color:#374151; font-size:14px; line-height:1.6;">{{ r.content }}</div>
+            {% for f in r.files %}<a class="cf-link" href="/production/coop/files/{{ f.id }}" title="{{ f.filename }}">📎 <span class="nm">{{ f.filename }}</span> <span style="color:#94a3b8;">{{ '%.1fMB' % (f.size/1048576) if f.size >= 1048576 else '%dKB' % ((f.size/1024)|round(0,'ceil')) }}</span></a>{% endfor %}
           </div>
           {% if r.can_close %}
           <button type="button" onclick="setCoopStatus({{ r.id }}, '{{ '요청' if r.status == '완료' else '완료' }}')"
@@ -326,7 +328,7 @@
           <select id="assignee-team" onchange="fillAssignee()"
                   style="flex:0 0 42%; padding: 10px 8px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px;">
             <option value="__ALL__">전체</option>
-            {% for t in people | map(attribute='team') | select | unique | sort %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
+            {% for t in people | map(attribute='team') | select | unique %}<option value="{{ t }}">{{ t }}</option>{% endfor %}
           </select>
           <select id="assignee-select" name="assignee" required
                   style="flex:1; min-width:0; padding: 10px 8px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px;"></select>
@@ -361,6 +363,7 @@
 </div>
 
 {% include "_people_picker.html" %}
+{% include "_coop_files.html" %}
 <script>
 // 탭 전환 (상위/하위 공용). 버튼 스타일 규칙: 상위=밑줄, 하위=pill
 function switchTab(btnClass, panelClass, btn) {
@@ -474,6 +477,7 @@ async function uploadProposal(input){
 _propStatus('⚠️ 마지막 제안서 정리 실패: ' + {{ task.proposal_message | tojson }} + ' — 다시 올려 주세요', 'err');{% endif %}
 
 // ── 공조요청 ──
+const coopFiles = document.getElementById('coop-files') ? CoopFiles(document.getElementById('coop-files')) : null;
 const coopPicker = document.getElementById('coop-picker')
   ? PeoplePicker(document.getElementById('coop-picker'), {people: {{ people | tojson }}, allowAll: true})
   : null;
@@ -485,10 +489,12 @@ async function submitCoop(){
   const btn = document.getElementById('coop-submit');
   btn.disabled = true; btn.textContent = '요청 중…';
   try {
-    const r = await fetch('/production/tasks/{{ task.id }}/coop', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({target_type: sel.all ? 'all' : 'users', targets: sel.names, content})
-    });
+    const fd = new FormData();
+    fd.append('target_type', sel.all ? 'all' : 'users');
+    fd.append('targets', JSON.stringify(sel.names));
+    fd.append('content', content);
+    coopFiles.files().forEach(f => fd.append('files', f));
+    const r = await fetch('/production/tasks/{{ task.id }}/coop', {method: 'POST', body: fd});
     const d = await r.json();
     if (d.ok) { location.href = location.pathname + '?tab=cooperation'; return; }
     alert('요청 실패: ' + (d.error || '알 수 없는 오류'));

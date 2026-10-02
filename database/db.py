@@ -796,6 +796,21 @@ def migrate_production_tasks() -> None:
             conn.commit()
             print("[migration] users.team 컬럼 추가")
 
+        # 팀 목록 (관리자 화면에서 관리, users.team 에 팀명 저장)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS teams (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT NOT NULL UNIQUE,
+                sort_order  INTEGER DEFAULT 0,
+                created_at  TEXT DEFAULT (datetime('now','localtime'))
+            )
+        """)
+        # 이전 방식(사용자별 팀명 직접 입력)으로 들어간 팀명을 팀 목록으로 옮김
+        if _uc:
+            conn.execute("""INSERT OR IGNORE INTO teams (name)
+                            SELECT DISTINCT TRIM(team) FROM users WHERE TRIM(COALESCE(team,'')) != ''""")
+        conn.commit()
+
         # 공조요청 (과업별 협조 요청 — 특정인 또는 전체 대상)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS production_coop_requests (
@@ -812,6 +827,19 @@ def migrate_production_tasks() -> None:
                 FOREIGN KEY(production_task_id) REFERENCES production_tasks(id)
             )
         """)
+        # 공조 참고 파일 (파일 자체는 DB 옆 coop_files/ 영구 저장소)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS production_coop_files (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                coop_id      INTEGER NOT NULL,
+                filename     TEXT NOT NULL,
+                stored_name  TEXT NOT NULL,
+                size         INTEGER DEFAULT 0,
+                uploaded_by  TEXT DEFAULT '',
+                created_at   TEXT DEFAULT (datetime('now','localtime'))
+            )
+        """)
+
         # 제작부문 일정 (캘린더) — 날짜는 하루/기간/여러 날 모두 dates_json에 개별 날짜로 펼쳐 저장
         conn.execute("""
             CREATE TABLE IF NOT EXISTS production_schedules (
@@ -3770,7 +3798,39 @@ def list_coop_requests(task_id: int) -> list:
         except Exception:
             d["targets"] = []
         result.append(d)
-    return result
+    return _attach_coop_files(result)
+
+
+def add_coop_file(coop_id: int, filename: str, stored_name: str, size: int, by: str) -> int:
+    with get_connection() as conn:
+        cur = conn.execute(
+            "INSERT INTO production_coop_files (coop_id, filename, stored_name, size, uploaded_by) VALUES (?,?,?,?,?)",
+            (coop_id, filename, stored_name, size, by))
+        conn.commit()
+        return cur.lastrowid
+
+
+def get_coop_file(fid: int) -> dict:
+    with get_connection() as conn:
+        r = conn.execute("SELECT * FROM production_coop_files WHERE id=?", (fid,)).fetchone()
+    return dict(r) if r else None
+
+
+def _attach_coop_files(reqs: list) -> list:
+    ids = [r["id"] for r in reqs]
+    if not ids:
+        return reqs
+    ph = ",".join("?" * len(ids))
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"SELECT id, coop_id, filename, size FROM production_coop_files WHERE coop_id IN ({ph}) ORDER BY id", ids
+        ).fetchall()
+    by = {}
+    for f in rows:
+        by.setdefault(f["coop_id"], []).append(dict(f))
+    for r in reqs:
+        r["files"] = by.get(r["id"], [])
+    return reqs
 
 
 def list_all_coop_requests() -> list:
@@ -3790,7 +3850,7 @@ def list_all_coop_requests() -> list:
         except Exception:
             d["targets"] = []
         out.append(d)
-    return out
+    return _attach_coop_files(out)
 
 
 def count_open_coop_for(username: str) -> int:
@@ -3983,6 +4043,73 @@ def set_production_proposal_status(task_id: int, status: str, message: str = "",
         conn.commit()
 
 
+def list_teams() -> list:
+    """팀 목록 [{id, name, members:[username]}] — 정렬 순서·이름 순"""
+    with get_connection() as conn:
+        teams = [dict(r) for r in conn.execute("SELECT id, name, sort_order FROM teams ORDER BY sort_order, name")]
+        users = conn.execute("SELECT username, COALESCE(team,'') AS team FROM users ORDER BY username").fetchall()
+    by = {}
+    for u in users:
+        by.setdefault(u["team"], []).append(u["username"])
+    for t in teams:
+        t["members"] = by.get(t["name"], [])
+    return teams
+
+
+def create_team(name: str) -> str:
+    name = (name or "").strip()[:30]
+    if not name:
+        return "팀 이름을 입력하세요"
+    with get_connection() as conn:
+        if conn.execute("SELECT 1 FROM teams WHERE name=?", (name,)).fetchone():
+            return f"'{name}' 팀이 이미 있습니다"
+        nxt = conn.execute("SELECT COALESCE(MAX(sort_order),0)+1 FROM teams").fetchone()[0]
+        conn.execute("INSERT INTO teams (name, sort_order) VALUES (?,?)", (name, nxt))
+        conn.commit()
+    return ""
+
+
+def rename_team(team_id: int, new_name: str) -> str:
+    new_name = (new_name or "").strip()[:30]
+    if not new_name:
+        return "팀 이름을 입력하세요"
+    with get_connection() as conn:
+        row = conn.execute("SELECT name FROM teams WHERE id=?", (team_id,)).fetchone()
+        if not row:
+            return "팀을 찾을 수 없습니다"
+        if new_name != row["name"] and conn.execute("SELECT 1 FROM teams WHERE name=?", (new_name,)).fetchone():
+            return f"'{new_name}' 팀이 이미 있습니다"
+        conn.execute("UPDATE teams SET name=? WHERE id=?", (new_name, team_id))
+        conn.execute("UPDATE users SET team=? WHERE team=?", (new_name, row["name"]))   # 팀원도 함께 이동
+        conn.commit()
+    return ""
+
+
+def delete_team(team_id: int) -> None:
+    """팀 삭제 — 소속 팀원은 '팀 미지정'이 됨"""
+    with get_connection() as conn:
+        row = conn.execute("SELECT name FROM teams WHERE id=?", (team_id,)).fetchone()
+        if row:
+            conn.execute("UPDATE users SET team='' WHERE team=?", (row["name"],))
+            conn.execute("DELETE FROM teams WHERE id=?", (team_id,))
+            conn.commit()
+
+
+def move_team(team_id: int, direction: int) -> None:
+    """팀 표시 순서 위/아래로"""
+    teams = list_teams()
+    ids = [t["id"] for t in teams]
+    if team_id not in ids:
+        return
+    i = ids.index(team_id); j = i + (1 if direction > 0 else -1)
+    if 0 <= j < len(ids):
+        ids[i], ids[j] = ids[j], ids[i]
+        with get_connection() as conn:
+            for order, tid in enumerate(ids, 1):
+                conn.execute("UPDATE teams SET sort_order=? WHERE id=?", (order, tid))
+            conn.commit()
+
+
 def update_user_team(uid: int, team: str) -> None:
     with get_connection() as conn:
         conn.execute("UPDATE users SET team=? WHERE id=?", ((team or "").strip()[:30], uid))
@@ -3990,9 +4117,10 @@ def update_user_team(uid: int, team: str) -> None:
 
 
 def list_people_for_picker() -> list:
-    """사람 지정 선택기용 [{name, team}] — 팀명 순, 이름 순"""
+    """사람 지정 선택기용 [{name, team}] — 관리자가 정한 팀 순서, 이름 순"""
+    order = {t["name"]: i for i, t in enumerate(list_teams())}
     people = [{"name": u["username"], "team": u.get("team") or ""} for u in list_users()]
-    return sorted(people, key=lambda p: (p["team"] == "", p["team"], p["name"]))
+    return sorted(people, key=lambda p: (p["team"] == "", order.get(p["team"], 999), p["team"], p["name"]))
 
 
 def list_recent_production_tasks(limit: int = 12) -> list:

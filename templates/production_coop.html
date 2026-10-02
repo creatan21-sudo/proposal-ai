@@ -61,6 +61,7 @@
               {% if r.task_name %}<a class="cp-task" href="/production/tasks/{{ r.production_task_id }}?tab=cooperation">📁 {{ r.task_name }} →</a>
               {% else %}<span class="cp-task" style="color:#9ca3af;">과업 없음 (일반 공조)</span>{% endif %}
               <div class="cp-content">{{ r.content }}</div>
+              {% for f in r.files %}<a class="cf-link" href="/production/coop/files/{{ f.id }}" title="{{ f.filename }}">📎 <span class="nm">{{ f.filename }}</span> <span style="color:#94a3b8;">{{ '%.1fMB' % (f.size/1048576) if f.size >= 1048576 else '%dKB' % ((f.size/1024)|round(0,'ceil')) }}</span></a>{% endfor %}
             </div>
             {% if r.can_close %}
             <button type="button" class="cp-btn" onclick="setCoopStatus({{ r.id }}, '{{ '요청' if r.status == '완료' else '완료' }}')">{{ '다시 열기' if r.status == '완료' else '완료 처리' }}</button>
@@ -85,6 +86,7 @@
       <label class="f-label" for="cp-content">내용</label>
       <textarea class="f-input" id="cp-content" rows="5" style="resize:vertical;line-height:1.6;"
                 placeholder="요청할 내용을 적어주세요 (예: 10/15 촬영 장비 지원 가능 여부 확인 부탁드립니다)"></textarea>
+      <div id="cp-files"></div>
       <div style="font-size:11px;color:#9ca3af;margin-top:6px;">요청하면 대상자에게 알림이 갑니다</div>
       <button type="button" id="cp-submit" onclick="submitCoop()"
               style="width:100%;margin-top:12px;padding:10px;border:none;background:#4f46e5;color:#fff;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;">요청하기</button>
@@ -96,6 +98,7 @@
 </div>
 
 {% include "_people_picker.html" %}
+{% include "_coop_files.html" %}
 <script>
 let box = 'me', stFilter = '요청';
 function applyFilter(){
@@ -111,6 +114,7 @@ function applyFilter(){
 function setBox(v){ box = v; document.querySelectorAll('.cp-tab').forEach(b => b.classList.toggle('on', b.dataset.v === v)); applyFilter(); }
 function setStatus(v){ stFilter = v; document.querySelectorAll('.cp-status button').forEach(b => b.classList.toggle('on', b.dataset.s === v)); applyFilter(); }
 
+const cpFiles = document.getElementById('cp-files') ? CoopFiles(document.getElementById('cp-files')) : null;
 const picker = document.getElementById('cp-picker') ? PeoplePicker(document.getElementById('cp-picker'), {people: {{ people | tojson }}, allowAll: true}) : null;
 async function submitCoop(){
   const sel = picker.get();
@@ -119,9 +123,13 @@ async function submitCoop(){
   if(!content){ alert('요청 내용을 입력하세요'); return; }
   const btn = document.getElementById('cp-submit'); btn.disabled = true; btn.textContent = '요청 중…';
   try{
-    const r = await fetch('/production/coop', {method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({task_id: document.getElementById('cp-task').value || null,
-                            target_type: sel.all ? 'all' : 'users', targets: sel.names, content})});
+    const fd = new FormData();
+    fd.append('task_id', document.getElementById('cp-task').value || '');
+    fd.append('target_type', sel.all ? 'all' : 'users');
+    fd.append('targets', JSON.stringify(sel.names));
+    fd.append('content', content);
+    cpFiles.files().forEach(f => fd.append('files', f));
+    const r = await fetch('/production/coop', {method:'POST', body: fd});
     const d = await r.json();
     if(d.ok){ location.href = '/production/coop?box=mine'; return; }
     alert('요청 실패: ' + (d.error || '알 수 없는 오류'));

@@ -10,3 +10,4 @@ output/proposals/
 *.db-shm
 *.db-wal
 server.log
+database/coop_files/

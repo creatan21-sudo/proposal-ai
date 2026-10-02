@@ -25,7 +25,7 @@ window.PeoplePicker = function(root, o){
   const people = o.people || [];
   const ALL = '__ALL__', EVERY = '__EVERY__', NOTEAM = '__NOTEAM__';
   const teamOf = {}; people.forEach(p => teamOf[p.name] = p.team || '');
-  const teams = [...new Set(people.map(p => p.team).filter(Boolean))].sort();
+  const teams = [...new Set(people.map(p => p.team).filter(Boolean))];   // 관리자가 정한 팀 순서 유지 (people이 그 순서로 옴)
   const hasNoTeam = people.some(p => !p.team);
   const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   let all = false, names = [];

@@ -8,6 +8,7 @@
 <!-- ── 탭 네비게이션 -->
 <div style="display:flex;gap:0;border-bottom:2px solid var(--border);margin-bottom:20px;flex-wrap:wrap;">
   <button class="admin-tab active" onclick="switchTab('users',this)">계정 관리</button>
+  <button class="admin-tab" onclick="switchTab('teams',this)">팀 관리</button>
   <button class="admin-tab" onclick="switchTab('proposals',this)">전체 제안서</button>
   <button class="admin-tab" onclick="switchTab('credits',this)">크레딧 현황</button>
   <a href="/admin/delete_requests" class="admin-tab" style="text-decoration:none;display:flex;align-items:center;">
@@ -64,9 +65,11 @@
           </td>
           <td>
             <form method="POST" action="/admin/change-team/{{ u.id }}" style="display:inline;">
-              <input name="team" list="team-names" value="{{ u.team or '' }}" placeholder="팀 미지정" maxlength="30"
-                     onchange="this.form.submit()"
-                     style="width:110px;padding:3px 6px;font-size:13px;border:1px solid #d1d5db;border-radius:6px;">
+              <select name="team" onchange="this.form.submit()"
+                      style="max-width:120px;padding:3px 6px;font-size:13px;border:1px solid #d1d5db;border-radius:6px;">
+                <option value="">팀 미지정</option>
+                {% for t in teams %}<option value="{{ t.name }}" {% if u.team == t.name %}selected{% endif %}>{{ t.name }}</option>{% endfor %}
+              </select>
             </form>
           </td>
           <td style="font-size:13px;color:#6b7280;">
@@ -95,11 +98,7 @@
         {% endfor %}
       </tbody>
     </table>
-    {# 기존 팀명 자동완성 #}
-    <datalist id="team-names">
-      {% for t in users | map(attribute='team') | select | unique | sort %}<option value="{{ t }}">{% endfor %}
-    </datalist>
-    <div style="padding:10px 20px;font-size:12px;color:#9ca3af;">팀 칸에 팀명을 적고 다른 곳을 누르면 저장됩니다. 공조·제작일정에서 사람을 고를 때 팀별로 묶여 나옵니다.</div>
+    <div style="padding:10px 20px;font-size:12px;color:#9ca3af;">팀은 [팀 관리] 탭에서 만들고 팀원을 지정합니다. 여기서도 사람별로 팀을 바꿀 수 있습니다.</div>
   </div>
 
   <!-- 계정 추가 -->
@@ -130,7 +129,10 @@
       </div>
       <div class="form-group" style="margin-bottom:12px;">
         <label>팀 (선택)</label>
-        <input type="text" name="team" list="team-names" placeholder="예: 제작1팀, 기획팀" maxlength="30">
+        <select name="team" style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:7px;">
+          <option value="">팀 미지정</option>
+          {% for t in teams %}<option value="{{ t.name }}">{{ t.name }}</option>{% endfor %}
+        </select>
       </div>
       <button type="submit" class="btn btn-primary" style="width:100%;">계정 생성</button>
     </form>
@@ -155,6 +157,72 @@
 </div><!-- /tab-users -->
 
 <!-- ────────── 탭 2: 전체 제안서 ────────── -->
+<!-- ────────── 탭: 팀 관리 ────────── -->
+<div id="tab-teams" class="tab-pane" style="display:none;">
+<div style="display:grid;grid-template-columns:1fr 300px;gap:24px;align-items:start;">
+  <div>
+    {% set no_team = users | selectattr('team', 'equalto', '') | list %}
+    {% for t in teams %}
+    <div class="card" style="margin-bottom:12px;padding:16px 18px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <form method="POST" action="/admin/teams/{{ t.id }}/rename" style="display:flex;gap:6px;align-items:center;">
+          <input name="name" value="{{ t.name }}" maxlength="30" required
+                 style="font-weight:700;font-size:15px;padding:5px 8px;border:1px solid transparent;border-radius:6px;width:180px;"
+                 onfocus="this.style.borderColor='#c7d2fe'" onblur="this.style.borderColor='transparent'">
+          <button type="submit" class="btn btn-secondary btn-sm">이름 저장</button>
+          <span style="font-size:12px;color:#6b7280;">{{ t.members|length }}명</span>
+        </form>
+        <div style="display:flex;gap:4px;align-items:center;">
+          <form method="POST" action="/admin/teams/{{ t.id }}/move"><input type="hidden" name="dir" value="up"><button class="btn btn-secondary btn-sm" title="위로" {{ 'disabled' if loop.first }}>▲</button></form>
+          <form method="POST" action="/admin/teams/{{ t.id }}/move"><input type="hidden" name="dir" value="down"><button class="btn btn-secondary btn-sm" title="아래로" {{ 'disabled' if loop.last }}>▼</button></form>
+          <form method="POST" action="/admin/teams/{{ t.id }}/delete" onsubmit="return confirm('{{ t.name }} 팀을 삭제할까요? 팀원은 \'팀 미지정\'이 됩니다.')">
+            <button class="btn btn-sm" style="background:#fee2e2;color:#dc2626;border:1px solid #fecaca;">삭제</button></form>
+        </div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center;">
+        {% for m in t.members %}
+        {% set mu = users | selectattr('username', 'equalto', m) | first %}
+        <form method="POST" action="/admin/change-team/{{ mu.id }}" style="display:inline;">
+          <input type="hidden" name="team" value=""><input type="hidden" name="next" value="/admin?_tab=teams">
+          <span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:99px;background:#eef2ff;border:1px solid #c7d2fe;font-size:13px;font-weight:600;color:#3730a3;">
+            {{ m }} <button type="submit" title="팀에서 빼기" style="border:none;background:none;color:#6366f1;cursor:pointer;font-weight:700;padding:0;">×</button></span>
+        </form>
+        {% else %}<span style="font-size:13px;color:#9ca3af;">아직 팀원이 없습니다</span>{% endfor %}
+        <form method="POST" action="/admin/teams/{{ t.id }}/members" style="display:inline-flex;gap:4px;margin-left:4px;align-items:center;">
+          <select name="uid" required style="width:auto;max-width:200px;padding:4px 6px;font-size:13px;border:1px solid #d1d5db;border-radius:6px;">
+            <option value="">+ 팀원 추가</option>
+            {% for u in users if u.team != t.name %}<option value="{{ u.id }}">{{ u.username }}{% if u.team %} ({{ u.team }}에서 이동){% endif %}</option>{% endfor %}
+          </select>
+          <button type="submit" class="btn btn-secondary btn-sm" style="white-space:nowrap;">추가</button>
+        </form>
+      </div>
+    </div>
+    {% else %}
+    <div class="card" style="color:#9ca3af;font-size:14px;text-align:center;padding:32px;">아직 팀이 없습니다. 오른쪽에서 팀을 만들어 주세요.</div>
+    {% endfor %}
+    <div class="card" style="padding:14px 18px;background:#f9fafb;">
+      <div style="font-size:13px;font-weight:700;color:#6b7280;margin-bottom:8px;">팀 미지정 {{ no_team|length }}명</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px;">
+        {% for u in no_team %}<span style="padding:4px 10px;border-radius:99px;background:#fff;border:1px solid #e5e7eb;font-size:13px;">{{ u.username }}</span>
+        {% else %}<span style="font-size:13px;color:#9ca3af;">모두 팀에 속해 있습니다</span>{% endfor %}
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div style="font-weight:700;font-size:15px;margin-bottom:12px;">새 팀 만들기</div>
+    <form method="POST" action="/admin/teams/add">
+      <input type="text" name="name" placeholder="예: 제작1팀, 후반팀, 기획팀" maxlength="30" required
+             style="width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:7px;box-sizing:border-box;margin-bottom:10px;">
+      <button type="submit" class="btn btn-primary" style="width:100%;">팀 만들기</button>
+    </form>
+    <div style="font-size:12px;color:#9ca3af;margin-top:14px;line-height:1.6;">
+      팀은 공조·제작일정·담당자 배정에서 사람을 고를 때 왼쪽 목록에 이 순서대로 나옵니다.
+      한 사람은 한 팀에만 속하며, 다른 팀에 추가하면 그 팀으로 옮겨집니다.
+    </div>
+  </div>
+</div>
+</div>
+
 <div id="tab-proposals" class="tab-pane" style="display:none;">
   <div style="display:flex;gap:10px;align-items:center;margin-bottom:16px;flex-wrap:wrap;">
     <span style="font-weight:700;">전체 제안서 ({{ all_cases|length }}건)</span>

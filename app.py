@@ -2208,11 +2208,12 @@ def admin_analyze_all_bids():
 @app.route("/admin")
 @admin_required
 def admin():
+    from database.db import list_teams
     users      = list_users()
     user_filter = int(request.args.get("user_id", 0))
     all_cases  = list_all_cases(user_filter)
     credit     = get_credit_status()
-    return render_template("admin.html", users=users,
+    return render_template("admin.html", users=users, teams=list_teams(),
                            all_cases=all_cases, user_filter=user_filter,
                            credit=credit)
 
@@ -2246,7 +2247,8 @@ def admin_add_user():
         users = list_users()
         all_cases = list_all_cases()
         credit = get_credit_status()
-        return render_template("admin.html", users=users, all_cases=all_cases,
+        from database.db import list_teams
+        return render_template("admin.html", users=users, all_cases=all_cases, teams=list_teams(),
                                credit=credit, user_filter=0, error=error)
     return redirect(url_for("admin"))
 
@@ -2288,9 +2290,61 @@ def admin_change_role(uid):
 @admin_required
 def admin_change_team(uid):
     """사용자 소속 팀 지정 (공조·제작일정의 팀 → 사람 선택에 사용)"""
-    from database.db import update_user_team
-    update_user_team(uid, request.form.get("team", ""))
-    return redirect(url_for("admin"))
+    from database.db import update_user_team, list_teams
+    team = request.form.get("team", "").strip()
+    if team and team not in {t["name"] for t in list_teams()}:
+        flash("팀 관리에서 먼저 팀을 만들어 주세요.", "error")
+    else:
+        update_user_team(uid, team)
+    return redirect(request.form.get("next") or url_for("admin", _tab="teams"))
+
+
+# ── 팀 관리 (관리자) ──
+@app.route("/admin/teams/add", methods=["POST"])
+@admin_required
+def admin_team_add():
+    from database.db import create_team
+    err = create_team(request.form.get("name", ""))
+    flash(err or "팀을 만들었습니다.", "error" if err else "success")
+    return redirect(url_for("admin", _tab="teams"))
+
+
+@app.route("/admin/teams/<int:team_id>/rename", methods=["POST"])
+@admin_required
+def admin_team_rename(team_id):
+    from database.db import rename_team
+    err = rename_team(team_id, request.form.get("name", ""))
+    flash(err or "팀 이름을 바꿨습니다.", "error" if err else "success")
+    return redirect(url_for("admin", _tab="teams"))
+
+
+@app.route("/admin/teams/<int:team_id>/delete", methods=["POST"])
+@admin_required
+def admin_team_delete(team_id):
+    from database.db import delete_team
+    delete_team(team_id)
+    flash("팀을 삭제했습니다. 소속 팀원은 '팀 미지정'이 됩니다.", "success")
+    return redirect(url_for("admin", _tab="teams"))
+
+
+@app.route("/admin/teams/<int:team_id>/move", methods=["POST"])
+@admin_required
+def admin_team_move(team_id):
+    from database.db import move_team
+    move_team(team_id, 1 if request.form.get("dir") == "down" else -1)
+    return redirect(url_for("admin", _tab="teams"))
+
+
+@app.route("/admin/teams/<int:team_id>/members", methods=["POST"])
+@admin_required
+def admin_team_add_member(team_id):
+    """팀원 추가 (다른 팀 소속이면 이 팀으로 옮김)"""
+    from database.db import list_teams, update_user_team
+    team = next((t for t in list_teams() if t["id"] == team_id), None)
+    uid = request.form.get("uid", type=int)
+    if team and uid:
+        update_user_team(uid, team["name"])
+    return redirect(url_for("admin", _tab="teams"))
 
 
 @app.route("/admin/purge_user", methods=["POST"])
@@ -6530,11 +6584,48 @@ def _can_close_coop(req: dict) -> bool:
     return req.get("target_type") == "all" or me in (req.get("targets") or [])
 
 
-def _create_coop(task: dict, data: dict):
-    """공조 등록 + 대상자 알림 (과업 화면·공조 메뉴 공용). task=None이면 과업 없는 공조. → (json, status)"""
-    from database.db import create_coop_request, list_users
+# 공조 참고 파일: DB와 같은 영구 저장소(Railway 볼륨)에 보관 — 기본 업로드 폴더(/tmp)는 재배포 시 사라짐
+from config import DB_PATH as _DB_PATH
+COOP_FILE_DIR = Path(_DB_PATH).parent / "coop_files"
+COOP_FILE_MAX = 5                      # 공조 1건당 파일 수
+COOP_FILE_MAX_BYTES = 20 * 1024 * 1024 # 파일당 용량 (5개 × 20MB ≤ 요청 한도 100MB)
+_COOP_BLOCKED_EXT = {".exe", ".bat", ".cmd", ".com", ".msi", ".sh", ".js", ".vbs", ".ps1", ".jar", ".scr", ".html", ".htm"}
+
+
+def _coop_request_data() -> tuple:
+    """공조 등록 요청 → (data dict, 파일 목록). multipart(파일 첨부)와 JSON 모두 지원"""
+    if request.files or (request.content_type or "").startswith("multipart/"):
+        data = request.form.to_dict()
+        try:
+            data["targets"] = json.loads(data.get("targets") or "[]")
+        except Exception:
+            data["targets"] = []
+        files = [f for f in request.files.getlist("files") if f and f.filename]
+        return data, files
+    return (request.get_json(force=True) or {}), []
+
+
+def _check_coop_files(files: list) -> str:
+    if len(files) > COOP_FILE_MAX:
+        return f"파일은 한 번에 {COOP_FILE_MAX}개까지 올릴 수 있습니다"
+    for f in files:
+        if Path(f.filename).suffix.lower() in _COOP_BLOCKED_EXT:
+            return f"'{f.filename}' 형식은 올릴 수 없습니다"
+        f.stream.seek(0, 2); size = f.stream.tell(); f.stream.seek(0)
+        if size > COOP_FILE_MAX_BYTES:
+            return f"'{f.filename}'이(가) {COOP_FILE_MAX_BYTES // (1024*1024)}MB를 넘습니다"
+    return ""
+
+
+def _create_coop(task: dict, data: dict, files: list = None):
+    """공조 등록 + 참고 파일 저장 + 대상자 알림 (과업 화면·공조 메뉴 공용). task=None이면 과업 없는 공조. → (json, status)"""
+    from database.db import create_coop_request, list_users, add_coop_file
+    files = files or []
     if session.get("role") == "user":
         return {"ok": False, "error": "열람 전용 계정은 요청할 수 없습니다"}, 403
+    err = _check_coop_files(files)
+    if err:
+        return {"ok": False, "error": err}, 200
     content = str(data.get("content", "")).replace("\r\n", "\n").strip()
     target_type = "users" if data.get("target_type") == "users" else "all"
     me = session.get("username", "")
@@ -6549,6 +6640,16 @@ def _create_coop(task: dict, data: dict):
 
     task_id = task["id"] if task else 0
     req_id = create_coop_request(task_id, me, target_type, targets, content)
+
+    # 참고 파일 저장 (원본 파일명은 DB에, 디스크에는 안전한 이름으로)
+    if files:
+        COOP_FILE_DIR.mkdir(parents=True, exist_ok=True)
+        for f in files:
+            ext = Path(f.filename).suffix.lower()[:10]
+            stored = f"{req_id}_{uuid.uuid4().hex}{ext}"
+            dest = COOP_FILE_DIR / stored
+            f.save(str(dest))
+            add_coop_file(req_id, f.filename[:200], stored, dest.stat().st_size, me)
 
     # 알림: 지정한 사람 또는 (전체면) 요청자를 뺀 모든 사용자
     notify = targets if target_type == "users" else [u for u in users if u != me]
@@ -6573,7 +6674,8 @@ def create_production_coop(task_id):
     task = get_production_task(task_id)
     if not task:
         return jsonify({"ok": False, "error": "과업을 찾을 수 없습니다"}), 404
-    body, code = _create_coop(task, request.get_json(force=True) or {})
+    data, files = _coop_request_data()
+    body, code = _create_coop(task, data, files)
     return jsonify(body), code
 
 
@@ -6611,7 +6713,7 @@ def production_coop_page():
 def create_production_coop_global():
     """공조 메뉴에서 등록 (과업 선택은 선택 사항)"""
     from database.db import get_production_task
-    data = request.get_json(force=True) or {}
+    data, files = _coop_request_data()
     task = None
     if data.get("task_id") not in (None, "", 0, "0"):
         try:
@@ -6620,8 +6722,22 @@ def create_production_coop_global():
             task = None
         if not task:
             return jsonify({"ok": False, "error": "선택한 과업을 찾을 수 없습니다"}), 404
-    body, code = _create_coop(task, data)
+    body, code = _create_coop(task, data, files)
     return jsonify(body), code
+
+
+@app.route("/production/coop/files/<int:fid>")
+@login_required
+def download_coop_file(fid):
+    """공조 참고 파일 내려받기 (로그인 사용자)"""
+    from database.db import get_coop_file
+    f = get_coop_file(fid)
+    if not f:
+        abort(404)
+    path = COOP_FILE_DIR / f["stored_name"]
+    if not path.exists():
+        return "파일을 찾을 수 없습니다 (서버에서 삭제되었을 수 있습니다)", 404
+    return send_file(str(path), as_attachment=True, download_name=f["filename"])
 
 
 @app.route("/production/coop/<int:req_id>/status", methods=["POST"])

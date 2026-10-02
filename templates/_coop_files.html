@@ -1,0 +1,47 @@
+{# 공조 참고 파일 첨부 입력 (공용) — CoopFiles(rootEl) → .files(), .clear()
+   목록 표시용 매크로 coop_file_links(files)는 각 화면에서 import 없이 아래처럼 사용:
+   {% for f in r.files %}<a href="/production/coop/files/{{ f.id }}">…</a>{% endfor %} #}
+<style>
+.cf-box{margin-top:8px;}
+.cf-btn{display:inline-flex;align-items:center;gap:5px;padding:6px 12px;border:1px dashed #a5b4fc;border-radius:8px;background:#f8f9ff;color:#3730a3;font-size:12px;font-weight:600;cursor:pointer;}
+.cf-btn:hover{background:#eef2ff;}
+.cf-list{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px;}
+.cf-chip{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:6px;background:#f3f4f6;border:1px solid #e5e7eb;font-size:12px;color:#374151;max-width:100%;}
+.cf-chip .nm{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.cf-chip .x{cursor:pointer;color:#9ca3af;font-weight:700;}
+.cf-note{font-size:11px;color:#9ca3af;margin-top:4px;}
+.cf-link{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border-radius:6px;background:#f8fafc;border:1px solid #e2e8f0;font-size:12px;color:#1e40af;text-decoration:none;margin:6px 6px 0 0;max-width:100%;}
+.cf-link:hover{background:#eff6ff;}
+.cf-link .nm{max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+</style>
+<script>
+window.cfSize = n => n >= 1048576 ? (n/1048576).toFixed(1) + 'MB' : Math.max(1, Math.round(n/1024)) + 'KB';
+window.CoopFiles = function(root){
+  const MAX = 5, MAX_BYTES = 20 * 1024 * 1024;
+  const BLOCK = ['.exe','.bat','.cmd','.com','.msi','.sh','.js','.vbs','.ps1','.jar','.scr','.html','.htm'];
+  let list = [];
+  const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  root.innerHTML = `<div class="cf-box">
+      <input type="file" multiple style="display:none">
+      <span class="cf-btn">📎 참고 파일 첨부</span>
+      <div class="cf-list"></div>
+      <div class="cf-note">최대 ${MAX}개 · 파일당 20MB</div></div>`;
+  const input = root.querySelector('input'), box = root.querySelector('.cf-list');
+  root.querySelector('.cf-btn').onclick = () => input.click();
+  function render(){
+    box.innerHTML = list.map((f, i) => `<span class="cf-chip">📄 <span class="nm" title="${esc(f.name)}">${esc(f.name)}</span> <span style="color:#9ca3af;">${cfSize(f.size)}</span> <span class="x" data-i="${i}">×</span></span>`).join('');
+  }
+  box.addEventListener('click', e => { const x = e.target.closest('.x'); if(x){ list.splice(+x.dataset.i, 1); render(); } });
+  input.addEventListener('change', () => {
+    for(const f of input.files){
+      const ext = (f.name.match(/\.[^.]+$/) || [''])[0].toLowerCase();
+      if(BLOCK.includes(ext)){ alert(`'${f.name}' 형식은 올릴 수 없습니다`); continue; }
+      if(f.size > MAX_BYTES){ alert(`'${f.name}'이(가) 20MB를 넘습니다`); continue; }
+      if(list.length >= MAX){ alert(`파일은 ${MAX}개까지 첨부할 수 있습니다`); break; }
+      list.push(f);
+    }
+    input.value = ''; render();
+  });
+  return { files: () => list.slice(), clear(){ list = []; render(); } };
+};
+</script>
