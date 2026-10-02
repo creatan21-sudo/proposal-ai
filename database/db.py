@@ -4,6 +4,7 @@
 # - 유사 발주처/사업 케이스 조회
 # - 테이블 초기화 및 마이그레이션
 
+import json
 import sqlite3
 from datetime import datetime
 from pathlib import Path
@@ -787,6 +788,24 @@ def migrate_production_tasks() -> None:
     """제작부문 과업 테이블 마이그레이션 - nara_confirmed_id를 nullable로 변경"""
     with get_connection() as conn:
         cursor = conn.cursor()
+
+        # 공조요청 (과업별 협조 요청 — 특정인 또는 전체 대상)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS production_coop_requests (
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+                production_task_id  INTEGER NOT NULL,
+                requester           TEXT NOT NULL,
+                target_type         TEXT NOT NULL DEFAULT 'all',   -- 'all' | 'users'
+                targets_json        TEXT DEFAULT '[]',             -- target_type='users'일 때 username 목록
+                content             TEXT NOT NULL,
+                status              TEXT DEFAULT '요청',            -- '요청' | '완료'
+                completed_by        TEXT DEFAULT '',
+                completed_at        TEXT DEFAULT '',
+                created_at          TEXT DEFAULT (datetime('now','localtime')),
+                FOREIGN KEY(production_task_id) REFERENCES production_tasks(id)
+            )
+        """)
+        conn.commit()
 
         # 테이블이 존재하는지 확인
         cursor.execute("""
@@ -3684,6 +3703,68 @@ def set_production_task_proposal(task_id: int, filename: str, path: str) -> None
                WHERE id=?""",
             (filename, path, task_id),
         )
+        conn.commit()
+
+
+def create_coop_request(task_id: int, requester: str, target_type: str,
+                        targets: list, content: str) -> int:
+    """공조요청 등록"""
+    with get_connection() as conn:
+        cur = conn.execute(
+            """INSERT INTO production_coop_requests
+               (production_task_id, requester, target_type, targets_json, content)
+               VALUES (?, ?, ?, ?, ?)""",
+            (task_id, requester, target_type, json.dumps(targets, ensure_ascii=False), content),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def list_coop_requests(task_id: int) -> list:
+    """과업의 공조요청 목록 (진행 중 먼저, 최신순)"""
+    with get_connection() as conn:
+        rows = conn.execute(
+            """SELECT * FROM production_coop_requests WHERE production_task_id=?
+               ORDER BY CASE status WHEN '요청' THEN 0 ELSE 1 END, created_at DESC, id DESC""",
+            (task_id,),
+        ).fetchall()
+    result = []
+    for r in rows:
+        d = dict(r)
+        try:
+            d["targets"] = json.loads(d.get("targets_json") or "[]")
+        except Exception:
+            d["targets"] = []
+        result.append(d)
+    return result
+
+
+def get_coop_request(req_id: int) -> dict:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM production_coop_requests WHERE id=?", (req_id,)).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    try:
+        d["targets"] = json.loads(d.get("targets_json") or "[]")
+    except Exception:
+        d["targets"] = []
+    return d
+
+
+def set_coop_request_status(req_id: int, status: str, by: str) -> None:
+    with get_connection() as conn:
+        if status == "완료":
+            conn.execute(
+                """UPDATE production_coop_requests
+                   SET status='완료', completed_by=?, completed_at=datetime('now','localtime') WHERE id=?""",
+                (by, req_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE production_coop_requests SET status='요청', completed_by='', completed_at='' WHERE id=?",
+                (req_id,),
+            )
         conn.commit()
 
 

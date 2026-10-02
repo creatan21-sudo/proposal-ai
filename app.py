@@ -6285,9 +6285,86 @@ def production_task_detail(task_id):
 
     can_edit = is_ops or (task.get("assigned_to") and task.get("assigned_to") == session.get("username"))
 
+    from database.db import list_coop_requests
+    me = session.get("username", "")
+    coop_requests = list_coop_requests(task_id)
+    for r in coop_requests:
+        r["can_close"] = _can_close_coop(r)
+        r["is_for_me"] = r["target_type"] == "all" or me in r["targets"]
+
     return render_template("production_task_detail.html",
                          task=task, sections=sections, users=users, is_ops=is_ops,
-                         can_edit=can_edit)
+                         can_edit=can_edit, coop_requests=coop_requests,
+                         can_request=session.get("role") != "user", me=me)
+
+
+def _can_close_coop(req: dict) -> bool:
+    """공조요청 완료 처리: 요청자·관리자·운영자·요청 대상자"""
+    me = session.get("username", "")
+    if session.get("role") in ("admin", "operator") or req.get("requester") == me:
+        return True
+    if session.get("role") == "user":
+        return False
+    return req.get("target_type") == "all" or me in (req.get("targets") or [])
+
+
+@app.route("/production/tasks/<int:task_id>/coop", methods=["POST"])
+@login_required
+def create_production_coop(task_id):
+    """제작부문 — 공조요청 등록 (특정인 지정 또는 전체) + 대상자 알림"""
+    from database.db import get_production_task, create_coop_request, list_users
+    if session.get("role") == "user":
+        return jsonify({"ok": False, "error": "열람 전용 계정은 요청할 수 없습니다"}), 403
+    task = get_production_task(task_id)
+    if not task:
+        return jsonify({"ok": False, "error": "과업을 찾을 수 없습니다"}), 404
+
+    data = request.get_json(force=True) or {}
+    content = str(data.get("content", "")).replace("\r\n", "\n").strip()
+    target_type = "users" if data.get("target_type") == "users" else "all"
+    me = session.get("username", "")
+    users = {u["username"]: u["id"] for u in list_users()}
+    targets = []
+    if target_type == "users":
+        targets = [t for t in dict.fromkeys(data.get("targets") or []) if t in users]
+        if not targets:
+            return jsonify({"ok": False, "error": "요청할 사람을 한 명 이상 선택하세요"})
+    if not content:
+        return jsonify({"ok": False, "error": "요청 내용을 입력하세요"})
+
+    req_id = create_coop_request(task_id, me, target_type, targets, content)
+
+    # 알림: 지정한 사람 또는 (전체면) 요청자를 뺀 모든 사용자
+    notify = targets if target_type == "users" else [u for u in users if u != me]
+    preview = content if len(content) <= 60 else content[:60] + "…"
+    for uname in notify:
+        if uname == me:
+            continue
+        try:
+            create_notification(
+                user_id=users[uname],
+                title=f"🤝 공조요청 — {task.get('project_name', '')}",
+                message=f"{me}: {preview}",
+                link=f"/production/tasks/{task_id}?tab=cooperation",
+            )
+        except Exception as e:
+            print(f"[경고] 공조요청 알림 실패 ({uname}): {e}")
+    return jsonify({"ok": True, "id": req_id})
+
+
+@app.route("/production/coop/<int:req_id>/status", methods=["POST"])
+@login_required
+def set_production_coop_status(req_id):
+    """공조요청 완료 처리 / 다시 열기"""
+    from database.db import get_coop_request, set_coop_request_status
+    req = get_coop_request(req_id)
+    if not req:
+        return jsonify({"ok": False, "error": "요청을 찾을 수 없습니다"}), 404
+    if not _can_close_coop(req):
+        return jsonify({"ok": False, "error": "권한이 없습니다"}), 403
+    status = "완료" if (request.get_json(force=True) or {}).get("status") == "완료" else "요청"
+    set_coop_request_status(req_id, status, session.get("username", ""))
+    return jsonify({"ok": True})
 
 
 # 화면에서 편집 가능한 섹션 (section_type → 표시명)
@@ -6299,7 +6376,6 @@ PRODUCTION_EDITABLE_SECTIONS = {
     "proposal_overview":    "제안개요",
     "production_schedule":  "제작일정",
     "post_schedule":        "후반일정",
-    "cooperation_request":  "공조요청",
 }
 
 

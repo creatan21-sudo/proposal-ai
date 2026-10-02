@@ -100,6 +100,9 @@
                    color: {% if loop.first %}#4f46e5{% else %}#6b7280{% endif %};
                    border-bottom: 2px solid {% if loop.first %}#4f46e5{% else %}transparent{% endif %};">
       {{ label }}
+      {% if key == 'cooperation' %}{% set open_cnt = coop_requests|selectattr('status','equalto','요청')|list|length %}
+        {% if open_cnt %}<span style="margin-left:4px; background:#fee2e2; color:#dc2626; border-radius:99px; padding:1px 7px; font-size:11px;">{{ open_cnt }}</span>{% endif %}
+      {% endif %}
     </button>
     {% endfor %}
   </div>
@@ -156,7 +159,6 @@
   {% for key, label, section_key in [
        ("schedule",    "제작일정", "production_schedule"),
        ("post",        "후반일정", "post_schedule"),
-       ("cooperation", "공조요청", "cooperation_request"),
      ] %}
   <div id="{{ key }}-tab" class="tab-content" style="display: none;">
     <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
@@ -164,6 +166,76 @@
     </div>
   </div>
   {% endfor %}
+
+  <!-- 공조요청 -->
+  <div id="cooperation-tab" class="tab-content" style="display: none;">
+    {% if can_request %}
+    <div style="background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:20px 24px; margin-bottom:16px;">
+      <div style="font-size:15px; font-weight:700; color:#1f2937; margin-bottom:12px;">✍️ 공조요청 작성</div>
+      <div style="display:flex; gap:16px; align-items:center; margin-bottom:10px; font-size:13px; color:#374151;">
+        <span style="font-weight:600;">요청 대상</span>
+        <label style="display:flex; gap:5px; align-items:center; cursor:pointer;">
+          <input type="radio" name="coop-target" value="all" checked onchange="toggleCoopTargets()"> 전체</label>
+        <label style="display:flex; gap:5px; align-items:center; cursor:pointer;">
+          <input type="radio" name="coop-target" value="users" onchange="toggleCoopTargets()"> 특정인 지정</label>
+      </div>
+      <div id="coop-users" style="display:none; flex-wrap:wrap; gap:6px; margin-bottom:10px;">
+        {% for u in users if u.username != me %}
+        <label class="coop-user" style="display:inline-flex; align-items:center; gap:5px; padding:5px 11px; border:1px solid #e5e7eb;
+               border-radius:99px; font-size:13px; cursor:pointer; background:#fff; user-select:none;">
+          <input type="checkbox" value="{{ u.username }}" style="margin:0;" onchange="this.parentElement.style.background=this.checked?'#eef2ff':'#fff'; this.parentElement.style.borderColor=this.checked?'#a5b4fc':'#e5e7eb';"> {{ u.username }}
+        </label>
+        {% endfor %}
+      </div>
+      <textarea id="coop-content" placeholder="요청할 내용을 적어주세요 (예: 10/15 촬영 장비 지원 가능 여부 확인 부탁드립니다)"
+                style="width:100%; min-height:90px; padding:10px 12px; border:1px solid #d1d5db; border-radius:8px; font-size:14px;
+                       line-height:1.6; box-sizing:border-box; resize:vertical; font-family:inherit;"></textarea>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:10px; gap:12px;">
+        <span style="font-size:12px; color:#9ca3af;">요청하면 대상자에게 알림이 갑니다</span>
+        <button type="button" id="coop-submit" onclick="submitCoop()"
+                style="padding:9px 20px; background:#4f46e5; color:#fff; border:none; border-radius:8px; font-size:13px; font-weight:600; cursor:pointer;">요청하기</button>
+      </div>
+    </div>
+    {% endif %}
+
+    <div style="background:#fff; border:1px solid #e5e7eb; border-radius:10px; padding:20px 24px;">
+      <div style="font-size:15px; font-weight:700; color:#1f2937; margin-bottom:12px;">
+        공조요청 내역 <span style="font-size:12px; color:#6b7280; font-weight:600; margin-left:4px;">{{ coop_requests|length }}건</span>
+      </div>
+      {% for r in coop_requests %}
+      <div style="padding:14px 0; {% if not loop.first %}border-top:1px solid #f3f4f6;{% endif %} {% if r.status == '완료' %}opacity:.55;{% endif %}">
+        <div style="display:flex; justify-content:space-between; gap:12px; align-items:flex-start;">
+          <div style="flex:1; min-width:0;">
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:12px; color:#6b7280; margin-bottom:6px;">
+              <span style="font-weight:700; color:#1f2937; font-size:13px;">{{ r.requester }}</span>
+              <span>→</span>
+              {% if r.target_type == 'all' %}
+                <span style="background:#fef3c7; color:#92400e; border-radius:99px; padding:1px 8px; font-weight:600;">전체</span>
+              {% else %}
+                {% for t in r.targets %}<span style="background:#ede9fe; color:#5b21b6; border-radius:99px; padding:1px 8px; font-weight:600;">{{ t }}</span>{% endfor %}
+              {% endif %}
+              <span>· {{ (r.created_at or '')[:16] }}</span>
+              {% if r.status == '완료' %}
+                <span style="background:#d1fae5; color:#065f46; border-radius:99px; padding:1px 8px; font-weight:600;">✅ 완료 · {{ r.completed_by }}</span>
+              {% elif r.is_for_me and r.requester != me %}
+                <span style="background:#fee2e2; color:#dc2626; border-radius:99px; padding:1px 8px; font-weight:600;">나에게 온 요청</span>
+              {% endif %}
+            </div>
+            <div style="white-space:pre-wrap; color:#374151; font-size:14px; line-height:1.6;">{{ r.content }}</div>
+          </div>
+          {% if r.can_close %}
+          <button type="button" onclick="setCoopStatus({{ r.id }}, '{{ '요청' if r.status == '완료' else '완료' }}')"
+                  style="flex-shrink:0; padding:5px 12px; border:1px solid #d1d5db; background:#fff; border-radius:6px;
+                         font-size:12px; font-weight:600; color:#374151; cursor:pointer;">
+            {{ '다시 열기' if r.status == '완료' else '완료 처리' }}</button>
+          {% endif %}
+        </div>
+      </div>
+      {% else %}
+      <div style="color:#9ca3af; font-size:14px; padding:20px 0; text-align:center;">아직 공조요청이 없습니다.</div>
+      {% endfor %}
+    </div>
+  </div>
 </div>
 
 <!-- 담당자 배정 모달 -->
@@ -311,6 +383,41 @@ async function uploadProposal(input){
     st.textContent = '⚠️ 업로드 실패: ' + e.message;
   }
   btn.disabled = false; btn.style.opacity = 1; input.value = '';
+}
+
+// ── 공조요청 ──
+function toggleCoopTargets(){
+  const users = document.querySelector('input[name=coop-target]:checked').value === 'users';
+  document.getElementById('coop-users').style.display = users ? 'flex' : 'none';
+}
+async function submitCoop(){
+  const type = document.querySelector('input[name=coop-target]:checked').value;
+  const targets = Array.from(document.querySelectorAll('#coop-users input:checked')).map(i => i.value);
+  const content = document.getElementById('coop-content').value.trim();
+  if (type === 'users' && !targets.length) { alert('요청할 사람을 선택하세요'); return; }
+  if (!content) { alert('요청 내용을 입력하세요'); return; }
+  const btn = document.getElementById('coop-submit');
+  btn.disabled = true; btn.textContent = '요청 중…';
+  try {
+    const r = await fetch('/production/tasks/{{ task.id }}/coop', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({target_type: type, targets, content})
+    });
+    const d = await r.json();
+    if (d.ok) { location.href = location.pathname + '?tab=cooperation'; return; }
+    alert('요청 실패: ' + (d.error || '알 수 없는 오류'));
+  } catch (e) { alert('요청 실패: ' + e.message); }
+  btn.disabled = false; btn.textContent = '요청하기';
+}
+async function setCoopStatus(id, status){
+  try {
+    const r = await fetch('/production/coop/' + id + '/status', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({status})
+    });
+    const d = await r.json();
+    if (d.ok) { location.href = location.pathname + '?tab=cooperation'; return; }
+    alert(d.error || '처리 실패');
+  } catch (e) { alert('처리 실패: ' + e.message); }
 }
 
 function openAssignModal() {
