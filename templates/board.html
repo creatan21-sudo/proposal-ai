@@ -2,6 +2,7 @@
 {% block title %}게시판 — Prointerz{% endblock %}
 
 {% block content %}
+{% set bd = bd or {'division':'planning','base':'/board','task_base':'/nara/confirmed/','task_label':'관련 과업 선택'} %}
 <style>
 .bd-wrap{max-width:900px;margin:32px auto;padding:0 20px;}
 .bd-top{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;}
@@ -31,25 +32,25 @@
 
 <div class="bd-wrap">
   <div class="bd-top">
-    <h1>게시판</h1>
+    <h1>{{ '제작부문' if bd.division == 'production' else '기획부문' }} 게시판</h1>
     <div class="bd-btns">
       {% if is_ops %}
-      <a href="/board/write?type=notice" class="btn-write secondary">📢 공지 작성</a>
+      <a href="{{ bd.base }}/write?type=notice" class="btn-write secondary">📢 공지 작성</a>
       {% endif %}
-      <a href="/board/write?type=meeting" class="btn-write primary">📝 회의록 작성</a>
+      <a href="{{ bd.base }}/write?type=meeting" class="btn-write primary">📝 회의록 작성</a>
     </div>
   </div>
 
   <div class="bd-tabs">
-    <a href="/board?type=all"     class="bd-tab {{ 'active' if post_type == 'all'     else '' }}">전체</a>
-    <a href="/board?type=notice"  class="bd-tab {{ 'active' if post_type == 'notice'  else '' }}">📢 공지</a>
-    <a href="/board?type=meeting" class="bd-tab {{ 'active' if post_type == 'meeting' else '' }}">📝 회의록</a>
+    <a href="{{ bd.base }}?type=all"     class="bd-tab {{ 'active' if post_type == 'all'     else '' }}">전체</a>
+    <a href="{{ bd.base }}?type=notice"  class="bd-tab {{ 'active' if post_type == 'notice'  else '' }}">📢 공지</a>
+    <a href="{{ bd.base }}?type=meeting" class="bd-tab {{ 'active' if post_type == 'meeting' else '' }}">📝 회의록</a>
   </div>
 
   {% if posts %}
   <div class="bd-list">
     {% for p in posts %}
-    <a href="/board/{{ p.id }}" class="bd-card">
+    <a href="{{ bd.base }}/{{ p.id }}" class="bd-card">
       <div class="bd-card-top">
         {% if p.post_type == 'notice' %}
         <span class="badge badge-notice">📢 공지</span>

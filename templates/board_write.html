@@ -2,6 +2,7 @@
 {% block title %}{{ '글 수정' if edit_mode else '글쓰기' }} — Prointerz{% endblock %}
 
 {% block content %}
+{% set bd = bd or {'division':'planning','base':'/board','task_base':'/nara/confirmed/','task_label':'관련 과업 선택'} %}
 <style>
 .wr-wrap{max-width:720px;margin:40px auto;padding:0 20px;}
 .wr-wrap h1{font-size:22px;font-weight:700;color:#1f2937;margin-bottom:28px;}
@@ -24,7 +25,7 @@
 
 <div class="wr-wrap">
   <h1>{{ '✏️ 글 수정' if edit_mode else '📝 글쓰기' }}</h1>
-  <form method="POST" action="{{ '/board/' + post.id|string + '/edit' if edit_mode else '/board/write' }}" id="write-form">
+  <form method="POST" action="{{ bd.base ~ '/' ~ post.id ~ '/edit' if edit_mode else bd.base ~ '/write' }}" id="write-form">
     {% if not edit_mode %}
     <input type="hidden" name="confirmed_id" value="{{ confirmed_id }}" id="fld-confirmed-hidden">
     {% endif %}
@@ -43,7 +44,7 @@
 
     <div class="meeting-fields" id="meeting-fields">
       <div class="form-group">
-        <label>관련 과업 선택</label>
+        <label>{{ bd.task_label }}</label>
         <select name="confirmed_id" id="fld-confirmed-select">
           <option value="0">— 선택 안 함 —</option>
           {% for cf in confirmed_list %}
@@ -80,9 +81,9 @@
 
     <div class="form-actions">
       {% if edit_mode %}
-      <a href="/board/{{ post.id }}" class="btn-cancel">취소</a>
+      <a href="{{ bd.base }}/{{ post.id }}" class="btn-cancel">취소</a>
       {% else %}
-      <a href="{{ '/nara/confirmed/' + confirmed_id|string if confirmed_id else '/board' }}" class="btn-cancel">취소</a>
+      <a href="{{ (bd.task_base ~ confirmed_id) if confirmed_id else bd.base }}" class="btn-cancel">취소</a>
       {% endif %}
       <button type="submit" class="btn-submit">{{ '저장' if edit_mode else '등록' }}</button>
     </div>

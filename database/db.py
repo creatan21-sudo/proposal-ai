@@ -827,6 +827,12 @@ def migrate_production_tasks() -> None:
                 FOREIGN KEY(production_task_id) REFERENCES production_tasks(id)
             )
         """)
+        # 게시판 부문 구분 (기존 글은 기획부문)
+        _bc = [r[1] for r in conn.execute("PRAGMA table_info(board_posts)").fetchall()]
+        if _bc and "division" not in _bc:
+            conn.execute("ALTER TABLE board_posts ADD COLUMN division TEXT DEFAULT 'planning'")
+            conn.commit()
+
         # 공조 참고 파일 (파일 자체는 DB 옆 coop_files/ 영구 저장소)
         conn.execute("""
             CREATE TABLE IF NOT EXISTS production_coop_files (
@@ -3596,31 +3602,33 @@ def save_proposal_design(confirmed_id: int, content: str,
 
 # ── 게시판 ──────────────────────────────────────────────
 
-def list_board_posts(post_type: str = "all", confirmed_id: int = 0) -> list:
-    conditions, params = [], []
+_BOARD_TITLE_JOIN = """
+    LEFT JOIN (
+        SELECT nc.id,
+               COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm, '') AS bid_ntce_nm
+        FROM nara_confirmed nc
+        LEFT JOIN nara_pickups pk    ON pk.id = nc.pickup_id
+        LEFT JOIN nara_candidates ca  ON ca.id = nc.candidate_id
+    ) cf ON cf.id = b.confirmed_id AND COALESCE(b.division,'planning') = 'planning'
+    LEFT JOIN production_tasks pt ON pt.id = b.confirmed_id AND b.division = 'production'
+"""
+# 게시판은 부문별로 분리 — division: 'planning'(기획) | 'production'(제작)
+# confirmed_id: 기획은 nara_confirmed.id, 제작은 production_tasks.id (회의록의 관련 과업)
+
+
+def list_board_posts(post_type: str = "all", confirmed_id: int = 0, division: str = "planning") -> list:
+    conditions, params = ["COALESCE(b.division,'planning')=?"], [division]
     if post_type in ("notice", "meeting"):
         conditions.append("b.post_type=?")
         params.append(post_type)
     if confirmed_id:
         conditions.append("b.confirmed_id=?")
         params.append(confirmed_id)
-    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    where = "WHERE " + " AND ".join(conditions)
     with get_connection() as conn:
         rows = conn.execute(
-            f"""SELECT b.*,
-                       COALESCE(cf.bid_ntce_nm, '') as confirmed_title
-                FROM board_posts b
-                LEFT JOIN nara_confirmed nc ON nc.id = b.confirmed_id
-                LEFT JOIN nara_pickups pk   ON pk.id = nc.pickup_id
-                LEFT JOIN nara_candidates ca ON ca.id = nc.candidate_id
-                LEFT JOIN nara_bids bid      ON bid.bid_ntce_no = COALESCE(pk.bid_ntce_no, ca.bid_ntce_no)
-                LEFT JOIN (
-                    SELECT nc2.id,
-                           COALESCE(pk2.bid_ntce_nm, ca2.bid_ntce_nm, '') as bid_ntce_nm
-                    FROM nara_confirmed nc2
-                    LEFT JOIN nara_pickups pk2    ON pk2.id = nc2.pickup_id
-                    LEFT JOIN nara_candidates ca2  ON ca2.id = nc2.candidate_id
-                ) cf ON cf.id = b.confirmed_id
+            f"""SELECT b.*, COALESCE(pt.project_name, cf.bid_ntce_nm, '') AS confirmed_title
+                FROM board_posts b {_BOARD_TITLE_JOIN}
                 {where} ORDER BY b.id DESC""",
             params,
         ).fetchall()
@@ -3630,30 +3638,27 @@ def list_board_posts(post_type: str = "all", confirmed_id: int = 0) -> list:
 def get_board_post(post_id: int) -> dict | None:
     with get_connection() as conn:
         row = conn.execute(
-            """SELECT b.*,
-                      COALESCE(cf.bid_ntce_nm, '') as confirmed_title
-               FROM board_posts b
-               LEFT JOIN (
-                   SELECT nc.id,
-                          COALESCE(pk.bid_ntce_nm, ca.bid_ntce_nm, '') as bid_ntce_nm
-                   FROM nara_confirmed nc
-                   LEFT JOIN nara_pickups pk    ON pk.id = nc.pickup_id
-                   LEFT JOIN nara_candidates ca  ON ca.id = nc.candidate_id
-               ) cf ON cf.id = b.confirmed_id
-               WHERE b.id=?""",
+            f"""SELECT b.*, COALESCE(pt.project_name, cf.bid_ntce_nm, '') AS confirmed_title
+                FROM board_posts b {_BOARD_TITLE_JOIN}
+                WHERE b.id=?""",
             (post_id,),
         ).fetchone()
-    return dict(row) if row else None
+    if not row:
+        return None
+    d = dict(row)
+    d["division"] = d.get("division") or "planning"
+    return d
 
 
 def create_board_post(post_type: str, confirmed_id: int, title: str, content: str,
-                      author: str, meeting_date: str = "", participants: str = "") -> int:
+                      author: str, meeting_date: str = "", participants: str = "",
+                      division: str = "planning") -> int:
     with get_connection() as conn:
         cur = conn.execute(
             "INSERT INTO board_posts"
-            " (post_type, confirmed_id, title, content, author, meeting_date, participants)"
-            " VALUES (?,?,?,?,?,?,?)",
-            (post_type, confirmed_id, title, content, author, meeting_date, participants),
+            " (post_type, confirmed_id, title, content, author, meeting_date, participants, division)"
+            " VALUES (?,?,?,?,?,?,?,?)",
+            (post_type, confirmed_id, title, content, author, meeting_date, participants, division),
         )
         return cur.lastrowid or 0
 

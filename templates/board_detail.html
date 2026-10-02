@@ -2,6 +2,7 @@
 {% block title %}{{ post.title }} — Prointerz{% endblock %}
 
 {% block content %}
+{% set bd = bd or {'division':'planning','base':'/board','task_base':'/nara/confirmed/','task_label':'관련 과업 선택'} %}
 <style>
 .det-wrap{max-width:780px;margin:36px auto;padding:0 20px;}
 .det-card{background:#fff;border-radius:14px;padding:32px 36px;box-shadow:0 1px 6px rgba(0,0,0,.08);}
@@ -33,7 +34,7 @@
     </div>
 
     {% if post.post_type == 'meeting' and post.confirmed_id %}
-    <a href="/nara/confirmed/{{ post.confirmed_id }}" class="det-confirmed">
+    <a href="{{ bd.task_base }}{{ post.confirmed_id }}" class="det-confirmed">
       📋 {{ post.confirmed_title or ('과업 #' + post.confirmed_id|string) }}
     </a>
     {% endif %}
@@ -57,9 +58,9 @@
     <div class="det-content">{{ post.content }}</div>
 
     <div class="det-actions">
-      <a href="/board" class="btn btn-back">← 목록</a>
+      <a href="{{ bd.base }}" class="btn btn-back">← 목록</a>
       {% if can_edit %}
-      <a href="/board/{{ post.id }}/edit" class="btn btn-edit">수정</a>
+      <a href="{{ bd.base }}/{{ post.id }}/edit" class="btn btn-edit">수정</a>
       <button class="btn btn-del" onclick="doDelete({{ post.id }})">삭제</button>
       {% endif %}
     </div>
@@ -69,9 +70,9 @@
 <script>
 async function doDelete(id) {
   if (!confirm('삭제하시겠습니까?')) return;
-  const r = await fetch(`/board/${id}/delete`, {method: 'POST'});
+  const r = await fetch(`{{ bd.base }}/${id}/delete`, {method: 'POST'});
   const d = await r.json();
-  if (d.ok) location.href = d.redirect || '/board';
+  if (d.ok) location.href = d.redirect || '{{ bd.base }}';
   else alert('삭제 실패: ' + d.error);
 }
 </script>

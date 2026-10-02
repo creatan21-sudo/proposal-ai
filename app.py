@@ -4659,104 +4659,191 @@ def api_new_notices():
     return jsonify({"ok": True, "notices": [dict(r) for r in rows]})
 
 
-@app.route("/board")
-@login_required
-def board():
+# ── 게시판 (기획부문 /board, 제작부문 /production/board — 같은 화면·기능, 글은 부문별 분리) ──
+_BOARD_CFG = {
+    "planning":   {"division": "planning",   "base": "/board",            "task_base": "/nara/confirmed/",
+                   "task_label": "관련 과업 (기획부문 확정 과업)"},
+    "production": {"division": "production", "base": "/production/board", "task_base": "/production/tasks/",
+                   "task_label": "관련 과업 (제작부문 과업)"},
+}
+
+
+def _board_task_options(division: str) -> list:
+    """회의록 '관련 과업' 선택 목록 [{id, title, assignee}]"""
+    if division == "production":
+        from database.db import list_production_task_options
+        return [{"id": t["id"], "title": t["project_name"] + (" (완료)" if t["status"] == "완료" else ""), "assignee": ""}
+                for t in list_production_task_options()]
+    return list_confirmed_for_board()
+
+
+def _board_list(division):
+    cfg = _BOARD_CFG[division]
     post_type    = request.args.get("type", "all")
     confirmed_id = int(request.args.get("confirmed_id", 0))
-    posts  = list_board_posts(post_type=post_type, confirmed_id=confirmed_id)
+    posts  = list_board_posts(post_type=post_type, confirmed_id=confirmed_id, division=division)
     is_ops = session.get("role") in ("admin", "operator")
-    return render_template("board.html", posts=posts,
-                           post_type=post_type, confirmed_id=confirmed_id,
-                           is_ops=is_ops)
+    return render_template("board.html", posts=posts, post_type=post_type,
+                           confirmed_id=confirmed_id, is_ops=is_ops, bd=cfg)
 
 
-@app.route("/board/<int:post_id>")
-@login_required
-def board_detail(post_id):
+def _board_detail(division, post_id):
     post = get_board_post(post_id)
     if not post:
         return "게시글을 찾을 수 없습니다.", 404
+    if post["division"] != division:                       # 다른 부문 주소로 들어오면 제자리로
+        return redirect(f"{_BOARD_CFG[post['division']]['base']}/{post_id}")
     is_ops  = session.get("role") in ("admin", "operator")
-    is_mine = session.get("username") == post["author"]
-    can_edit = is_ops or is_mine
-    return render_template("board_detail.html", post=post,
-                           can_edit=can_edit, is_ops=is_ops)
+    can_edit = is_ops or session.get("username") == post["author"]
+    return render_template("board_detail.html", post=post, can_edit=can_edit, is_ops=is_ops,
+                           bd=_BOARD_CFG[division])
 
 
-@app.route("/board/write", methods=["GET", "POST"])
-@login_required
-def board_write():
+def _board_write(division):
+    cfg = _BOARD_CFG[division]
     is_ops = session.get("role") in ("admin", "operator")
     if request.method == "GET":
         confirmed_id = int(request.args.get("confirmed_id", 0))
         default_type = request.args.get("type", "meeting" if confirmed_id else ("notice" if is_ops else "meeting"))
-        confirmed_list = list_confirmed_for_board()
         return render_template("board_write.html", confirmed_id=confirmed_id,
                                default_type=default_type, is_ops=is_ops,
-                               confirmed_list=confirmed_list)
+                               confirmed_list=_board_task_options(division), bd=cfg)
     data          = request.form
     post_type     = data.get("post_type", "meeting")
-    confirmed_id  = int(data.get("confirmed_id") or 0)
+    # 폼에 confirmed_id가 두 개(숨김 기본값 + 과업 선택)라 첫 값만 읽으면 선택이 무시됨 → 0이 아닌 마지막 값 사용
+    _ids = [int(v) for v in data.getlist("confirmed_id") if str(v).isdigit() and int(v)]
+    confirmed_id  = _ids[-1] if _ids else 0
     title         = (data.get("title") or "").strip()
     content       = (data.get("content") or "").strip()
     meeting_date  = (data.get("meeting_date") or "").strip()
     participants  = (data.get("participants") or "").strip()
     author        = session.get("username") or session.get("name", "")
     if not title or not content:
-        return redirect(request.referrer or "/board")
+        return redirect(request.referrer or cfg["base"])
     if post_type == "notice" and not is_ops:
         post_type = "meeting"
+    if post_type == "notice":
+        confirmed_id = 0
     new_id = create_board_post(post_type, confirmed_id, title, content, author,
-                               meeting_date, participants)
-    if confirmed_id:
+                               meeting_date, participants, division=division)
+    if confirmed_id and division == "planning":
         return redirect(f"/nara/confirmed/{confirmed_id}")
-    return redirect(f"/board/{new_id}")
+    return redirect(f"{cfg['base']}/{new_id}")
 
 
-@app.route("/board/<int:post_id>/edit", methods=["GET", "POST"])
-@login_required
-def board_edit(post_id):
+def _board_edit(division, post_id):
+    cfg = _BOARD_CFG[division]
     post = get_board_post(post_id)
     if not post:
         return jsonify({"ok": False, "error": "없음"}), 404
     is_ops  = session.get("role") in ("admin", "operator")
-    is_mine = session.get("username") == post["author"]
-    if not (is_ops or is_mine):
+    if not (is_ops or session.get("username") == post["author"]):
         return jsonify({"ok": False, "error": "권한 없음"}), 403
     if request.method == "GET":
-        confirmed_list = list_confirmed_for_board()
         return render_template("board_write.html", post=post,
-                               confirmed_id=post["confirmed_id"],
-                               default_type=post["post_type"],
-                               is_ops=is_ops, confirmed_list=confirmed_list,
-                               edit_mode=True)
-    data         = request.get_json(force=True) or {}
+                               confirmed_id=post["confirmed_id"], default_type=post["post_type"],
+                               is_ops=is_ops, confirmed_list=_board_task_options(post["division"]),
+                               edit_mode=True, bd=_BOARD_CFG[post["division"]])
+    # 수정 저장: 화면 폼(form) 또는 JSON 모두 받음 (기존엔 JSON만 받아 폼 저장이 실패했음)
+    data = request.get_json(silent=True) if request.is_json else request.form
+    data = data or {}
     title        = (data.get("title") or "").strip()
     content      = (data.get("content") or "").strip()
     meeting_date = (data.get("meeting_date") or "").strip()
     participants = (data.get("participants") or "").strip()
     if not title or not content:
-        return jsonify({"ok": False, "error": "내용 필요"}), 400
+        if request.is_json:
+            return jsonify({"ok": False, "error": "내용 필요"}), 400
+        return redirect(f"{cfg['base']}/{post_id}/edit")
     update_board_post(post_id, title, content, meeting_date, participants)
-    return jsonify({"ok": True})
+    if not request.is_json and post["post_type"] == "meeting":
+        try:
+            ncid = int(data.get("confirmed_id") or 0)
+            if ncid != (post.get("confirmed_id") or 0):
+                from database.db import get_connection as _gc
+                with _gc() as conn:
+                    conn.execute("UPDATE board_posts SET confirmed_id=? WHERE id=?", (ncid, post_id)); conn.commit()
+        except Exception:
+            pass
+    if request.is_json:
+        return jsonify({"ok": True})
+    return redirect(f"{_BOARD_CFG[post['division']]['base']}/{post_id}")
+
+
+def _board_delete(division, post_id):
+    post = get_board_post(post_id)
+    if not post:
+        return jsonify({"ok": False, "error": "없음"}), 404
+    is_ops  = session.get("role") in ("admin", "operator")
+    if not (is_ops or session.get("username") == post["author"]):
+        return jsonify({"ok": False, "error": "권한 없음"}), 403
+    cfg = _BOARD_CFG[post["division"]]
+    confirmed_id = post.get("confirmed_id", 0)
+    delete_board_post(post_id)
+    if confirmed_id and post["division"] == "planning":
+        return jsonify({"ok": True, "redirect": f"/nara/confirmed/{confirmed_id}"})
+    return jsonify({"ok": True, "redirect": cfg["base"]})
+
+
+@app.route("/board")
+@login_required
+def board():
+    return _board_list("planning")
+
+
+@app.route("/board/<int:post_id>")
+@login_required
+def board_detail(post_id):
+    return _board_detail("planning", post_id)
+
+
+@app.route("/board/write", methods=["GET", "POST"])
+@login_required
+def board_write():
+    return _board_write("planning")
+
+
+@app.route("/board/<int:post_id>/edit", methods=["GET", "POST"])
+@login_required
+def board_edit(post_id):
+    return _board_edit("planning", post_id)
 
 
 @app.route("/board/<int:post_id>/delete", methods=["POST"])
 @login_required
 def board_delete(post_id):
-    post = get_board_post(post_id)
-    if not post:
-        return jsonify({"ok": False, "error": "없음"}), 404
-    is_ops  = session.get("role") in ("admin", "operator")
-    is_mine = session.get("username") == post["author"]
-    if not (is_ops or is_mine):
-        return jsonify({"ok": False, "error": "권한 없음"}), 403
-    confirmed_id = post.get("confirmed_id", 0)
-    delete_board_post(post_id)
-    if confirmed_id:
-        return jsonify({"ok": True, "redirect": f"/nara/confirmed/{confirmed_id}"})
-    return jsonify({"ok": True, "redirect": "/board"})
+    return _board_delete("planning", post_id)
+
+
+@app.route("/production/board")
+@login_required
+def production_board():
+    """제작부문 - 게시판 (기획부문과 같은 형태: 공지·회의록)"""
+    return _board_list("production")
+
+
+@app.route("/production/board/<int:post_id>")
+@login_required
+def production_board_detail(post_id):
+    return _board_detail("production", post_id)
+
+
+@app.route("/production/board/write", methods=["GET", "POST"])
+@login_required
+def production_board_write():
+    return _board_write("production")
+
+
+@app.route("/production/board/<int:post_id>/edit", methods=["GET", "POST"])
+@login_required
+def production_board_edit(post_id):
+    return _board_edit("production", post_id)
+
+
+@app.route("/production/board/<int:post_id>/delete", methods=["POST"])
+@login_required
+def production_board_delete(post_id):
+    return _board_delete("production", post_id)
 
 
 # ── 나라장터 입찰 모니터링 ──────────────────────────────
@@ -6507,14 +6594,6 @@ def delete_production_schedule_route(sid):
     delete_production_schedule(sid)
     return jsonify({"ok": True})
 
-@app.route("/production/board")
-@login_required
-def production_board():
-    """제작부문 - 게시판"""
-    # 향후 제작부문 전용 게시판 데이터 조회 로직 추가
-    is_ops = session.get("role") in ("admin", "operator")
-    posts = []
-    return render_template("production_board.html", posts=posts, is_ops=is_ops)
 
 @app.route("/production/db")
 @login_required
