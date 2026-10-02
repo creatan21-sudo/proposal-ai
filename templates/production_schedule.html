@@ -1,67 +1,391 @@
 {% extends "base.html" %}
+{% block title %}제작부문 일정 — Prointerz{% endblock %}
+{% block head %}
+<style>
+.sch-wrap{max-width:1200px;margin:0 auto;padding:20px 16px}
+.sch-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px;}
+.sch-title{font-size:20px;font-weight:700;}
+.nav-row{display:flex;align-items:center;gap:8px;}
+.nav-btn{padding:6px 12px;border:1px solid #e5e7eb;border-radius:7px;font-size:13px;cursor:pointer;background:#fff;color:#374151;}
+.nav-btn:hover{background:#f3f4f6;}
+.nav-month{font-size:16px;font-weight:700;min-width:120px;text-align:center;}
+.sch-body{display:grid;grid-template-columns:1fr 340px;gap:20px;align-items:start;}
+@media (max-width: 980px){ .sch-body{grid-template-columns:1fr;} }
 
-{% block title %}제작부문 - 일정 | Prointerz{% endblock %}
+/* 캘린더 (기획부문 일정과 동일 스타일) */
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:#e5e7eb;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;}
+.cal-dh{background:#f3f4f6;padding:8px;text-align:center;font-size:12px;font-weight:700;color:#6b7280;}
+.cal-dh.weekend{color:#ef4444;}
+.cal-cell{background:#fff;height:92px;padding:5px 6px;cursor:pointer;overflow:hidden;box-sizing:border-box;}
+.cal-cell:hover{background:#f5f3ff;}
+.cal-cell.other-month{background:#f9fafb;}
+.cal-cell.today{background:#eff6ff;}
+.cal-cell.picked{box-shadow:inset 0 0 0 2px #4f46e5;}
+.cal-day{font-size:12px;font-weight:600;color:#374151;margin-bottom:3px;}
+.cal-cell.today .cal-day{color:#4f46e5;font-weight:800;}
+.cal-cell.other-month .cal-day{color:#d1d5db;}
+.cal-event{font-size:10px;padding:1px 5px;border-radius:3px;margin-bottom:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block;line-height:1.5;background:#dbeafe;color:#1e40af;cursor:pointer;}
+.cal-event:hover{filter:brightness(.95);}
+.cal-more{font-size:10px;color:#6366f1;font-weight:600;padding:1px 3px;}
+.cal-hint{font-size:12px;color:#9ca3af;margin-top:8px;}
 
+/* 리스트 */
+.list-item{display:flex;gap:14px;padding:12px 14px;border-radius:8px;margin-bottom:6px;background:#fff;border:1px solid #e5e7eb;cursor:pointer;}
+.list-item:hover{box-shadow:0 2px 6px rgba(0,0,0,.08);}
+.list-item.past{opacity:.55;}
+.list-date{font-size:12px;font-weight:700;color:#4f46e5;min-width:150px;}
+.list-nm{font-size:14px;font-weight:600;color:#111827;}
+.list-sub{font-size:12px;color:#6b7280;margin-top:3px;}
+
+/* 작성란 */
+.form-card{background:#fff;border:1px solid #e5e7eb;border-radius:12px;padding:18px 18px 16px;position:sticky;top:110px;}
+.form-title{font-size:15px;font-weight:700;color:#1f2937;margin-bottom:14px;display:flex;justify-content:space-between;align-items:center;}
+.f-label{display:block;font-size:12px;font-weight:700;color:#374151;margin:12px 0 6px;}
+.f-input,.f-text{width:100%;padding:8px 10px;border:1px solid #d1d5db;border-radius:8px;font-size:13px;box-sizing:border-box;font-family:inherit;}
+.f-text{resize:vertical;line-height:1.6;}
+.seg{display:inline-flex;padding:2px;background:#f3f4f6;border-radius:8px;margin-bottom:8px;}
+.seg button{padding:5px 12px;border:none;background:transparent;border-radius:6px;font-size:12px;font-weight:600;color:#6b7280;cursor:pointer;}
+.seg button.on{background:#fff;color:#4f46e5;box-shadow:0 1px 2px rgba(0,0,0,.08);}
+.chips{display:flex;flex-wrap:wrap;gap:5px;}
+.chip{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border:1px solid #e5e7eb;border-radius:99px;font-size:12px;background:#fff;cursor:pointer;user-select:none;}
+.chip.on{background:#eef2ff;border-color:#a5b4fc;color:#3730a3;font-weight:600;}
+.chip.free{background:#f5f3ff;border-color:#c4b5fd;color:#5b21b6;font-weight:600;cursor:default;}
+.chip .x{cursor:pointer;color:#8b5cf6;font-weight:700;}
+.f-actions{display:flex;gap:8px;margin-top:16px;}
+.btn-primary{flex:1;padding:9px;border:none;background:#4f46e5;color:#fff;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;}
+.btn-ghost{padding:9px 14px;border:1px solid #d1d5db;background:#fff;color:#374151;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;}
+
+/* 상세 팝업 */
+.pop-ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9999;align-items:center;justify-content:center;}
+.pop-ov.open{display:flex;}
+.pop{background:#fff;border-radius:14px;width:440px;max-width:94vw;max-height:84vh;overflow-y:auto;box-shadow:0 20px 60px rgba(0,0,0,.25);padding:20px 22px;}
+.pop h3{font-size:17px;font-weight:700;margin:0 0 6px;color:#111827;}
+.pop-sec{margin-top:14px;}
+.pop-sec .k{font-size:11px;font-weight:700;color:#9ca3af;margin-bottom:4px;}
+.pop-sec .v{font-size:14px;color:#374151;white-space:pre-wrap;line-height:1.6;}
+.pop-item{padding:9px 10px;border:1px solid #e5e7eb;border-radius:8px;margin-bottom:6px;cursor:pointer;font-size:13px;font-weight:600;}
+.pop-item:hover{background:#f9fafb;}
+</style>
+{% endblock %}
+{% block subnav %}
+<div class="sub-nav">
+  <div class="sub-nav-inner">
+    <a href="javascript:void(0)" id="tab-cal" class="active" onclick="switchView('cal')">📅 캘린더</a>
+    <a href="javascript:void(0)" id="tab-list" onclick="switchView('list')">📋 리스트</a>
+  </div>
+</div>
+{% endblock %}
 {% block content %}
-<div style="max-width: 1100px; margin: 0 auto; padding: 24px;">
-  <div style="margin-bottom: 24px;">
-    <h1 style="font-size: 24px; font-weight: 700; margin-bottom: 8px;">제작부문 - 일정</h1>
-    <p style="color: #6b7280; font-size: 14px;">제작 과업의 일정 및 마감일을 관리합니다.</p>
+<div class="sch-wrap">
+  <div class="sch-top">
+    <div class="sch-title">📅 제작 일정</div>
+    <div class="nav-row">
+      <button class="nav-btn" onclick="prevMonth()">‹ 이전</button>
+      <span class="nav-month" id="nav-month-label"></span>
+      <button class="nav-btn" onclick="nextMonth()">다음 ›</button>
+      <button class="nav-btn" onclick="goToday()">오늘</button>
+    </div>
   </div>
 
-  <div style="display: grid; grid-template-columns: 200px 1fr; gap: 20px;">
-    <!-- 좌측: 일정 필터 -->
-    <div style="background: #f9fafb; border-radius: 10px; padding: 16px; height: fit-content;">
-      <div style="font-weight: 700; font-size: 14px; margin-bottom: 16px; color: #1f2937;">보기 옵션</div>
-      <div style="display: flex; flex-direction: column; gap: 8px;">
-        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-          <input type="radio" name="view" value="calendar" checked style="cursor: pointer;">
-          <span style="font-size: 13px;">캘린더</span>
-        </label>
-        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-          <input type="radio" name="view" value="timeline" style="cursor: pointer;">
-          <span style="font-size: 13px;">타임라인</span>
-        </label>
-        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-          <input type="radio" name="view" value="list" style="cursor: pointer;">
-          <span style="font-size: 13px;">목록</span>
-        </label>
-      </div>
+  <div class="sch-body">
+    <div>
+      <div id="view-cal"></div>
+      {% if can_write %}<div class="cal-hint" id="cal-hint">빈 칸을 누르면 작성란에 날짜가 들어갑니다 · 일정을 누르면 내용을 볼 수 있습니다</div>{% endif %}
+      <div id="view-list" style="display:none;"></div>
     </div>
 
-    <!-- 우측: 콘텐츠 -->
-    <div>
-      {% if schedules %}
-      <div style="display: grid; gap: 12px;">
-        {% for schedule in schedules %}
-        <div style="border: 1px solid #e5e7eb; border-radius: 10px; padding: 16px; background: #fff;">
-          <div style="font-weight: 700; font-size: 14px; margin-bottom: 4px; color: #1f2937;">{{ schedule.task_name }}</div>
-          <div style="font-size: 13px; color: #6b7280; margin-bottom: 8px;">{{ schedule.description }}</div>
-          <div style="font-size: 12px; color: #6b7280;">📅 {{ schedule.due_date }}</div>
+    {% if can_write %}
+    <div class="form-card" id="form-card">
+      <div class="form-title">
+        <span id="form-heading">✍️ 일정 작성</span>
+        <button type="button" class="btn-ghost" id="form-cancel" style="display:none;padding:4px 10px;font-size:12px;" onclick="resetForm()">취소</button>
+      </div>
+
+      <label class="f-label" for="f-title">제목</label>
+      <input class="f-input" id="f-title" maxlength="200" placeholder="예: 하남시 홍보영상 1차 촬영">
+
+      <label class="f-label">날짜</label>
+      <div class="seg" id="f-mode">
+        <button type="button" data-mode="single" class="on" onclick="setMode('single')">하루</button>
+        <button type="button" data-mode="range" onclick="setMode('range')">기간</button>
+        <button type="button" data-mode="multi" onclick="setMode('multi')">여러 날</button>
+      </div>
+      <div id="m-single"><input type="date" class="f-input" id="f-date"></div>
+      <div id="m-range" style="display:none;">
+        <div style="display:flex;gap:6px;align-items:center;">
+          <input type="date" class="f-input" id="f-start"><span style="color:#9ca3af;">~</span><input type="date" class="f-input" id="f-end">
         </div>
-        {% endfor %}
       </div>
-      {% else %}
-      <div style="text-align: center; padding: 60px 20px; background: #f9fafb; border-radius: 10px; border: 1px solid #e5e7eb;">
-        <div style="font-size: 48px; margin-bottom: 16px;">📅</div>
-        <div style="font-size: 15px; font-weight: 600; color: #1f2937; margin-bottom: 8px;">등록된 일정이 없습니다</div>
-        <div style="font-size: 13px; color: #6b7280;">과업이 생성되면 자동으로 일정이 추가됩니다</div>
+      <div id="m-multi" style="display:none;">
+        <div style="display:flex;gap:6px;">
+          <input type="date" class="f-input" id="f-multi-pick">
+          <button type="button" class="btn-ghost" style="padding:6px 12px;white-space:nowrap;" onclick="addMultiDate(document.getElementById('f-multi-pick').value)">추가</button>
+        </div>
+        <div class="chips" id="f-multi-chips" style="margin-top:6px;"></div>
+        <div style="font-size:11px;color:#9ca3af;margin-top:4px;">캘린더에서 날짜를 눌러도 추가/해제됩니다</div>
       </div>
-      {% endif %}
+
+      <label class="f-label" for="f-content">내용</label>
+      <textarea class="f-text" id="f-content" rows="4" placeholder="장소, 촬영 내용, 준비물 등"></textarea>
+
+      <label class="f-label">제작진</label>
+      <div class="chips" id="f-crew-staff">
+        {% for u in users %}<span class="chip" data-name="{{ u }}" onclick="toggleStaff(this)">{{ u }}</span>{% endfor %}
+      </div>
+      <input class="f-input" id="f-crew-free" style="margin-top:8px;" placeholder="직접 입력 후 Enter (외부 스태프, 출연자 등)"
+             onkeydown="if(event.key==='Enter'||event.key===','){event.preventDefault();addFreeCrew(this.value);this.value='';}">
+      <div class="chips" id="f-crew-freelist" style="margin-top:6px;"></div>
+
+      <label class="f-label" for="f-etc">기타</label>
+      <textarea class="f-text" id="f-etc" rows="2" placeholder="기타 메모"></textarea>
+
+      <div class="f-actions">
+        <button type="button" class="btn-primary" id="f-submit" onclick="submitSchedule()">등록</button>
+      </div>
     </div>
+    {% endif %}
   </div>
 </div>
 
+<!-- 일정 상세 / 날짜별 목록 팝업 -->
+<div class="pop-ov" id="pop-ov" onclick="if(event.target===this)closePop()">
+  <div class="pop" id="pop"></div>
+</div>
+
 <script>
-document.addEventListener('DOMContentLoaded', function(){
-  // 일정 보기 옵션 변경 로직
-  const viewRadios = document.querySelectorAll('input[name="view"]');
-  viewRadios.forEach(radio => {
-    radio.addEventListener('change', function(e){
-      // 향후 다양한 뷰 렌더링 로직 추가
-      console.log('선택된 보기:', e.target.value);
-    });
+const SCHEDULES = {{ schedules | tojson }};
+const CAN_WRITE = {{ 'true' if can_write else 'false' }};
+const WD = ['일','월','화','수','목','금','토'];
+
+function toLocalDateStr(d){ return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); }
+function _hesc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+function md(ds){ const d=new Date(ds+'T00:00:00'); return (d.getMonth()+1)+'/'+d.getDate()+'('+WD[d.getDay()]+')'; }
+function dateLabel(s){
+  const ds = s.dates||[];
+  if(!ds.length) return '';
+  if(ds.length===1) return ds[0]+' '+md(ds[0]).replace(/^[^(]*/,'');
+  if(s.date_mode==='range') return md(ds[0])+' ~ '+md(ds[ds.length-1])+' · '+ds.length+'일';
+  return ds.map(md).join(', ')+' · '+ds.length+'일';
+}
+
+const TODAY = toLocalDateStr(new Date());
+let curYear = new Date().getFullYear(), curMonth = new Date().getMonth(), curView = 'cal';
+(function initMonth(){                                   // 저장 직후 해당 월로 이동
+  const m = new URLSearchParams(location.search).get('month');
+  if(m && /^\d{4}-\d{2}$/.test(m)){ curYear=+m.slice(0,4); curMonth=+m.slice(5,7)-1; }
+})();
+
+function eventsOn(ds){ return SCHEDULES.filter(s => (s.dates||[]).includes(ds)); }
+
+function switchView(v){
+  curView=v;
+  ['cal','list'].forEach(x=>{
+    document.getElementById('view-'+x).style.display = x===v ? '' : 'none';
+    document.getElementById('tab-'+x).classList.toggle('active', x===v);
   });
-});
+  const hint=document.getElementById('cal-hint'); if(hint) hint.style.display = v==='cal' ? '' : 'none';
+  render();
+}
+function prevMonth(){ curMonth--; if(curMonth<0){curMonth=11;curYear--;} render(); }
+function nextMonth(){ curMonth++; if(curMonth>11){curMonth=0;curYear++;} render(); }
+function goToday(){ const t=new Date(); curYear=t.getFullYear(); curMonth=t.getMonth(); render(); }
+function render(){
+  document.getElementById('nav-month-label').textContent = `${curYear}년 ${String(curMonth+1).padStart(2,'0')}월`;
+  if(curView==='cal') renderCal(); else renderList();
+}
+
+// ── 캘린더 ──
+function renderCal(){
+  const picked = new Set(formDates());
+  let html = '<div class="cal-grid">';
+  WD.forEach((d,i)=> html += `<div class="cal-dh${i===0||i===6?' weekend':''}">${d}</div>`);
+  const first = new Date(curYear,curMonth,1), last = new Date(curYear,curMonth+1,0);
+  const startWd = first.getDay(), total = Math.ceil((startWd+last.getDate())/7)*7;
+  for(let i=0;i<total;i++){
+    const dayNum = i-startWd+1, inMonth = dayNum>=1 && dayNum<=last.getDate();
+    const dObj = new Date(curYear,curMonth,dayNum), ds = toLocalDateStr(dObj);
+    const evs = inMonth ? eventsOn(ds) : [];
+    let cls = 'cal-cell'; if(!inMonth) cls+=' other-month'; else if(ds===TODAY) cls+=' today';
+    if(inMonth && picked.has(ds)) cls+=' picked';
+    html += `<div class="${cls}" onclick="onCellClick('${ds}')"><div class="cal-day">${dObj.getDate()}</div>`;
+    evs.slice(0,3).forEach(s=>{
+      html += `<span class="cal-event" title="${_hesc(s.title)}" onclick="event.stopPropagation();openDetail(${s.id})">${_hesc(s.title)}</span>`;
+    });
+    if(evs.length>3) html += `<div class="cal-more" onclick="event.stopPropagation();openDay('${ds}')">+${evs.length-3}개 더</div>`;
+    html += '</div>';
+  }
+  document.getElementById('view-cal').innerHTML = html + '</div>';
+}
+function onCellClick(ds){
+  if(!CAN_WRITE){ if(eventsOn(ds).length) openDay(ds); return; }
+  if(mode==='single') document.getElementById('f-date').value = ds;
+  else if(mode==='range'){
+    const s=document.getElementById('f-start'), e=document.getElementById('f-end');
+    if(!s.value || (s.value && e.value)){ s.value=ds; e.value=''; }
+    else { if(ds<s.value){ e.value=s.value; s.value=ds; } else e.value=ds; }
+  } else toggleMultiDate(ds);
+  renderCal();
+}
+
+// ── 리스트 ──
+function renderList(){
+  const el = document.getElementById('view-list');
+  const ym = `${curYear}-${String(curMonth+1).padStart(2,'0')}`;
+  const items = SCHEDULES.filter(s => (s.dates||[]).some(d => d.startsWith(ym)));
+  if(!items.length){ el.innerHTML = '<div style="text-align:center;padding:60px;color:#9ca3af;font-size:14px;">이 달의 일정이 없습니다</div>'; return; }
+  el.innerHTML = items.map(s => {
+    const past = (s.end_date||'') < TODAY;
+    return `<div class="list-item${past?' past':''}" onclick="openDetail(${s.id})">
+      <div class="list-date">${_hesc(dateLabel(s))}</div>
+      <div style="flex:1;min-width:0;">
+        <div class="list-nm">${_hesc(s.title)}</div>
+        ${(s.crew||[]).length?`<div class="list-sub">👥 ${_hesc(s.crew.join(', '))}</div>`:''}
+        ${s.content?`<div class="list-sub" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${_hesc(s.content.split('\n')[0])}</div>`:''}
+      </div></div>`;
+  }).join('');
+}
+
+// ── 팝업 ──
+function openDay(ds){
+  const evs = eventsOn(ds);
+  document.getElementById('pop').innerHTML = `<h3>${ds} ${md(ds).replace(/^[^(]*/,'')}</h3><div style="margin-top:12px;">`
+    + evs.map(s=>`<div class="pop-item" onclick="openDetail(${s.id})">${_hesc(s.title)}</div>`).join('') + '</div>';
+  document.getElementById('pop-ov').classList.add('open');
+}
+function openDetail(id){
+  const s = SCHEDULES.find(x=>x.id===id); if(!s) return;
+  const sec = (k,v) => v ? `<div class="pop-sec"><div class="k">${k}</div><div class="v">${v}</div></div>` : '';
+  const crew = (s.crew||[]).map(c=>`<span class="chip on" style="cursor:default;">${_hesc(c)}</span>`).join(' ');
+  document.getElementById('pop').innerHTML =
+    `<div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;">
+       <h3>${_hesc(s.title)}</h3>
+       <button onclick="closePop()" style="background:none;border:none;font-size:20px;color:#9ca3af;cursor:pointer;line-height:1;">×</button></div>
+     <div style="font-size:13px;color:#4f46e5;font-weight:700;">📅 ${_hesc(dateLabel(s))}</div>`
+    + sec('내용', _hesc(s.content))
+    + (crew ? `<div class="pop-sec"><div class="k">제작진</div><div class="chips">${crew}</div></div>` : '')
+    + sec('기타', _hesc(s.etc))
+    + `<div style="font-size:11px;color:#9ca3af;margin-top:16px;">작성 ${_hesc(s.created_by)} · ${_hesc((s.created_at||'').slice(0,16))}`
+    + (s.updated_by && s.updated_at && s.updated_at!==s.created_at ? ` · 수정 ${_hesc(s.updated_by)} ${_hesc(s.updated_at.slice(0,16))}` : '') + `</div>`
+    + (s.can_edit && CAN_WRITE ? `<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px;">
+         <button class="btn-ghost" style="color:#dc2626;" onclick="deleteSchedule(${s.id})">삭제</button>
+         <button class="btn-primary" style="flex:none;padding:9px 18px;" onclick="startEdit(${s.id})">수정</button></div>` : '');
+  document.getElementById('pop-ov').classList.add('open');
+}
+function closePop(){ document.getElementById('pop-ov').classList.remove('open'); }
+
+// ── 작성란 ──
+let mode = 'single', multiDates = [], freeCrew = [], editingId = null;
+const STAFF = new Set({{ users | tojson }});
+
+function setMode(m){
+  mode = m;
+  document.querySelectorAll('#f-mode button').forEach(b => b.classList.toggle('on', b.dataset.mode===m));
+  ['single','range','multi'].forEach(x => document.getElementById('m-'+x).style.display = x===m ? '' : 'none');
+  if(curView==='cal') renderCal();
+}
+function formDates(){
+  if(!CAN_WRITE) return [];
+  if(mode==='single'){ const v=document.getElementById('f-date').value; return v?[v]:[]; }
+  if(mode==='range'){
+    const a=document.getElementById('f-start').value, b=document.getElementById('f-end').value;
+    if(!a) return []; if(!b) return [a];
+    const out=[], s=new Date(a+'T00:00:00'), e=new Date(b+'T00:00:00');
+    for(let d=new Date(Math.min(s,e)); d<=new Date(Math.max(s,e)) && out.length<400; d.setDate(d.getDate()+1)) out.push(toLocalDateStr(d));
+    return out;
+  }
+  return multiDates.slice();
+}
+function renderMulti(){
+  multiDates.sort();
+  document.getElementById('f-multi-chips').innerHTML = multiDates.map(d =>
+    `<span class="chip free">${md(d)} <span class="x" onclick="toggleMultiDate('${d}');renderCal();">×</span></span>`).join('');
+}
+function addMultiDate(d){ if(d && !multiDates.includes(d)){ multiDates.push(d); renderMulti(); renderCal(); } }
+function toggleMultiDate(d){ const i=multiDates.indexOf(d); if(i>=0) multiDates.splice(i,1); else multiDates.push(d); renderMulti(); }
+
+function toggleStaff(el){ el.classList.toggle('on'); }
+function addFreeCrew(v){
+  (v||'').split(',').map(x=>x.trim()).filter(Boolean).forEach(name=>{
+    const staff = document.querySelector(`#f-crew-staff .chip[data-name="${CSS.escape(name)}"]`);
+    if(staff){ staff.classList.add('on'); return; }            // 직원 이름이면 직원 칩 선택으로 처리
+    if(!freeCrew.includes(name)) freeCrew.push(name);
+  });
+  renderFree();
+}
+function removeFree(i){ freeCrew.splice(i,1); renderFree(); }
+function renderFree(){
+  document.getElementById('f-crew-freelist').innerHTML = freeCrew.map((n,i) =>
+    `<span class="chip free">${_hesc(n)} <span class="x" onclick="removeFree(${i})">×</span></span>`).join('');
+}
+function collectCrew(){
+  const staff = Array.from(document.querySelectorAll('#f-crew-staff .chip.on')).map(c=>c.dataset.name);
+  const pending = document.getElementById('f-crew-free').value.trim();   // Enter 안 누르고 남은 입력도 포함
+  if(pending){ addFreeCrew(pending); document.getElementById('f-crew-free').value=''; }
+  return staff.concat(freeCrew.filter(n=>!staff.includes(n)));
+}
+
+function resetForm(){
+  editingId = null; multiDates = []; freeCrew = [];
+  ['f-title','f-date','f-start','f-end','f-content','f-etc','f-crew-free','f-multi-pick'].forEach(id=>document.getElementById(id).value='');
+  document.querySelectorAll('#f-crew-staff .chip').forEach(c=>c.classList.remove('on'));
+  renderMulti(); renderFree(); setMode('single');
+  document.getElementById('form-heading').textContent = '✍️ 일정 작성';
+  document.getElementById('f-submit').textContent = '등록';
+  document.getElementById('form-cancel').style.display = 'none';
+}
+function startEdit(id){
+  const s = SCHEDULES.find(x=>x.id===id); if(!s) return;
+  closePop(); resetForm(); editingId = id;
+  document.getElementById('f-title').value = s.title;
+  setMode(s.date_mode || 'single');
+  if(mode==='single') document.getElementById('f-date').value = s.dates[0]||'';
+  else if(mode==='range'){ document.getElementById('f-start').value = s.dates[0]; document.getElementById('f-end').value = s.dates[s.dates.length-1]; }
+  else { multiDates = s.dates.slice(); renderMulti(); }
+  document.getElementById('f-content').value = s.content||'';
+  document.getElementById('f-etc').value = s.etc||'';
+  (s.crew||[]).forEach(n=>{
+    const c = document.querySelector(`#f-crew-staff .chip[data-name="${CSS.escape(n)}"]`);
+    if(c) c.classList.add('on'); else freeCrew.push(n);
+  });
+  renderFree(); renderCal();
+  document.getElementById('form-heading').textContent = '✏️ 일정 수정';
+  document.getElementById('f-submit').textContent = '수정 저장';
+  document.getElementById('form-cancel').style.display = '';
+  document.getElementById('form-card').scrollIntoView({behavior:'smooth', block:'start'});
+}
+
+async function submitSchedule(){
+  const title = document.getElementById('f-title').value.trim();
+  if(!title){ alert('제목을 입력하세요'); return; }
+  const body = {title, date_mode: mode, content: document.getElementById('f-content').value,
+                etc: document.getElementById('f-etc').value, crew: collectCrew()};
+  if(mode==='range'){
+    body.start = document.getElementById('f-start').value; body.end = document.getElementById('f-end').value;
+    if(!body.start || !body.end){ alert('시작일과 종료일을 고르세요'); return; }
+  } else {
+    body.dates = formDates();
+    if(!body.dates.length){ alert('날짜를 고르세요'); return; }
+  }
+  const btn = document.getElementById('f-submit'); btn.disabled = true;
+  try{
+    const r = await fetch('/production/schedule' + (editingId ? '/'+editingId : ''), {
+      method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+    const d = await r.json();
+    if(d.ok){ location.href = location.pathname + '?month=' + d.first_date.slice(0,7) + (curView==='list'?'&view=list':''); return; }
+    alert(d.error || '저장 실패');
+  }catch(e){ alert('저장 실패: '+e.message); }
+  btn.disabled = false;
+}
+async function deleteSchedule(id){
+  if(!confirm('이 일정을 삭제할까요?')) return;
+  try{
+    const r = await fetch('/production/schedule/'+id+'/delete', {method:'POST'});
+    const d = await r.json();
+    if(d.ok){ location.href = location.pathname + `?month=${curYear}-${String(curMonth+1).padStart(2,'0')}`; return; }
+    alert(d.error || '삭제 실패');
+  }catch(e){ alert('삭제 실패: '+e.message); }
+}
+
+if(new URLSearchParams(location.search).get('view')==='list') switchView('list'); else render();
 </script>
 {% endblock %}

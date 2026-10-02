@@ -805,6 +805,24 @@ def migrate_production_tasks() -> None:
                 FOREIGN KEY(production_task_id) REFERENCES production_tasks(id)
             )
         """)
+        # 제작부문 일정 (캘린더) — 날짜는 하루/기간/여러 날 모두 dates_json에 개별 날짜로 펼쳐 저장
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS production_schedules (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                title       TEXT NOT NULL,
+                date_mode   TEXT DEFAULT 'single',   -- 'single' | 'range' | 'multi'
+                dates_json  TEXT DEFAULT '[]',       -- ["YYYY-MM-DD", ...] 정렬됨
+                start_date  TEXT DEFAULT '',
+                end_date    TEXT DEFAULT '',
+                content     TEXT DEFAULT '',
+                crew_json   TEXT DEFAULT '[]',       -- 제작진 이름 목록 (직원 선택 + 직접 입력)
+                etc         TEXT DEFAULT '',
+                created_by  TEXT NOT NULL,
+                created_at  TEXT DEFAULT (datetime('now','localtime')),
+                updated_by  TEXT DEFAULT '',
+                updated_at  TEXT DEFAULT (datetime('now','localtime'))
+            )
+        """)
         conn.commit()
 
         # 테이블이 존재하는지 확인
@@ -3765,6 +3783,65 @@ def set_coop_request_status(req_id: int, status: str, by: str) -> None:
                 "UPDATE production_coop_requests SET status='요청', completed_by='', completed_at='' WHERE id=?",
                 (req_id,),
             )
+        conn.commit()
+
+
+def _schedule_row(r) -> dict:
+    d = dict(r)
+    for k, out in (("dates_json", "dates"), ("crew_json", "crew")):
+        try:
+            d[out] = json.loads(d.get(k) or "[]")
+        except Exception:
+            d[out] = []
+    return d
+
+
+def list_production_schedules() -> list:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM production_schedules ORDER BY start_date ASC, id ASC"
+        ).fetchall()
+    return [_schedule_row(r) for r in rows]
+
+
+def get_production_schedule(sid: int) -> dict:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM production_schedules WHERE id=?", (sid,)).fetchone()
+    return _schedule_row(row) if row else None
+
+
+def save_production_schedule(data: dict, username: str, sid: int = None) -> int:
+    """일정 등록(sid=None) 또는 수정. data: title, date_mode, dates(list), content, crew(list), etc"""
+    dates = sorted(set(data["dates"]))
+    vals = (data["title"], data["date_mode"], json.dumps(dates), dates[0], dates[-1],
+            data.get("content", ""), json.dumps(data.get("crew", []), ensure_ascii=False),
+            data.get("etc", ""))
+    with get_connection() as conn:
+        if sid:
+            conn.execute(
+                """UPDATE production_schedules
+                   SET title=?, date_mode=?, dates_json=?, start_date=?, end_date=?,
+                       content=?, crew_json=?, etc=?, updated_by=?,
+                       updated_at=datetime('now','localtime')
+                   WHERE id=?""",
+                vals + (username, sid),
+            )
+        else:
+            cur = conn.execute(
+                """INSERT INTO production_schedules
+                   (title, date_mode, dates_json, start_date, end_date, content, crew_json, etc,
+                    created_by, updated_by)
+                   VALUES (?,?,?,?,?,?,?,?,?,?)""",
+                vals + (username, username),
+            )
+            sid = cur.lastrowid
+        conn.commit()
+    return sid
+
+
+def delete_production_schedule(sid: int) -> None:
+    with get_connection() as conn:
+        conn.execute("DELETE FROM production_schedules WHERE id=?", (sid,))
         conn.commit()
 
 

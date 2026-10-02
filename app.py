@@ -6229,11 +6229,97 @@ def production_ongoing():
 @app.route("/production/schedule")
 @login_required
 def production_schedule():
-    """제작부문 - 스케줄 (캘린더/타임라인 뷰)"""
-    from database.db import get_connection
-    # 향후 실제 스케줄 데이터 조회 로직 추가
-    schedules = []
-    return render_template("production_schedule.html", schedules=schedules)
+    """제작부문 - 일정 (캘린더 기본 + 작성란)"""
+    from database.db import list_production_schedules, list_users
+    me = session.get("username", "")
+    is_ops = session.get("role") in ("admin", "operator")
+    schedules = list_production_schedules()
+    for s in schedules:
+        s["can_edit"] = is_ops or s.get("created_by") == me
+    return render_template("production_schedule.html", schedules=schedules,
+                           users=[u["username"] for u in list_users()],
+                           can_write=session.get("role") != "user")
+
+
+def _parse_schedule_payload(data: dict):
+    """일정 입력 검증 → (정제된 dict, 오류메시지)"""
+    from datetime import date, timedelta
+    title = str(data.get("title", "")).strip()
+    if not title:
+        return None, "제목을 입력하세요"
+    mode = data.get("date_mode") if data.get("date_mode") in ("single", "range", "multi") else "single"
+
+    def _d(s):
+        try:
+            return date.fromisoformat(str(s)[:10])
+        except Exception:
+            return None
+
+    if mode == "range":
+        a, b = _d(data.get("start")), _d(data.get("end"))
+        if not a or not b:
+            return None, "시작일과 종료일을 모두 고르세요"
+        if b < a:
+            a, b = b, a
+        if (b - a).days > 365:
+            return None, "기간은 1년 이내로 입력하세요"
+        dates = [(a + timedelta(days=i)).isoformat() for i in range((b - a).days + 1)]
+    else:
+        raw = data.get("dates") or []
+        dates = sorted({d.isoformat() for d in (_d(x) for x in raw) if d})
+        if not dates:
+            return None, "날짜를 고르세요"
+        if mode == "single":
+            dates = dates[:1]
+        elif len(dates) > 100:
+            return None, "날짜가 너무 많습니다 (최대 100일)"
+
+    crew = []
+    for c in data.get("crew") or []:
+        c = str(c).strip()[:40]
+        if c and c not in crew:
+            crew.append(c)
+    return {
+        "title": title[:200], "date_mode": mode, "dates": dates,
+        "content": str(data.get("content", "")).replace("\r\n", "\n").strip(),
+        "crew": crew[:50],
+        "etc": str(data.get("etc", "")).replace("\r\n", "\n").strip(),
+    }, None
+
+
+@app.route("/production/schedule", methods=["POST"])
+@app.route("/production/schedule/<int:sid>", methods=["POST"])
+@login_required
+def save_production_schedule_route(sid=None):
+    """제작부문 일정 등록(sid 없음) / 수정"""
+    from database.db import save_production_schedule, get_production_schedule
+    if session.get("role") == "user":
+        return jsonify({"ok": False, "error": "열람 전용 계정은 일정을 작성할 수 없습니다"}), 403
+    me = session.get("username", "")
+    if sid:
+        cur = get_production_schedule(sid)
+        if not cur:
+            return jsonify({"ok": False, "error": "일정을 찾을 수 없습니다"}), 404
+        if session.get("role") not in ("admin", "operator") and cur.get("created_by") != me:
+            return jsonify({"ok": False, "error": "작성자 또는 관리자만 수정할 수 있습니다"}), 403
+    payload, err = _parse_schedule_payload(request.get_json(force=True) or {})
+    if err:
+        return jsonify({"ok": False, "error": err})
+    new_id = save_production_schedule(payload, me, sid)
+    return jsonify({"ok": True, "id": new_id, "first_date": payload["dates"][0]})
+
+
+@app.route("/production/schedule/<int:sid>/delete", methods=["POST"])
+@login_required
+def delete_production_schedule_route(sid):
+    from database.db import delete_production_schedule, get_production_schedule
+    cur = get_production_schedule(sid)
+    if not cur:
+        return jsonify({"ok": False, "error": "일정을 찾을 수 없습니다"}), 404
+    if session.get("role") not in ("admin", "operator") and cur.get("created_by") != session.get("username"):
+        return jsonify({"ok": False, "error": "작성자 또는 관리자만 삭제할 수 있습니다"}), 403
+    delete_production_schedule(sid)
+    return jsonify({"ok": True})
 
 @app.route("/production/board")
 @login_required
