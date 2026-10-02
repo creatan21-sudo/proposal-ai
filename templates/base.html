@@ -147,35 +147,32 @@
     </div>
   </div>
   <script>
-  function switchDivision(e){
-    e.preventDefault();
-    const division = e.target.dataset.division;
-    const tabs = document.querySelectorAll('.division-tab');
-    const menus = document.querySelectorAll('.division-menu');
+  // 부문 첫 화면 — 부문 버튼은 메뉴만 바꾸지 않고 해당 부문 화면으로 실제 이동한다
+  // (메뉴만 바꾸면 본문·하위 메뉴가 이전 부문 것으로 남아 두 부문이 섞여 보임)
+  const DIVISION_HOME = {planning: '/ongoing', production: '/production/ongoing'};
 
-    tabs.forEach(t => t.classList.remove('active'));
-    menus.forEach(m => m.style.display = 'none');
-
-    e.target.classList.add('active');
-    const targetMenu = document.getElementById(division + '-menu');
-    if(targetMenu) {
-      targetMenu.style.display = 'flex';
-      try { localStorage.setItem('prointerz_division', division); } catch(err) {}
-    }
+  function _showDivisionMenu(division){
+    document.querySelectorAll('.division-tab').forEach(t => t.classList.toggle('active', t.dataset.division === division));
+    document.querySelectorAll('.division-menu').forEach(m => m.style.display = (m.id === division + '-menu') ? 'flex' : 'none');
   }
 
-  // 페이지 로드 시 저장된 부문 복원
+  function switchDivision(e){
+    e.preventDefault();
+    const division = e.currentTarget.dataset.division;
+    try { localStorage.setItem('prointerz_division', division); } catch(err) {}
+    location.href = DIVISION_HOME[division] || '/ongoing';
+  }
+
+  // 공용 화면(관리자·알림·프로필 등)에서는 마지막으로 쓰던 부문 메뉴를 보여준다
   document.addEventListener('DOMContentLoaded', function(){
     const server = document.querySelector('.division-switch').dataset.serverDivision;
-    let target = server;
-    try {
-      if (server) localStorage.setItem('prointerz_division', server);
-      else target = localStorage.getItem('prointerz_division');
-    } catch(e) {}
-    if (target && !server) {
-      const btn = document.querySelector('[data-division="' + target + '"]');
-      if (btn) switchDivision({target: btn, preventDefault: function(){}});
+    if (server) {
+      try { localStorage.setItem('prointerz_division', server); } catch(e) {}
+      return;
     }
+    let saved = null;
+    try { saved = localStorage.getItem('prointerz_division'); } catch(e) {}
+    if (saved && DIVISION_HOME[saved]) _showDivisionMenu(saved);
   });
 
   function toggleGearMenu(e){
