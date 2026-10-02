@@ -5481,11 +5481,13 @@ def nara_confirm_from_pickup(pickup_id):
 @app.route("/nara/confirm/<int:candidate_id>", methods=["POST"])
 @operator_or_admin_required
 def nara_confirm(candidate_id):
+    from database.db import get_production_task
     data = request.get_json(force=True) or {}
     try:
+        username = session.get("username", "")
         new_id = confirm_nara_candidate(
             candidate_id = candidate_id,
-            confirmed_by = session.get("username", ""),
+            confirmed_by = username,
             notes        = str(data.get("notes", "")),
             assignee     = str(data.get("assignee", "")),
         )
@@ -5501,6 +5503,43 @@ def nara_confirm(candidate_id):
                                        ca_row["relevance_stars"], ca_row["relevance_reason"])
         except Exception:
             pass
+
+        # ========== 제작부문 과업 생성 후 팀장에게 알림 ==========
+        try:
+            with get_connection() as conn:
+                # 방금 생성된 제작 과업 정보 조회
+                prod_task = conn.execute(
+                    "SELECT id, project_name, client_name FROM production_tasks WHERE nara_confirmed_id=?",
+                    (new_id,)
+                ).fetchone()
+
+            if prod_task:
+                # 팀장(operator, admin) 목록 조회
+                with get_connection() as conn:
+                    leads = conn.execute(
+                        """SELECT id FROM users
+                           WHERE role IN ('operator', 'admin') OR is_admin=1
+                           ORDER BY id"""
+                    ).fetchall()
+
+                if leads:
+                    # 팀장들에게 알림 전송
+                    prod_id, proj_name, client = prod_task
+                    title = f"📋 새 제작 과업이 생성되었습니다"
+                    message = f"프로젝트: {proj_name}\n발주처: {client}\n생성자: {username}"
+                    link = f"/production/tasks/{prod_id}"
+
+                    for lead_row in leads:
+                        create_notification(
+                            user_id = lead_row[0],
+                            title = title,
+                            message = message,
+                            link = link
+                        )
+        except Exception as e:
+            print(f"[경고] 팀장 알림 전송 실패: {str(e)}")
+            pass
+
         return jsonify({"ok": True, "id": new_id})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})

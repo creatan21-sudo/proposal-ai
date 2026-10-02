@@ -2623,13 +2623,74 @@ def delete_nara_candidate(candidate_id: int) -> None:
 def confirm_nara_candidate(candidate_id: int, confirmed_by: str,
                            notes: str, assignee: str = "") -> int:
     with get_connection() as conn:
-        row = conn.execute("SELECT bid_ntce_no FROM nara_candidates WHERE id=?", (candidate_id,)).fetchone()
+        row = conn.execute(
+            "SELECT bid_ntce_no, bid_ntce_nm, ntce_instt_nm FROM nara_candidates WHERE id=?",
+            (candidate_id,)
+        ).fetchone()
         bid_no = row[0] if row else ''
+        bid_ntce_nm = row[1] if row else ''
+        client_name = row[2] if row else ''
+
         cur = conn.execute(
             "INSERT OR IGNORE INTO nara_confirmed (candidate_id, confirmed_by, notes, assignee, bid_ntce_no) VALUES (?,?,?,?,?)",
             (candidate_id, confirmed_by, notes, assignee, bid_no),
         )
-        return cur.lastrowid or 0
+        confirmed_id = cur.lastrowid or 0
+
+        # ========== 제작부문 과업 자동 생성 ==========
+        if confirmed_id > 0:
+            try:
+                # 프로젝트명 설정 (발주 공고명 사용)
+                project_name = bid_ntce_nm or bid_no or f"과업_{confirmed_id}"
+
+                # 제작 과업 생성
+                cursor = conn.execute(
+                    """INSERT INTO production_tasks
+                       (nara_confirmed_id, project_name, client_name, bid_ntce_nm, created_by, status)
+                       VALUES (?, ?, ?, ?, ?, '대기')""",
+                    (confirmed_id, project_name, client_name, bid_ntce_nm, confirmed_by),
+                )
+                production_task_id = cursor.lastrowid
+
+                # 제안개요 섹션 생성 (초기 빈 상태)
+                conn.execute(
+                    """INSERT INTO production_task_sections
+                       (production_task_id, section_type, content, auto_generated)
+                       VALUES (?, ?, ?, ?)""",
+                    (production_task_id, 'proposal_overview', '', 0),
+                )
+
+                # 제작일정 섹션 생성
+                conn.execute(
+                    """INSERT INTO production_task_sections
+                       (production_task_id, section_type, content, auto_generated)
+                       VALUES (?, ?, ?, ?)""",
+                    (production_task_id, 'production_schedule', '', 0),
+                )
+
+                # 기술협상 섹션 생성
+                conn.execute(
+                    """INSERT INTO production_task_sections
+                       (production_task_id, section_type, content, auto_generated)
+                       VALUES (?, ?, ?, ?)""",
+                    (production_task_id, 'technical_discussion', '', 0),
+                )
+
+                # 착수보고 섹션 생성
+                conn.execute(
+                    """INSERT INTO production_task_sections
+                       (production_task_id, section_type, content, auto_generated)
+                       VALUES (?, ?, ?, ?)""",
+                    (production_task_id, 'kickoff_report', '', 0),
+                )
+
+                conn.commit()
+            except Exception as e:
+                # 제작 과업 생성 실패 시 로그만 남기고 계속 진행
+                print(f"[경고] 제작 과업 생성 실패 (confirmed_id={confirmed_id}): {str(e)}")
+                pass
+
+        return confirmed_id
 
 
 def list_nara_confirmed(page: int = 1, per_page: int = 50) -> dict:
