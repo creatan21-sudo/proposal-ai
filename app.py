@@ -6189,6 +6189,72 @@ def production_learning():
     return render_template("production_learning.html", data=None)
 
 
+@app.route("/production/tasks/<int:task_id>")
+@login_required
+def production_task_detail(task_id):
+    """제작부문 - 과업 상세 보기"""
+    from database.db import get_production_task, get_production_task_sections, list_users
+    task = get_production_task(task_id)
+    if not task:
+        return "과업을 찾을 수 없습니다", 404
+
+    sections = get_production_task_sections(task_id)
+    users = list_users()
+    is_ops = session.get("role") in ("admin", "operator")
+
+    return render_template("production_task_detail.html",
+                         task=task, sections=sections, users=users, is_ops=is_ops)
+
+
+@app.route("/production/tasks/<int:task_id>/assign", methods=["POST"])
+@login_required
+@operator_or_admin_required
+def assign_production_task_route(task_id):
+    """제작부문 과업 담당자 배정"""
+    from database.db import assign_production_task, get_production_task
+
+    data = request.get_json(force=True) or {}
+    assignee = str(data.get("assignee", "")).strip()
+    notes = str(data.get("notes", "")).strip()
+    username = session.get("username", "")
+
+    if not assignee:
+        return jsonify({"ok": False, "error": "담당자를 선택하세요"})
+
+    try:
+        # 과업 배정
+        assign_production_task(task_id, username, assignee, notes)
+
+        # ========== 담당자에게 알림 전송 ==========
+        try:
+            from database.db import get_connection
+            task = get_production_task(task_id)
+            if task:
+                title = f"📋 새로운 과업이 배정되었습니다"
+                message = f"프로젝트: {task.get('project_name', '')}\n발주처: {task.get('client_name', '')}\n배정자: {username}"
+                link = f"/production/tasks/{task_id}"
+
+                with get_connection() as conn:
+                    assignee_user = conn.execute(
+                        "SELECT id FROM users WHERE username=?",
+                        (assignee,)
+                    ).fetchone()
+
+                    if assignee_user:
+                        create_notification(
+                            user_id=assignee_user["id"],
+                            title=title,
+                            message=message,
+                            link=link
+                        )
+        except Exception as e:
+            print(f"[경고] 담당자 알림 전송 실패: {str(e)}")
+
+        return jsonify({"ok": True, "message": "담당자가 배정되었습니다"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
 if __name__ == "__main__":
     init_db()
     init_users()

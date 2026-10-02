@@ -1,0 +1,217 @@
+{% extends "base.html" %}
+
+{% block title %}제작부문 - 과업 상세 | Prointerz{% endblock %}
+
+{% block content %}
+<div style="max-width: 1200px; margin: 0 auto; padding: 24px;">
+  <!-- 헤더 -->
+  <div style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center;">
+    <div>
+      <h1 style="font-size: 24px; font-weight: 700; margin-bottom: 8px;">{{ task.project_name }}</h1>
+      <div style="display: flex; gap: 12px; font-size: 13px; color: #6b7280;">
+        <span>발주처: {{ task.client_name }}</span>
+        <span>상태:
+          <span style="font-weight: 600; color: {% if task.status == '진행중' %}#059669{% elif task.status == '완료' %}#0891b2{% else %}#92400e{% endif %};">
+            {{ task.status }}
+          </span>
+        </span>
+        <span>생성자: {{ task.created_by }}</span>
+      </div>
+    </div>
+    {% if is_ops and task.status == '대기' %}
+    <button onclick="openAssignModal()" style="padding: 10px 20px; background: #4f46e5; color: #fff;
+                                              border: none; border-radius: 8px; font-size: 13px;
+                                              font-weight: 600; cursor: pointer;">
+      👤 담당자 배정
+    </button>
+    {% endif %}
+  </div>
+
+  <!-- 탭 네비게이션 -->
+  <div style="display: flex; gap: 0; border-bottom: 2px solid #e5e7eb; margin-bottom: 24px;">
+    <button onclick="switchDetailTab('overview')" class="detail-tab active"
+            style="padding: 12px 20px; border: none; background: transparent; cursor: pointer;
+                   font-size: 14px; font-weight: 600; color: #4f46e5; border-bottom: 2px solid #4f46e5;
+                   transition: all 0.15s;">
+      📋 안내 사항
+    </button>
+    <button onclick="switchDetailTab('schedule')" class="detail-tab"
+            style="padding: 12px 20px; border: none; background: transparent; cursor: pointer;
+                   font-size: 14px; font-weight: 600; color: #6b7280; border-bottom: 2px solid transparent;
+                   transition: all 0.15s;">
+      📅 일정
+    </button>
+    <button onclick="switchDetailTab('discussion')" class="detail-tab"
+            style="padding: 12px 20px; border: none; background: transparent; cursor: pointer;
+                   font-size: 14px; font-weight: 600; color: #6b7280; border-bottom: 2px solid transparent;
+                   transition: all 0.15s;">
+      💬 기술협상
+    </button>
+    <button onclick="switchDetailTab('kickoff')" class="detail-tab"
+            style="padding: 12px 20px; border: none; background: transparent; cursor: pointer;
+                   font-size: 14px; font-weight: 600; color: #6b7280; border-bottom: 2px solid transparent;
+                   transition: all 0.15s;">
+      🚀 착수보고
+    </button>
+  </div>
+
+  <!-- 탭 콘텐츠 -->
+  <div id="overview-tab" class="tab-content" style="display: block;">
+    <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
+      <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #1f2937;">제안 내용</h2>
+      <div id="proposal-content" style="color: #4b5563; line-height: 1.6; min-height: 200px;">
+        {% if sections.proposal_overview %}
+          {{ sections.proposal_overview.content or '아직 작성되지 않았습니다.' }}
+        {% else %}
+          아직 작성되지 않았습니다.
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div id="schedule-tab" class="tab-content" style="display: none;">
+    <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
+      <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #1f2937;">제작 일정</h2>
+      <div id="schedule-content" style="color: #4b5563; line-height: 1.6; min-height: 200px;">
+        {% if sections.production_schedule %}
+          {{ sections.production_schedule.content or '아직 작성되지 않았습니다.' }}
+        {% else %}
+          아직 작성되지 않았습니다.
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div id="discussion-tab" class="tab-content" style="display: none;">
+    <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
+      <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #1f2937;">기술협상 내용</h2>
+      <div id="discussion-content" style="color: #4b5563; line-height: 1.6; min-height: 200px;">
+        {% if sections.technical_discussion %}
+          {{ sections.technical_discussion.content or '아직 작성되지 않았습니다.' }}
+        {% else %}
+          아직 작성되지 않았습니다.
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  <div id="kickoff-tab" class="tab-content" style="display: none;">
+    <div style="background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 24px;">
+      <h2 style="font-size: 16px; font-weight: 700; margin-bottom: 16px; color: #1f2937;">착수보고 내용</h2>
+      <div id="kickoff-content" style="color: #4b5563; line-height: 1.6; min-height: 200px;">
+        {% if sections.kickoff_report %}
+          {{ sections.kickoff_report.content or '아직 작성되지 않았습니다.' }}
+        {% else %}
+          아직 작성되지 않았습니다.
+        {% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 담당자 배정 모달 -->
+<div id="assign-modal" style="display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+                             background: rgba(0,0,0,0.5); z-index: 1000; align-items: center;
+                             justify-content: center;">
+  <div style="background: #fff; border-radius: 12px; padding: 32px; max-width: 400px; width: 90%; box-shadow: 0 20px 25px rgba(0,0,0,0.15);">
+    <h2 style="font-size: 18px; font-weight: 700; margin-bottom: 20px; color: #1f2937;">담당자 배정</h2>
+
+    <form id="assign-form" style="display: flex; flex-direction: column; gap: 16px;">
+      <div>
+        <label style="display: block; font-size: 13px; font-weight: 600; color: #1f2937; margin-bottom: 8px;">
+          담당자 선택
+        </label>
+        <select id="assignee-select" name="assignee" required
+                style="width: 100%; padding: 10px 12px; border: 1px solid #d1d5db;
+                       border-radius: 8px; font-size: 13px;">
+          <option value="">선택하세요</option>
+          {% for user in users %}
+          <option value="{{ user.username }}">{{ user.username }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label style="display: block; font-size: 13px; font-weight: 600; color: #1f2937; margin-bottom: 8px;">
+          참고사항 (선택)
+        </label>
+        <textarea id="assign-notes" name="notes" placeholder="특별한 지시사항이 있으면 입력하세요"
+                  style="width: 100%; padding: 10px 12px; border: 1px solid #d1d5db;
+                         border-radius: 8px; font-size: 13px; min-height: 80px;"></textarea>
+      </div>
+
+      <div style="display: flex; gap: 12px;">
+        <button type="button" onclick="closeAssignModal()"
+                style="flex: 1; padding: 10px; border: 1px solid #d1d5db; background: #fff;
+                       border-radius: 8px; font-size: 13px; font-weight: 600;
+                       color: #374151; cursor: pointer;">
+          취소
+        </button>
+        <button type="submit"
+                style="flex: 1; padding: 10px; background: #4f46e5; color: #fff;
+                       border: none; border-radius: 8px; font-size: 13px; font-weight: 600;
+                       cursor: pointer;">
+          배정
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script>
+function switchDetailTab(tab) {
+  document.querySelectorAll('.tab-content').forEach(el => el.style.display = 'none');
+  document.getElementById(tab + '-tab').style.display = 'block';
+
+  document.querySelectorAll('.detail-tab').forEach(btn => {
+    btn.style.color = '#6b7280';
+    btn.style.borderBottomColor = 'transparent';
+  });
+  event.target.style.color = '#4f46e5';
+  event.target.style.borderBottomColor = '#4f46e5';
+}
+
+function openAssignModal() {
+  document.getElementById('assign-modal').style.display = 'flex';
+}
+
+function closeAssignModal() {
+  document.getElementById('assign-modal').style.display = 'none';
+}
+
+document.getElementById('assign-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const assignee = document.getElementById('assignee-select').value;
+  const notes = document.getElementById('assign-notes').value;
+
+  if (!assignee) {
+    alert('담당자를 선택하세요');
+    return;
+  }
+
+  try {
+    const response = await fetch('{{ task.id }}/assign', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({assignee, notes})
+    });
+    const data = await response.json();
+    if (data.ok) {
+      alert('담당자가 배정되었습니다');
+      location.reload();
+    } else {
+      alert('배정 실패: ' + (data.error || '알 수 없는 오류'));
+    }
+  } catch (err) {
+    alert('오류: ' + err.message);
+  }
+});
+
+// 모달 바깥쪽 클릭 시 닫기
+document.getElementById('assign-modal').addEventListener('click', (e) => {
+  if (e.target.id === 'assign-modal') {
+    closeAssignModal();
+  }
+});
+</script>
+{% endblock %}
